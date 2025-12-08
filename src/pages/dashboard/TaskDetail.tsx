@@ -19,6 +19,8 @@ import {
   Image as ImageIcon,
   FileText,
   RefreshCw,
+  Monitor,
+  ExternalLink,
 } from 'lucide-react';
 
 interface Task {
@@ -34,6 +36,7 @@ interface Task {
   started_at: string | null;
   completed_at: string | null;
   created_at: string;
+  live_url: string | null;
 }
 
 export default function TaskDetail() {
@@ -270,6 +273,35 @@ export default function TaskDetail() {
           )}
         </div>
       </div>
+
+      {/* Live Browser View */}
+      {task.status === 'running' && task.live_url && (
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between pb-2">
+            <div className="flex items-center gap-2">
+              <Monitor className="h-5 w-5 text-primary" />
+              <CardTitle className="text-lg">Živý náhled prohlížeče</CardTitle>
+              <Badge className="bg-success text-success-foreground animate-pulse">LIVE</Badge>
+            </div>
+            <Button variant="outline" size="sm" asChild>
+              <a href={task.live_url} target="_blank" rel="noopener noreferrer">
+                <ExternalLink className="h-4 w-4 mr-2" />
+                Otevřít v novém okně
+              </a>
+            </Button>
+          </CardHeader>
+          <CardContent>
+            <div className="relative w-full aspect-video rounded-lg overflow-hidden border border-border bg-muted">
+              <iframe
+                src={task.live_url}
+                className="absolute inset-0 w-full h-full"
+                allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                allowFullScreen
+              />
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       {/* Main Content */}
       <Tabs defaultValue="overview" className="space-y-4">

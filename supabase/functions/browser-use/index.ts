@@ -69,7 +69,7 @@ serve(async (req) => {
         const browserUseData = await browserUseResponse.json();
         console.log('Browser-Use response:', browserUseData);
 
-        // Save task to database
+        // Save task to database with live_url
         const { data: task, error: insertError } = await supabase
           .from('tasks')
           .insert({
@@ -79,6 +79,7 @@ serve(async (req) => {
             prompt: prompt,
             status: 'running',
             browser_use_task_id: browserUseData.id,
+            live_url: browserUseData.live_url || null,
             started_at: new Date().toISOString(),
           })
           .select()

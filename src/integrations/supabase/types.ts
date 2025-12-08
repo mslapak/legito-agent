@@ -81,6 +81,7 @@ export type Database = {
           created_at: string
           error_message: string | null
           id: string
+          live_url: string | null
           priority: Database["public"]["Enums"]["task_priority"]
           project_id: string | null
           prompt: string
@@ -99,6 +100,7 @@ export type Database = {
           created_at?: string
           error_message?: string | null
           id?: string
+          live_url?: string | null
           priority?: Database["public"]["Enums"]["task_priority"]
           project_id?: string | null
           prompt: string
@@ -117,6 +119,7 @@ export type Database = {
           created_at?: string
           error_message?: string | null
           id?: string
+          live_url?: string | null
           priority?: Database["public"]["Enums"]["task_priority"]
           project_id?: string | null
           prompt?: string
