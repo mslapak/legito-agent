@@ -189,6 +189,72 @@ export default function TaskDetail() {
     }
   };
 
+  const stopAndDownloadScreenshots = async () => {
+    if (!task?.browser_use_task_id) return;
+    
+    setActionLoading(true);
+    try {
+      // Stop the task first if running
+      if (task.status === 'running') {
+        toast.info('Ukončuji browser session...');
+        const stopResponse = await supabase.functions.invoke('browser-use', {
+          body: {
+            action: 'stop_task',
+            taskId: task.browser_use_task_id,
+          },
+        });
+        
+        if (stopResponse.error) {
+          console.error('Stop task error:', stopResponse.error);
+        }
+        
+        // Wait a moment for the session to close properly
+        await new Promise(resolve => setTimeout(resolve, 2000));
+      }
+      
+      toast.info('Stahuji screenshoty...');
+      
+      // Fetch screenshots
+      const screenshotResponse = await supabase.functions.invoke('browser-use', {
+        body: {
+          action: 'get_screenshots',
+          taskId: task.browser_use_task_id,
+        },
+      });
+      
+      const screenshotData = screenshotResponse.data;
+      console.log('Screenshot data after stop:', screenshotData);
+      
+      let screenshots: string[] = [];
+      if (screenshotData && Array.isArray(screenshotData.screenshots)) {
+        screenshots = screenshotData.screenshots;
+      }
+      
+      // Update task in database
+      await supabase
+        .from('tasks')
+        .update({
+          status: 'completed' as const,
+          screenshots: screenshots.length > 0 ? screenshots : task.screenshots,
+          completed_at: new Date().toISOString(),
+        })
+        .eq('id', task.id);
+      
+      if (screenshots.length > 0) {
+        toast.success(`Staženo ${screenshots.length} screenshotů`);
+      } else {
+        toast.warning('Žádné screenshoty nebyly nalezeny');
+      }
+      
+      fetchTask();
+    } catch (error) {
+      console.error('Error stopping and downloading:', error);
+      toast.error('Nepodařilo se stáhnout screenshoty');
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
   const getStatusBadge = (status: string) => {
     switch (status) {
       case 'running':
@@ -254,11 +320,23 @@ export default function TaskDetail() {
                 <Pause className="h-4 w-4 mr-2" />
                 Pozastavit
               </Button>
-              <Button variant="destructive" onClick={() => handleAction('stop_task')} disabled={actionLoading}>
-                <Square className="h-4 w-4 mr-2" />
-                Zastavit
+              <Button 
+                variant="default" 
+                onClick={stopAndDownloadScreenshots} 
+                disabled={actionLoading}
+                className="bg-primary"
+              >
+                <ImageIcon className="h-4 w-4 mr-2" />
+                Ukončit a stáhnout
               </Button>
             </>
+          )}
+          
+          {task.status !== 'running' && task.status !== 'completed' && task.browser_use_task_id && (
+            <Button variant="outline" onClick={stopAndDownloadScreenshots} disabled={actionLoading}>
+              <ImageIcon className="h-4 w-4 mr-2" />
+              Stáhnout screenshoty
+            </Button>
           )}
         </div>
       </div>
