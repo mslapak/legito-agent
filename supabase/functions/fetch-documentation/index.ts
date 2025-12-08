@@ -6,21 +6,63 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
-// Extract image URLs from HTML
+// Extract image URLs from HTML - improved to catch more patterns
 function extractImageUrls(html: string, baseUrl: string): string[] {
-  const imgRegex = /<img[^>]+src=["']([^"']+)["'][^>]*>/gi;
   const images: string[] = [];
-  let match;
   
-  while ((match = imgRegex.exec(html)) !== null) {
-    let src = match[1];
-    
-    // Skip data URLs, icons, logos, and very small images
+  // Pattern 1: Standard img src
+  const srcRegex = /<img[^>]+src=["']([^"']+)["'][^>]*>/gi;
+  let match;
+  while ((match = srcRegex.exec(html)) !== null) {
+    images.push(match[1]);
+  }
+  
+  // Pattern 2: data-src (lazy loading)
+  const dataSrcRegex = /<img[^>]+data-src=["']([^"']+)["'][^>]*>/gi;
+  while ((match = dataSrcRegex.exec(html)) !== null) {
+    images.push(match[1]);
+  }
+  
+  // Pattern 3: data-lazy-src
+  const lazyRegex = /<img[^>]+data-lazy-src=["']([^"']+)["'][^>]*>/gi;
+  while ((match = lazyRegex.exec(html)) !== null) {
+    images.push(match[1]);
+  }
+  
+  // Pattern 4: srcset (take the largest)
+  const srcsetRegex = /srcset=["']([^"']+)["']/gi;
+  while ((match = srcsetRegex.exec(html)) !== null) {
+    const srcset = match[1];
+    const urls = srcset.split(',').map(s => s.trim().split(' ')[0]);
+    if (urls.length > 0) {
+      images.push(urls[urls.length - 1]); // Take the last (usually largest)
+    }
+  }
+  
+  // Pattern 5: Background images in style
+  const bgRegex = /url\(['"]?([^'")\s]+\.(?:png|jpg|jpeg|gif|webp)[^'")\s]*)['"]?\)/gi;
+  while ((match = bgRegex.exec(html)) !== null) {
+    images.push(match[1]);
+  }
+  
+  // Filter and process URLs
+  const processedImages: string[] = [];
+  const seenUrls = new Set<string>();
+  
+  for (let src of images) {
+    // Skip data URLs, icons, logos, tiny images
     if (src.startsWith('data:') || 
         src.includes('logo') || 
         src.includes('icon') ||
         src.includes('favicon') ||
-        src.includes('avatar')) {
+        src.includes('avatar') ||
+        src.includes('badge') ||
+        src.includes('capterra') ||
+        src.includes('g2crowd') ||
+        src.includes('trustpilot') ||
+        src.includes('1x1') ||
+        src.includes('pixel') ||
+        src.includes('tracking')) {
       continue;
     }
     
@@ -29,14 +71,22 @@ function extractImageUrls(html: string, baseUrl: string): string[] {
       const url = new URL(baseUrl);
       src = `${url.protocol}//${url.host}${src}`;
     } else if (!src.startsWith('http')) {
-      src = new URL(src, baseUrl).href;
+      try {
+        src = new URL(src, baseUrl).href;
+      } catch {
+        continue;
+      }
     }
     
-    images.push(src);
+    // Deduplicate
+    if (seenUrls.has(src)) continue;
+    seenUrls.add(src);
+    
+    processedImages.push(src);
   }
   
-  // Return max 5 images to avoid token limits
-  return images.slice(0, 5);
+  // Return max 8 images to avoid token limits
+  return processedImages.slice(0, 8);
 }
 
 // Convert image URL to base64
@@ -46,6 +96,8 @@ async function imageToBase64(imageUrl: string): Promise<{ url: string; base64: s
     const response = await fetch(imageUrl, {
       headers: {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+        'Accept': 'image/webp,image/apng,image/*,*/*;q=0.8',
+        'Referer': new URL(imageUrl).origin,
       },
     });
     
@@ -64,7 +116,7 @@ async function imageToBase64(imageUrl: string): Promise<{ url: string; base64: s
     const uint8Array = new Uint8Array(arrayBuffer);
     
     // Check minimum size (skip tiny images like 1x1 pixels)
-    if (uint8Array.length < 1000) {
+    if (uint8Array.length < 5000) {
       console.log(`Image too small: ${uint8Array.length} bytes`);
       return null;
     }
@@ -155,6 +207,46 @@ Piš v češtině. Buď konkrétní a přesný.`,
   }
 }
 
+// Fetch page with JavaScript rendering using a simple approach
+async function fetchRenderedPage(url: string): Promise<string> {
+  // First try Jina AI Reader for better content extraction
+  try {
+    console.log(`Trying Jina Reader for: ${url}`);
+    const jinaUrl = `https://r.jina.ai/${url}`;
+    const response = await fetch(jinaUrl, {
+      headers: {
+        'Accept': 'text/html',
+        'User-Agent': 'Mozilla/5.0',
+      },
+    });
+    
+    if (response.ok) {
+      const content = await response.text();
+      if (content.length > 1000) {
+        console.log(`Jina Reader returned ${content.length} characters`);
+        return content;
+      }
+    }
+  } catch (e) {
+    console.log('Jina Reader failed, falling back to direct fetch');
+  }
+  
+  // Fallback to direct fetch
+  const response = await fetch(url, {
+    headers: {
+      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+      'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+      'Accept-Language': 'en-US,en;q=0.5',
+    },
+  });
+  
+  if (!response.ok) {
+    throw new Error(`Failed to fetch: ${response.status}`);
+  }
+  
+  return await response.text();
+}
+
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
@@ -195,35 +287,21 @@ serve(async (req) => {
 
     console.log(`Fetching documentation from: ${url}, analyzeImages: ${shouldAnalyzeImages}`);
 
-    // Fetch the URL content
-    const response = await fetch(url, {
-      headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-        'Accept-Language': 'en-US,en;q=0.5',
-      },
-    });
-
-    if (!response.ok) {
-      console.error(`Failed to fetch URL: ${response.status}`);
-      return new Response(JSON.stringify({ error: `Failed to fetch URL: ${response.status}` }), {
-        status: 400,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      });
-    }
-
-    const contentType = response.headers.get('content-type') || '';
+    // Fetch the URL content - try rendered version first
+    const rawContent = await fetchRenderedPage(url);
+    const contentType = rawContent.startsWith('<!') || rawContent.startsWith('<html') ? 'text/html' : 'text/plain';
+    
     let content = '';
     let imageAnalysis = '';
     let extractedImages: string[] = [];
 
-    if (contentType.includes('text/html')) {
-      const html = await response.text();
+    if (contentType.includes('text/html') || rawContent.includes('<')) {
+      const html = rawContent;
       
       // Extract image URLs before cleaning HTML
       if (shouldAnalyzeImages) {
         extractedImages = extractImageUrls(html, url);
-        console.log(`Found ${extractedImages.length} images to analyze`);
+        console.log(`Found ${extractedImages.length} images to analyze: ${extractedImages.join(', ')}`);
         
         if (extractedImages.length > 0) {
           // Fetch and convert images to base64
@@ -280,13 +358,8 @@ serve(async (req) => {
         .trim();
 
       content = text;
-    } else if (contentType.includes('text/plain') || contentType.includes('text/markdown')) {
-      content = await response.text();
     } else {
-      return new Response(JSON.stringify({ error: 'Unsupported content type. Use HTML, TXT, or MD URLs.' }), {
-        status: 400,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      });
+      content = rawContent;
     }
 
     // Combine text content with image analysis
