@@ -6,43 +6,49 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
-// Extract image URLs from HTML - improved to catch more patterns
-function extractImageUrls(html: string, baseUrl: string): string[] {
+// Extract image URLs from content (supports both HTML and Markdown)
+function extractImageUrls(content: string, baseUrl: string): string[] {
   const images: string[] = [];
-  
-  // Pattern 1: Standard img src
-  const srcRegex = /<img[^>]+src=["']([^"']+)["'][^>]*>/gi;
   let match;
-  while ((match = srcRegex.exec(html)) !== null) {
+  
+  // Pattern 1: Markdown images ![alt](url)
+  const mdRegex = /!\[[^\]]*\]\(([^)\s]+)[^)]*\)/gi;
+  while ((match = mdRegex.exec(content)) !== null) {
     images.push(match[1]);
   }
   
-  // Pattern 2: data-src (lazy loading)
+  // Pattern 2: Standard img src
+  const srcRegex = /<img[^>]+src=["']([^"']+)["'][^>]*>/gi;
+  while ((match = srcRegex.exec(content)) !== null) {
+    images.push(match[1]);
+  }
+  
+  // Pattern 3: data-src (lazy loading)
   const dataSrcRegex = /<img[^>]+data-src=["']([^"']+)["'][^>]*>/gi;
-  while ((match = dataSrcRegex.exec(html)) !== null) {
+  while ((match = dataSrcRegex.exec(content)) !== null) {
     images.push(match[1]);
   }
   
-  // Pattern 3: data-lazy-src
+  // Pattern 4: data-lazy-src
   const lazyRegex = /<img[^>]+data-lazy-src=["']([^"']+)["'][^>]*>/gi;
-  while ((match = lazyRegex.exec(html)) !== null) {
+  while ((match = lazyRegex.exec(content)) !== null) {
     images.push(match[1]);
   }
   
-  // Pattern 4: srcset (take the largest)
+  // Pattern 5: srcset (take the largest)
   const srcsetRegex = /srcset=["']([^"']+)["']/gi;
-  while ((match = srcsetRegex.exec(html)) !== null) {
+  while ((match = srcsetRegex.exec(content)) !== null) {
     const srcset = match[1];
     const urls = srcset.split(',').map(s => s.trim().split(' ')[0]);
     if (urls.length > 0) {
-      images.push(urls[urls.length - 1]); // Take the last (usually largest)
+      images.push(urls[urls.length - 1]);
     }
   }
   
-  // Pattern 5: Background images in style
-  const bgRegex = /url\(['"]?([^'")\s]+\.(?:png|jpg|jpeg|gif|webp)[^'")\s]*)['"]?\)/gi;
-  while ((match = bgRegex.exec(html)) !== null) {
-    images.push(match[1]);
+  // Pattern 6: Direct image URLs in text (for Jina markdown)
+  const urlRegex = /https?:\/\/[^\s<>"]+\.(?:png|jpg|jpeg|gif|webp)(?:\?[^\s<>"]*)?/gi;
+  while ((match = urlRegex.exec(content)) !== null) {
+    images.push(match[0]);
   }
   
   // Filter and process URLs
@@ -62,7 +68,9 @@ function extractImageUrls(html: string, baseUrl: string): string[] {
         src.includes('trustpilot') ||
         src.includes('1x1') ||
         src.includes('pixel') ||
-        src.includes('tracking')) {
+        src.includes('tracking') ||
+        src.includes('wp-content/plugins') ||
+        src.includes('gravatar')) {
       continue;
     }
     
@@ -84,6 +92,8 @@ function extractImageUrls(html: string, baseUrl: string): string[] {
     
     processedImages.push(src);
   }
+  
+  console.log(`Extracted ${processedImages.length} unique images from content`);
   
   // Return max 8 images to avoid token limits
   return processedImages.slice(0, 8);
