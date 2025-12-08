@@ -11,6 +11,8 @@ import DashboardHome from "./pages/dashboard/DashboardHome";
 import NewTask from "./pages/dashboard/NewTask";
 import TaskHistory from "./pages/dashboard/TaskHistory";
 import TaskDetail from "./pages/dashboard/TaskDetail";
+import TestGenerator from "./pages/dashboard/TestGenerator";
+import Projects from "./pages/dashboard/Projects";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -30,6 +32,8 @@ const App = () => (
               <Route path="new-task" element={<NewTask />} />
               <Route path="history" element={<TaskHistory />} />
               <Route path="task/:taskId" element={<TaskDetail />} />
+              <Route path="test-generator" element={<TestGenerator />} />
+              <Route path="projects" element={<Projects />} />
             </Route>
             <Route path="*" element={<NotFound />} />
           </Routes>
