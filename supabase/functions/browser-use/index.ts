@@ -41,7 +41,7 @@ serve(async (req) => {
     }
 
     const { action, taskId, prompt, title, projectId } = await req.json();
-    console.log(`Action: ${action}, User: ${user.id}`);
+    console.log(`Action: ${action}, User: ${user.id}, TaskId: ${taskId || 'N/A'}`);
 
     // Browser-Use Cloud API base URL
     const BROWSER_USE_API_URL = 'https://api.browser-use.com/api/v1';
@@ -205,6 +205,7 @@ serve(async (req) => {
 
       case 'get_media': {
         // Get screenshots/recordings
+        console.log(`Fetching media for task: ${taskId}`);
         const browserUseResponse = await fetch(`${BROWSER_USE_API_URL}/task/${taskId}/media`, {
           method: 'GET',
           headers: {
@@ -213,10 +214,16 @@ serve(async (req) => {
         });
 
         if (!browserUseResponse.ok) {
-          throw new Error(`Browser-Use API error: ${browserUseResponse.status}`);
+          const errorText = await browserUseResponse.text();
+          console.error(`Media fetch error: ${browserUseResponse.status}, ${errorText}`);
+          // Return empty instead of throwing - media might not be available yet
+          return new Response(JSON.stringify({ screenshots: [], recordings: [] }), {
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          });
         }
 
         const mediaData = await browserUseResponse.json();
+        console.log(`Media fetched:`, JSON.stringify(mediaData));
         return new Response(JSON.stringify(mediaData), {
           headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         });
