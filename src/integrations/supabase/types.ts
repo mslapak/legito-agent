@@ -14,6 +14,59 @@ export type Database = {
   }
   public: {
     Tables: {
+      documentation_verifications: {
+        Row: {
+          completed_at: string | null
+          created_at: string
+          documentation_preview: string | null
+          documentation_source: string
+          documentation_url: string | null
+          failed_steps: number
+          id: string
+          passed_steps: number
+          project_id: string
+          status: string
+          total_steps: number
+          user_id: string
+        }
+        Insert: {
+          completed_at?: string | null
+          created_at?: string
+          documentation_preview?: string | null
+          documentation_source: string
+          documentation_url?: string | null
+          failed_steps?: number
+          id?: string
+          passed_steps?: number
+          project_id: string
+          status?: string
+          total_steps?: number
+          user_id: string
+        }
+        Update: {
+          completed_at?: string | null
+          created_at?: string
+          documentation_preview?: string | null
+          documentation_source?: string
+          documentation_url?: string | null
+          failed_steps?: number
+          id?: string
+          passed_steps?: number
+          project_id?: string
+          status?: string
+          total_steps?: number
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "documentation_verifications_project_id_fkey"
+            columns: ["project_id"]
+            isOneToOne: false
+            referencedRelation: "projects"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       generated_tests: {
         Row: {
           created_at: string
@@ -327,6 +380,57 @@ export type Database = {
             columns: ["project_id"]
             isOneToOne: false
             referencedRelation: "projects"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      verification_steps: {
+        Row: {
+          completed_at: string | null
+          created_at: string
+          id: string
+          result: string | null
+          status: string
+          step_description: string
+          step_number: number
+          task_id: string | null
+          verification_id: string
+        }
+        Insert: {
+          completed_at?: string | null
+          created_at?: string
+          id?: string
+          result?: string | null
+          status?: string
+          step_description: string
+          step_number: number
+          task_id?: string | null
+          verification_id: string
+        }
+        Update: {
+          completed_at?: string | null
+          created_at?: string
+          id?: string
+          result?: string | null
+          status?: string
+          step_description?: string
+          step_number?: number
+          task_id?: string | null
+          verification_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "verification_steps_task_id_fkey"
+            columns: ["task_id"]
+            isOneToOne: false
+            referencedRelation: "tasks"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "verification_steps_verification_id_fkey"
+            columns: ["verification_id"]
+            isOneToOne: false
+            referencedRelation: "documentation_verifications"
             referencedColumns: ["id"]
           },
         ]
