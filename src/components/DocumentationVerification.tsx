@@ -1,9 +1,11 @@
 import { useState } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Badge } from '@/components/ui/badge';
 import { Progress } from '@/components/ui/progress';
 import { toast } from 'sonner';
@@ -17,6 +19,8 @@ import {
   Play,
   Trash2,
   FileCheck,
+  Link,
+  Globe,
 } from 'lucide-react';
 import * as pdfjsLib from 'pdfjs-dist';
 
@@ -50,6 +54,9 @@ export default function DocumentationVerification({
   const [steps, setSteps] = useState<VerificationStep[]>([]);
   const [isRunning, setIsRunning] = useState(false);
   const [currentStepIndex, setCurrentStepIndex] = useState(-1);
+  const [sourceTab, setSourceTab] = useState<'file' | 'url' | 'text'>('file');
+  const [docUrl, setDocUrl] = useState('');
+  const [isFetchingUrl, setIsFetchingUrl] = useState(false);
 
   const extractTextFromPdf = async (file: File): Promise<string> => {
     const arrayBuffer = await file.arrayBuffer();
@@ -120,6 +127,36 @@ export default function DocumentationVerification({
     setExtractedText('');
     setDocumentation('');
     setSteps([]);
+    setDocUrl('');
+  };
+
+  const fetchDocFromUrl = async () => {
+    if (!docUrl.trim()) {
+      toast.error('Zadejte URL dokumentace');
+      return;
+    }
+
+    setIsFetchingUrl(true);
+
+    try {
+      const { data, error } = await supabase.functions.invoke('fetch-documentation', {
+        body: { url: docUrl },
+      });
+
+      if (error) throw error;
+
+      if (data?.content) {
+        setDocumentation(data.content);
+        toast.success(`Dokumentace načtena z URL (${data.content.length} znaků)`);
+      } else {
+        toast.error('Nepodařilo se načíst obsah z URL');
+      }
+    } catch (error) {
+      console.error('Error fetching URL:', error);
+      toast.error('Nepodařilo se načíst dokumentaci z URL');
+    } finally {
+      setIsFetchingUrl(false);
+    }
   };
 
   const generateSteps = async () => {
@@ -312,45 +349,106 @@ DŮLEŽITÉ: Na konci ověř, jestli tento krok funguje správně podle dokument
       <CardContent className="space-y-4">
         {/* Upload Section */}
         <div className="space-y-3">
-          <Label>Nahrajte dokumentaci nebo vložte text</Label>
+          <Label>Zdroj dokumentace</Label>
           
-          {!uploadedFile ? (
-            <div className="flex gap-2">
-              <label className="flex-1">
-                <input
-                  type="file"
-                  accept=".pdf,.txt,.md,.docx"
-                  onChange={handleFileUpload}
-                  className="hidden"
-                />
-                <div className="flex items-center justify-center gap-2 p-4 border-2 border-dashed rounded-lg cursor-pointer hover:border-primary hover:bg-muted/50 transition-colors">
-                  <Upload className="w-5 h-5 text-muted-foreground" />
-                  <span className="text-sm text-muted-foreground">
-                    Nahrát PDF, TXT, MD
-                  </span>
+          <Tabs value={sourceTab} onValueChange={(v) => setSourceTab(v as 'file' | 'url' | 'text')}>
+            <TabsList className="grid w-full grid-cols-3">
+              <TabsTrigger value="file" className="flex items-center gap-2">
+                <Upload className="w-4 h-4" />
+                Soubor
+              </TabsTrigger>
+              <TabsTrigger value="url" className="flex items-center gap-2">
+                <Globe className="w-4 h-4" />
+                URL
+              </TabsTrigger>
+              <TabsTrigger value="text" className="flex items-center gap-2">
+                <FileText className="w-4 h-4" />
+                Text
+              </TabsTrigger>
+            </TabsList>
+
+            <TabsContent value="file" className="space-y-3 mt-3">
+              {!uploadedFile ? (
+                <label>
+                  <input
+                    type="file"
+                    accept=".pdf,.txt,.md,.docx"
+                    onChange={handleFileUpload}
+                    className="hidden"
+                  />
+                  <div className="flex items-center justify-center gap-2 p-4 border-2 border-dashed rounded-lg cursor-pointer hover:border-primary hover:bg-muted/50 transition-colors">
+                    <Upload className="w-5 h-5 text-muted-foreground" />
+                    <span className="text-sm text-muted-foreground">
+                      Nahrát PDF, TXT, MD
+                    </span>
+                  </div>
+                </label>
+              ) : (
+                <div className="flex items-center justify-between p-3 bg-muted rounded-lg">
+                  <div className="flex items-center gap-2">
+                    <FileText className="w-4 h-4 text-primary" />
+                    <span className="text-sm font-medium">{uploadedFile.name}</span>
+                    {isExtracting && <Loader2 className="w-4 h-4 animate-spin" />}
+                  </div>
+                  <Button variant="ghost" size="sm" onClick={clearFile}>
+                    <Trash2 className="w-4 h-4" />
+                  </Button>
                 </div>
-              </label>
-            </div>
-          ) : (
-            <div className="flex items-center justify-between p-3 bg-muted rounded-lg">
-              <div className="flex items-center gap-2">
-                <FileText className="w-4 h-4 text-primary" />
-                <span className="text-sm font-medium">{uploadedFile.name}</span>
-                {isExtracting && <Loader2 className="w-4 h-4 animate-spin" />}
+              )}
+            </TabsContent>
+
+            <TabsContent value="url" className="space-y-3 mt-3">
+              <div className="flex gap-2">
+                <Input
+                  placeholder="https://docs.example.com/manual"
+                  value={docUrl}
+                  onChange={(e) => setDocUrl(e.target.value)}
+                  className="flex-1"
+                />
+                <Button
+                  onClick={fetchDocFromUrl}
+                  disabled={isFetchingUrl || !docUrl.trim()}
+                  variant="secondary"
+                >
+                  {isFetchingUrl ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <Link className="h-4 w-4" />
+                  )}
+                </Button>
               </div>
-              <Button variant="ghost" size="sm" onClick={clearFile}>
-                <Trash2 className="w-4 h-4" />
-              </Button>
+              <p className="text-xs text-muted-foreground">
+                Zadejte URL stránky s dokumentací
+              </p>
+            </TabsContent>
+
+            <TabsContent value="text" className="space-y-3 mt-3">
+              <Textarea
+                placeholder="Vložte text dokumentace přímo sem..."
+                value={documentation}
+                onChange={(e) => setDocumentation(e.target.value)}
+                rows={6}
+                className="resize-none"
+              />
+            </TabsContent>
+          </Tabs>
+
+          {/* Preview of loaded documentation */}
+          {documentation && sourceTab !== 'text' && (
+            <div className="space-y-2">
+              <div className="flex items-center justify-between">
+                <Label className="text-xs text-muted-foreground">Načtená dokumentace</Label>
+                <Badge variant="secondary">{documentation.length.toLocaleString()} znaků</Badge>
+              </div>
+              <div className="max-h-32 overflow-y-auto rounded-lg border border-border bg-muted/30 p-3">
+                <pre className="text-xs text-muted-foreground whitespace-pre-wrap font-mono">
+                  {documentation.length > 500 
+                    ? documentation.substring(0, 500) + '...' 
+                    : documentation}
+                </pre>
+              </div>
             </div>
           )}
-
-          <Textarea
-            placeholder="Nebo vložte text dokumentace přímo sem..."
-            value={documentation}
-            onChange={(e) => setDocumentation(e.target.value)}
-            rows={4}
-            className="resize-none"
-          />
         </div>
 
         {/* Generate Steps Button */}
