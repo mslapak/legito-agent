@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -8,6 +8,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Badge } from '@/components/ui/badge';
 import { Progress } from '@/components/ui/progress';
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { toast } from 'sonner';
 import {
   FileText,
@@ -21,8 +22,13 @@ import {
   FileCheck,
   Link,
   Globe,
+  History,
+  ChevronDown,
+  ChevronRight,
 } from 'lucide-react';
 import * as pdfjsLib from 'pdfjs-dist';
+import { format } from 'date-fns';
+import { cs } from 'date-fns/locale';
 
 // Set up PDF.js worker
 pdfjsLib.GlobalWorkerOptions.workerSrc = `//cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.js`;
@@ -33,6 +39,19 @@ interface VerificationStep {
   status: 'pending' | 'running' | 'passed' | 'failed';
   result?: string;
   browser_use_task_id?: string;
+}
+
+interface HistoryItem {
+  id: string;
+  documentation_source: string;
+  documentation_url: string | null;
+  documentation_preview: string | null;
+  total_steps: number;
+  passed_steps: number;
+  failed_steps: number;
+  status: string;
+  created_at: string;
+  completed_at: string | null;
 }
 
 interface DocumentationVerificationProps {
@@ -57,6 +76,26 @@ export default function DocumentationVerification({
   const [sourceTab, setSourceTab] = useState<'file' | 'url' | 'text'>('file');
   const [docUrl, setDocUrl] = useState('');
   const [isFetchingUrl, setIsFetchingUrl] = useState(false);
+  const [history, setHistory] = useState<HistoryItem[]>([]);
+  const [isHistoryOpen, setIsHistoryOpen] = useState(false);
+  const [currentVerificationId, setCurrentVerificationId] = useState<string | null>(null);
+
+  useEffect(() => {
+    fetchHistory();
+  }, [projectId]);
+
+  const fetchHistory = async () => {
+    const { data, error } = await supabase
+      .from('documentation_verifications')
+      .select('*')
+      .eq('project_id', projectId)
+      .order('created_at', { ascending: false })
+      .limit(10);
+
+    if (!error && data) {
+      setHistory(data);
+    }
+  };
 
   const extractTextFromPdf = async (file: File): Promise<string> => {
     const arrayBuffer = await file.arrayBuffer();
@@ -224,6 +263,42 @@ Důležité:
 
     setIsRunning(true);
 
+    // Create verification record in database
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) {
+      toast.error('Nejste přihlášen');
+      setIsRunning(false);
+      return;
+    }
+
+    const { data: verification, error: verificationError } = await supabase
+      .from('documentation_verifications')
+      .insert({
+        user_id: user.id,
+        project_id: projectId,
+        documentation_source: sourceTab,
+        documentation_url: sourceTab === 'url' ? docUrl : null,
+        documentation_preview: documentation.substring(0, 500),
+        total_steps: steps.length,
+        passed_steps: 0,
+        failed_steps: 0,
+        status: 'running',
+      })
+      .select()
+      .single();
+
+    if (verificationError) {
+      console.error('Error creating verification:', verificationError);
+      toast.error('Nepodařilo se vytvořit záznam ověření');
+      setIsRunning(false);
+      return;
+    }
+
+    setCurrentVerificationId(verification.id);
+
+    let passedCount = 0;
+    let failedCount = 0;
+
     for (let i = 0; i < steps.length; i++) {
       setCurrentStepIndex(i);
       
@@ -249,6 +324,15 @@ DŮLEŽITÉ: Na konci ověř, jestli tento krok funguje správně podle dokument
         setSteps(prev => prev.map((s, idx) => 
           idx === i ? { ...s, browser_use_task_id: taskId } : s
         ));
+
+        // Save step to database
+        await supabase.from('verification_steps').insert({
+          verification_id: verification.id,
+          step_number: i + 1,
+          step_description: steps[i].step,
+          status: 'running',
+          task_id: data.dbTaskId || null,
+        });
 
         // Poll for result
         let result = null;
@@ -287,25 +371,77 @@ DŮLEŽITÉ: Na konci ověř, jestli tento krok funguje správně podle dokument
         const isUpToDate = output.toLowerCase().includes('dokumentace aktuální') && 
                           !output.toLowerCase().includes('neaktuální');
 
+        const stepStatus = isUpToDate ? 'passed' : 'failed';
+        if (isUpToDate) passedCount++; else failedCount++;
+
         setSteps(prev => prev.map((s, idx) => 
           idx === i ? { 
             ...s, 
-            status: isUpToDate ? 'passed' : 'failed',
+            status: stepStatus,
             result: output,
           } : s
         ));
 
+        // Update step in database
+        await supabase
+          .from('verification_steps')
+          .update({
+            status: stepStatus,
+            result: output,
+            completed_at: new Date().toISOString(),
+          })
+          .eq('verification_id', verification.id)
+          .eq('step_number', i + 1);
+
       } catch (error) {
         console.error('Error running step:', error);
+        failedCount++;
         setSteps(prev => prev.map((s, idx) => 
           idx === i ? { ...s, status: 'failed', result: 'Chyba při spuštění' } : s
         ));
+
+        await supabase
+          .from('verification_steps')
+          .update({
+            status: 'failed',
+            result: 'Chyba při spuštění',
+            completed_at: new Date().toISOString(),
+          })
+          .eq('verification_id', verification.id)
+          .eq('step_number', i + 1);
       }
     }
 
+    // Update verification record with final results
+    await supabase
+      .from('documentation_verifications')
+      .update({
+        passed_steps: passedCount,
+        failed_steps: failedCount,
+        status: 'completed',
+        completed_at: new Date().toISOString(),
+      })
+      .eq('id', verification.id);
+
     setIsRunning(false);
     setCurrentStepIndex(-1);
-    toast.success('Ověření dokumentace dokončeno');
+    setCurrentVerificationId(null);
+    fetchHistory();
+    toast.success('Ověření dokumentace dokončeno a uloženo');
+  };
+
+  const deleteHistoryItem = async (id: string) => {
+    const { error } = await supabase
+      .from('documentation_verifications')
+      .delete()
+      .eq('id', id);
+
+    if (error) {
+      toast.error('Nepodařilo se smazat záznam');
+    } else {
+      setHistory(prev => prev.filter(h => h.id !== id));
+      toast.success('Záznam smazán');
+    }
   };
 
   const getStatusIcon = (status: VerificationStep['status']) => {
@@ -537,6 +673,75 @@ DŮLEŽITÉ: Na konci ověř, jestli tento krok funguje správně podle dokument
           <p className="text-xs text-muted-foreground text-center">
             Pro ověření dokumentace nastavte URL aplikace v projektu
           </p>
+        )}
+
+        {/* History Section */}
+        {history.length > 0 && (
+          <Collapsible open={isHistoryOpen} onOpenChange={setIsHistoryOpen}>
+            <CollapsibleTrigger asChild>
+              <Button variant="ghost" className="w-full justify-between">
+                <span className="flex items-center gap-2">
+                  <History className="w-4 h-4" />
+                  Historie ověření ({history.length})
+                </span>
+                {isHistoryOpen ? (
+                  <ChevronDown className="w-4 h-4" />
+                ) : (
+                  <ChevronRight className="w-4 h-4" />
+                )}
+              </Button>
+            </CollapsibleTrigger>
+            <CollapsibleContent className="space-y-2 mt-2">
+              {history.map((item) => (
+                <div
+                  key={item.id}
+                  className="flex items-center justify-between p-3 rounded-lg border bg-muted/30"
+                >
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 mb-1">
+                      <span className="text-xs text-muted-foreground">
+                        {format(new Date(item.created_at), 'd. M. yyyy HH:mm', { locale: cs })}
+                      </span>
+                      <Badge variant="secondary" className="text-xs">
+                        {item.documentation_source === 'url' ? 'URL' : 
+                         item.documentation_source === 'file' ? 'Soubor' : 'Text'}
+                      </Badge>
+                      {item.status === 'completed' ? (
+                        <Badge 
+                          className={item.passed_steps === item.total_steps 
+                            ? 'bg-green-500 hover:bg-green-600' 
+                            : 'bg-amber-500 hover:bg-amber-600'
+                          }
+                        >
+                          {item.passed_steps}/{item.total_steps} OK
+                        </Badge>
+                      ) : (
+                        <Badge variant="default">Běží...</Badge>
+                      )}
+                    </div>
+                    {item.documentation_url && (
+                      <p className="text-xs text-muted-foreground truncate">
+                        {item.documentation_url}
+                      </p>
+                    )}
+                    {item.documentation_preview && !item.documentation_url && (
+                      <p className="text-xs text-muted-foreground truncate">
+                        {item.documentation_preview.substring(0, 100)}...
+                      </p>
+                    )}
+                  </div>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => deleteHistoryItem(item.id)}
+                    className="text-destructive hover:text-destructive"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                  </Button>
+                </div>
+              ))}
+            </CollapsibleContent>
+          </Collapsible>
         )}
       </CardContent>
     </Card>
