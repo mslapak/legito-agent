@@ -296,9 +296,9 @@ export default function TaskDetail() {
               </CardDescription>
             </CardHeader>
             <CardContent>
-              {task.steps && task.steps.length > 0 ? (
+              {Array.isArray(task.steps) && task.steps.length > 0 ? (
                 <div className="space-y-4">
-                  {task.steps.map((step: any, index: number) => (
+                  {(task.steps as Array<{ action?: string; type?: string; description?: string; details?: string }>).map((step, index) => (
                     <div key={index} className="flex gap-4 p-4 rounded-lg border border-border">
                       <div className="flex-shrink-0 w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center text-primary font-medium">
                         {index + 1}
