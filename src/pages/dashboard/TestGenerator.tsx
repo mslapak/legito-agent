@@ -174,6 +174,7 @@ export default function TestGenerator() {
           documentation: sourceTab === 'documentation' ? contentToAnalyze : undefined,
           baseUrl,
           testType,
+          projectId: projectId || undefined,
         },
       });
 

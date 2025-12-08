@@ -40,10 +40,31 @@ serve(async (req) => {
       });
     }
 
-    const { description, documentation, baseUrl, testType } = await req.json();
+    const { description, documentation, baseUrl, testType, projectId } = await req.json();
     const hasDocumentation = documentation && documentation.trim().length > 0;
     
-    console.log(`Generating tests - Source: ${hasDocumentation ? 'documentation' : 'description'}, Type: ${testType}`);
+    console.log(`Generating tests - Source: ${hasDocumentation ? 'documentation' : 'description'}, Type: ${testType}, Project: ${projectId || 'none'}`);
+
+    // Fetch project credentials if projectId is provided
+    let credentialsContext = '';
+    if (projectId) {
+      const { data: credentials, error: credError } = await supabase
+        .from('project_credentials')
+        .select('name, username, password, description')
+        .eq('project_id', projectId)
+        .eq('user_id', user.id);
+
+      if (!credError && credentials && credentials.length > 0) {
+        console.log(`Found ${credentials.length} credentials for project`);
+        credentialsContext = '\n\nAVAILABLE LOGIN CREDENTIALS (use these exact values, do NOT use placeholders like @example.com):\n';
+        credentials.forEach((cred, idx) => {
+          credentialsContext += `\n${idx + 1}. ${cred.name}${cred.description ? ` (${cred.description})` : ''}:\n`;
+          credentialsContext += `   - Username/Email: ${cred.username}\n`;
+          credentialsContext += `   - Password: ${cred.password}\n`;
+        });
+        credentialsContext += '\nIMPORTANT: Always use the EXACT credentials provided above in test prompts. Never use placeholder values like test@example.com or "password123".';
+      }
+    }
 
     // Different system prompts based on source
     const systemPromptForDescription = `You are an expert QA engineer specializing in browser automation testing. 
@@ -90,18 +111,22 @@ Output format: Return test cases using the generate_test_cases function.`;
 
 Application URL: ${baseUrl || 'Not specified'}
 Description: ${description}
+${credentialsContext}
 
 Generate 5-10 test cases covering:
 1. Happy path scenarios
 2. Edge cases
 3. Error handling
 4. User experience validation
-5. Data validation (if applicable)`;
+5. Data validation (if applicable)
+
+${credentialsContext ? 'Remember: Use the EXACT credentials provided above in any login/authentication test steps.' : ''}`;
 
     const userPromptForDocumentation = `Analyze the following application documentation and generate comprehensive ${testType || 'functional'} test cases.
 Extract ALL testable scenarios from this documentation.
 
 Application URL: ${baseUrl || 'Not specified'}
+${credentialsContext}
 
 === DOCUMENTATION START ===
 ${documentation}
@@ -115,7 +140,8 @@ Based on the documentation above, generate test cases that verify:
 5. Business rules and logic
 6. Edge cases implied by the documentation
 
-Be thorough - the goal is to have complete test coverage of everything described in the documentation.`;
+Be thorough - the goal is to have complete test coverage of everything described in the documentation.
+${credentialsContext ? 'Remember: Use the EXACT credentials provided above in any login/authentication test steps. Never use placeholder values.' : ''}`;
 
     const userPrompt = hasDocumentation ? userPromptForDocumentation : userPromptForDescription;
 
