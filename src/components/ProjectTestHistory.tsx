@@ -75,10 +75,24 @@ export default function ProjectTestHistory({ projectId, projectName }: ProjectTe
   const runTest = async (test: GeneratedTest) => {
     setRunningTestId(test.id);
     try {
+      // Fetch credentials for this project
+      const { data: credentials } = await supabase
+        .from('project_credentials')
+        .select('username, password')
+        .eq('project_id', projectId)
+        .limit(1)
+        .single();
+
+      // Build prompt with credentials if available
+      let fullPrompt = test.prompt;
+      if (credentials) {
+        fullPrompt = `${test.prompt}\n\nPokud bude potřeba přihlášení, použij tyto údaje:\n- Uživatelské jméno/Email: ${credentials.username}\n- Heslo: ${credentials.password}`;
+      }
+
       const response = await supabase.functions.invoke('browser-use', {
         body: {
           action: 'create_task',
-          prompt: test.prompt,
+          prompt: fullPrompt,
           title: test.title,
           projectId: projectId,
         },

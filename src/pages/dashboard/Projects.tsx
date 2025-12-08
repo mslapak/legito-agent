@@ -46,6 +46,7 @@ import {
   TestTube,
 } from 'lucide-react';
 import ProjectTestHistory from '@/components/ProjectTestHistory';
+import ProjectCredentials from '@/components/ProjectCredentials';
 
 interface Project {
   id: string;
@@ -415,15 +416,21 @@ export default function Projects() {
                 
                 <CollapsibleContent>
                   <CardContent className="pt-0 border-t">
-                    <div className="pt-4">
-                      <h4 className="font-medium mb-4 flex items-center gap-2">
-                        <TestTube className="w-4 h-4 text-primary" />
-                        Historie vygenerovaných testů
-                      </h4>
-                      <ProjectTestHistory 
-                        projectId={project.id} 
-                        projectName={project.name} 
-                      />
+                    <div className="pt-4 space-y-6">
+                      {/* Credentials Section */}
+                      <ProjectCredentials projectId={project.id} />
+                      
+                      {/* Test History Section */}
+                      <div>
+                        <h4 className="font-medium mb-4 flex items-center gap-2">
+                          <TestTube className="w-4 h-4 text-primary" />
+                          Historie vygenerovaných testů
+                        </h4>
+                        <ProjectTestHistory 
+                          projectId={project.id} 
+                          projectName={project.name} 
+                        />
+                      </div>
                     </div>
                   </CardContent>
                 </CollapsibleContent>
