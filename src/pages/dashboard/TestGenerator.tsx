@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/hooks/useAuth';
 import { Button } from '@/components/ui/button';
@@ -6,6 +6,7 @@ import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import {
   Select,
   SelectContent,
@@ -15,7 +16,7 @@ import {
 } from '@/components/ui/select';
 import { Badge } from '@/components/ui/badge';
 import { toast } from 'sonner';
-import { TestTube, Sparkles, Loader2, Play, Save, Trash2 } from 'lucide-react';
+import { TestTube, Sparkles, Loader2, Play, Save, Trash2, FileText, Upload, X } from 'lucide-react';
 
 interface Project {
   id: string;
@@ -33,6 +34,7 @@ interface GeneratedTestCase {
 export default function TestGenerator() {
   const { session } = useAuth();
   const [description, setDescription] = useState('');
+  const [documentation, setDocumentation] = useState('');
   const [baseUrl, setBaseUrl] = useState('');
   const [testType, setTestType] = useState('functional');
   const [projectId, setProjectId] = useState<string>('');
@@ -40,6 +42,9 @@ export default function TestGenerator() {
   const [isLoading, setIsLoading] = useState(false);
   const [generatedTests, setGeneratedTests] = useState<GeneratedTestCase[]>([]);
   const [savingIndex, setSavingIndex] = useState<number | null>(null);
+  const [sourceTab, setSourceTab] = useState<'description' | 'documentation'>('description');
+  const [uploadedFileName, setUploadedFileName] = useState<string>('');
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     fetchProjects();
@@ -64,9 +69,52 @@ export default function TestGenerator() {
     }
   };
 
+  const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    // Check file size (max 1MB for text)
+    if (file.size > 1024 * 1024) {
+      toast.error('Soubor je příliš velký (max 1MB)');
+      return;
+    }
+
+    // Check file type
+    const allowedTypes = ['text/plain', 'text/markdown', 'application/json'];
+    const allowedExtensions = ['.txt', '.md', '.markdown', '.json'];
+    const hasAllowedExtension = allowedExtensions.some(ext => file.name.toLowerCase().endsWith(ext));
+    
+    if (!allowedTypes.includes(file.type) && !hasAllowedExtension) {
+      toast.error('Nepodporovaný formát. Použijte .txt, .md nebo .json');
+      return;
+    }
+
+    try {
+      const text = await file.text();
+      setDocumentation(text);
+      setUploadedFileName(file.name);
+      toast.success(`Soubor "${file.name}" načten`);
+    } catch (error) {
+      console.error('Error reading file:', error);
+      toast.error('Nepodařilo se přečíst soubor');
+    }
+  };
+
+  const clearUploadedFile = () => {
+    setDocumentation('');
+    setUploadedFileName('');
+    if (fileInputRef.current) {
+      fileInputRef.current.value = '';
+    }
+  };
+
   const handleGenerate = async () => {
-    if (!description.trim()) {
-      toast.error('Zadejte popis aplikace nebo funkce');
+    const contentToAnalyze = sourceTab === 'documentation' ? documentation : description;
+    
+    if (!contentToAnalyze.trim()) {
+      toast.error(sourceTab === 'documentation' 
+        ? 'Vložte nebo nahrajte dokumentaci' 
+        : 'Zadejte popis aplikace nebo funkce');
       return;
     }
 
@@ -76,7 +124,8 @@ export default function TestGenerator() {
     try {
       const response = await supabase.functions.invoke('generate-tests', {
         body: {
-          description,
+          description: sourceTab === 'description' ? contentToAnalyze : undefined,
+          documentation: sourceTab === 'documentation' ? contentToAnalyze : undefined,
           baseUrl,
           testType,
         },
@@ -178,7 +227,7 @@ export default function TestGenerator() {
             <div>
               <CardTitle>AI Generátor testů</CardTitle>
               <CardDescription>
-                Popište aplikaci nebo funkci a AI vygeneruje testovací scénáře
+                Vygenerujte testy z popisu aplikace nebo z dokumentace
               </CardDescription>
             </div>
           </div>
@@ -228,16 +277,95 @@ export default function TestGenerator() {
             />
           </div>
 
-          <div className="space-y-2">
-            <Label>Popis aplikace / funkce *</Label>
-            <Textarea
-              placeholder="Popište, co chcete testovat. Např.: E-shop s košíkem, přihlášením uživatelů a platební bránou..."
-              value={description}
-              onChange={(e) => setDescription(e.target.value)}
-              rows={5}
-              className="resize-none"
-            />
-          </div>
+          {/* Source Tabs */}
+          <Tabs value={sourceTab} onValueChange={(v) => setSourceTab(v as 'description' | 'documentation')}>
+            <TabsList className="grid w-full grid-cols-2">
+              <TabsTrigger value="description" className="flex items-center gap-2">
+                <Sparkles className="w-4 h-4" />
+                Popis aplikace
+              </TabsTrigger>
+              <TabsTrigger value="documentation" className="flex items-center gap-2">
+                <FileText className="w-4 h-4" />
+                Dokumentace
+              </TabsTrigger>
+            </TabsList>
+
+            <TabsContent value="description" className="space-y-2 mt-4">
+              <Label>Popis aplikace / funkce *</Label>
+              <Textarea
+                placeholder="Popište, co chcete testovat. Např.: E-shop s košíkem, přihlášením uživatelů a platební bránou..."
+                value={description}
+                onChange={(e) => setDescription(e.target.value)}
+                rows={5}
+                className="resize-none"
+              />
+            </TabsContent>
+
+            <TabsContent value="documentation" className="space-y-4 mt-4">
+              <div className="space-y-2">
+                <Label>Nahrát dokumentaci</Label>
+                <div className="flex items-center gap-3">
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    accept=".txt,.md,.markdown,.json"
+                    onChange={handleFileUpload}
+                    className="hidden"
+                    id="doc-upload"
+                  />
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => fileInputRef.current?.click()}
+                    className="flex items-center gap-2"
+                  >
+                    <Upload className="w-4 h-4" />
+                    Nahrát soubor
+                  </Button>
+                  {uploadedFileName && (
+                    <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                      <FileText className="w-4 h-4" />
+                      <span>{uploadedFileName}</span>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        onClick={clearUploadedFile}
+                        className="h-6 w-6 p-0"
+                      >
+                        <X className="w-4 h-4" />
+                      </Button>
+                    </div>
+                  )}
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  Podporované formáty: .txt, .md, .json (max 1MB)
+                </p>
+              </div>
+
+              <div className="space-y-2">
+                <Label>Nebo vložte dokumentaci přímo *</Label>
+                <Textarea
+                  placeholder={`Vložte obsah dokumentace, návodů nebo specifikace. Např.:
+
+# Přihlášení uživatele
+1. Uživatel otevře stránku /login
+2. Vyplní email a heslo
+3. Klikne na tlačítko "Přihlásit se"
+4. Při správných údajích je přesměrován na dashboard
+5. Při chybných údajích se zobrazí chybová hláška
+
+# Registrace
+1. Uživatel otevře stránku /register
+...`}
+                  value={documentation}
+                  onChange={(e) => setDocumentation(e.target.value)}
+                  rows={10}
+                  className="resize-none font-mono text-sm"
+                />
+              </div>
+            </TabsContent>
+          </Tabs>
 
           <Button 
             onClick={handleGenerate} 

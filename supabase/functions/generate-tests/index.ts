@@ -40,11 +40,14 @@ serve(async (req) => {
       });
     }
 
-    const { description, baseUrl, testType } = await req.json();
-    console.log(`Generating tests for: ${description}, Type: ${testType}`);
+    const { description, documentation, baseUrl, testType } = await req.json();
+    const hasDocumentation = documentation && documentation.trim().length > 0;
+    
+    console.log(`Generating tests - Source: ${hasDocumentation ? 'documentation' : 'description'}, Type: ${testType}`);
 
-    const systemPrompt = `You are an expert QA engineer specializing in browser automation testing. 
-Your task is to generate comprehensive test cases for web applications.
+    // Different system prompts based on source
+    const systemPromptForDescription = `You are an expert QA engineer specializing in browser automation testing. 
+Your task is to generate comprehensive test cases for web applications based on their description.
 Each test case should be a clear, actionable prompt that can be executed by a browser automation agent.
 
 Guidelines:
@@ -54,19 +57,36 @@ Guidelines:
 - Consider user flows and interactions
 - Make each test case independent and atomic
 
-Output format: Return a JSON array of test cases with the following structure:
-{
-  "testCases": [
-    {
-      "title": "Test case title",
-      "prompt": "Detailed instructions for the browser agent",
-      "expectedResult": "What should happen if the test passes",
-      "priority": "high" | "medium" | "low"
-    }
-  ]
-}`;
+Output format: Return test cases using the generate_test_cases function.`;
 
-    const userPrompt = `Generate comprehensive ${testType || 'functional'} test cases for the following application:
+    const systemPromptForDocumentation = `You are an expert QA engineer specializing in browser automation testing.
+Your task is to analyze application documentation/guides/specifications and extract comprehensive test cases.
+Each test case should verify that the application behaves exactly as described in the documentation.
+
+Guidelines:
+- Extract ALL testable scenarios from the documentation
+- Create test cases for each described feature, user flow, and behavior
+- Include positive tests (happy path) as well as negative tests (error handling)
+- Write test cases as natural language instructions for a browser automation agent
+- Be very specific - reference exact elements, buttons, messages mentioned in docs
+- Include validation of expected outcomes as described in the documentation
+- Cover edge cases implied by the documentation
+- If the documentation mentions error messages, create tests to verify them
+- Make each test case independent and atomic
+
+Focus on:
+1. User flows and navigation described in the docs
+2. Form validations and expected error messages
+3. Feature functionality as specified
+4. UI elements and their expected behavior
+5. Business logic and rules mentioned
+6. Integration points described
+
+Output format: Return test cases using the generate_test_cases function.`;
+
+    const systemPrompt = hasDocumentation ? systemPromptForDocumentation : systemPromptForDescription;
+
+    const userPromptForDescription = `Generate comprehensive ${testType || 'functional'} test cases for the following application:
 
 Application URL: ${baseUrl || 'Not specified'}
 Description: ${description}
@@ -77,6 +97,27 @@ Generate 5-10 test cases covering:
 3. Error handling
 4. User experience validation
 5. Data validation (if applicable)`;
+
+    const userPromptForDocumentation = `Analyze the following application documentation and generate comprehensive ${testType || 'functional'} test cases.
+Extract ALL testable scenarios from this documentation.
+
+Application URL: ${baseUrl || 'Not specified'}
+
+=== DOCUMENTATION START ===
+${documentation}
+=== DOCUMENTATION END ===
+
+Based on the documentation above, generate test cases that verify:
+1. Every feature and functionality mentioned
+2. All user flows described step by step
+3. Form validations and expected error messages
+4. UI behavior and element interactions
+5. Business rules and logic
+6. Edge cases implied by the documentation
+
+Be thorough - the goal is to have complete test coverage of everything described in the documentation.`;
+
+    const userPrompt = hasDocumentation ? userPromptForDocumentation : userPromptForDescription;
 
     const response = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
       method: "POST",
@@ -104,10 +145,10 @@ Generate 5-10 test cases covering:
                     items: {
                       type: "object",
                       properties: {
-                        title: { type: "string" },
-                        prompt: { type: "string" },
-                        expectedResult: { type: "string" },
-                        priority: { type: "string", enum: ["low", "medium", "high"] }
+                        title: { type: "string", description: "Short descriptive title for the test case" },
+                        prompt: { type: "string", description: "Detailed step-by-step instructions for the browser automation agent to execute this test" },
+                        expectedResult: { type: "string", description: "What should happen if the test passes - the expected outcome" },
+                        priority: { type: "string", enum: ["low", "medium", "high"], description: "Priority level based on business importance" }
                       },
                       required: ["title", "prompt", "expectedResult", "priority"]
                     }
@@ -141,13 +182,14 @@ Generate 5-10 test cases covering:
     }
 
     const data = await response.json();
-    console.log('AI response:', JSON.stringify(data));
+    console.log('AI response received, processing...');
 
     // Extract test cases from tool call response
     let testCases = [];
     if (data.choices?.[0]?.message?.tool_calls?.[0]?.function?.arguments) {
       const args = JSON.parse(data.choices[0].message.tool_calls[0].function.arguments);
       testCases = args.testCases;
+      console.log(`Generated ${testCases.length} test cases`);
     }
 
     return new Response(JSON.stringify({ testCases }), {
