@@ -102,25 +102,40 @@ export default function TaskDetail() {
     
     setActionLoading(true);
     try {
-      // Get task details and media in parallel
-      const [detailsResponse, mediaResponse] = await Promise.all([
-        supabase.functions.invoke('browser-use', {
-          body: {
-            action: 'get_task_details',
-            taskId: task.browser_use_task_id,
-          },
-        }),
-        supabase.functions.invoke('browser-use', {
-          body: {
-            action: 'get_media',
-            taskId: task.browser_use_task_id,
-          },
-        }),
-      ]);
+      // First get task details
+      const detailsResponse = await supabase.functions.invoke('browser-use', {
+        body: {
+          action: 'get_task_details',
+          taskId: task.browser_use_task_id,
+        },
+      });
 
       if (detailsResponse.error) throw detailsResponse.error;
       
       const browserUseData = detailsResponse.data;
+      
+      // If task is finished, stop the browser to release screenshots
+      if (browserUseData.status === 'finished' && !task.screenshots?.length) {
+        console.log('Task finished, stopping browser to get screenshots...');
+        await supabase.functions.invoke('browser-use', {
+          body: {
+            action: 'stop_task',
+            taskId: task.browser_use_task_id,
+          },
+        });
+        
+        // Wait a moment for browser to close
+        await new Promise(resolve => setTimeout(resolve, 1000));
+      }
+      
+      // Now get media (screenshots)
+      const mediaResponse = await supabase.functions.invoke('browser-use', {
+        body: {
+          action: 'get_media',
+          taskId: task.browser_use_task_id,
+        },
+      });
+      
       const mediaData = mediaResponse.data;
       
       // Extract screenshot URLs from media response
