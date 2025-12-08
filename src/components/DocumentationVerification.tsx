@@ -186,14 +186,17 @@ export default function DocumentationVerification({
 
     try {
       const { data, error } = await supabase.functions.invoke('fetch-documentation', {
-        body: { url: docUrl },
+        body: { url: docUrl, analyzeImages: true },
       });
 
       if (error) throw error;
 
       if (data?.content) {
         setDocumentation(data.content);
-        toast.success(`Dokumentace načtena z URL (${data.content.length} znaků)`);
+        const imagesInfo = data.imagesAnalyzed > 0 
+          ? ` Analyzováno ${data.imagesAnalyzed} obrázků.`
+          : '';
+        toast.success(`Dokumentace načtena z URL (${data.content.length} znaků).${imagesInfo}`);
       } else {
         toast.error('Nepodařilo se načíst obsah z URL');
       }

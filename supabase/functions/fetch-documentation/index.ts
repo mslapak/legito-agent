@@ -6,6 +6,155 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
+// Extract image URLs from HTML
+function extractImageUrls(html: string, baseUrl: string): string[] {
+  const imgRegex = /<img[^>]+src=["']([^"']+)["'][^>]*>/gi;
+  const images: string[] = [];
+  let match;
+  
+  while ((match = imgRegex.exec(html)) !== null) {
+    let src = match[1];
+    
+    // Skip data URLs, icons, logos, and very small images
+    if (src.startsWith('data:') || 
+        src.includes('logo') || 
+        src.includes('icon') ||
+        src.includes('favicon') ||
+        src.includes('avatar')) {
+      continue;
+    }
+    
+    // Convert relative URLs to absolute
+    if (src.startsWith('/')) {
+      const url = new URL(baseUrl);
+      src = `${url.protocol}//${url.host}${src}`;
+    } else if (!src.startsWith('http')) {
+      src = new URL(src, baseUrl).href;
+    }
+    
+    images.push(src);
+  }
+  
+  // Return max 5 images to avoid token limits
+  return images.slice(0, 5);
+}
+
+// Convert image URL to base64
+async function imageToBase64(imageUrl: string): Promise<{ url: string; base64: string; mimeType: string } | null> {
+  try {
+    console.log(`Fetching image: ${imageUrl}`);
+    const response = await fetch(imageUrl, {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+      },
+    });
+    
+    if (!response.ok) {
+      console.log(`Failed to fetch image: ${response.status}`);
+      return null;
+    }
+    
+    const contentType = response.headers.get('content-type') || 'image/jpeg';
+    if (!contentType.startsWith('image/')) {
+      console.log(`Not an image: ${contentType}`);
+      return null;
+    }
+    
+    const arrayBuffer = await response.arrayBuffer();
+    const uint8Array = new Uint8Array(arrayBuffer);
+    
+    // Check minimum size (skip tiny images like 1x1 pixels)
+    if (uint8Array.length < 1000) {
+      console.log(`Image too small: ${uint8Array.length} bytes`);
+      return null;
+    }
+    
+    // Convert to base64
+    let binary = '';
+    for (let i = 0; i < uint8Array.length; i++) {
+      binary += String.fromCharCode(uint8Array[i]);
+    }
+    const base64 = btoa(binary);
+    
+    return {
+      url: imageUrl,
+      base64,
+      mimeType: contentType.split(';')[0],
+    };
+  } catch (error) {
+    console.error(`Error fetching image ${imageUrl}:`, error);
+    return null;
+  }
+}
+
+// Analyze images using Lovable AI (Gemini vision)
+async function analyzeImages(images: { url: string; base64: string; mimeType: string }[]): Promise<string> {
+  const apiKey = Deno.env.get('LOVABLE_API_KEY');
+  if (!apiKey || images.length === 0) {
+    return '';
+  }
+  
+  console.log(`Analyzing ${images.length} images with AI vision...`);
+  
+  try {
+    const imageContents = images.map((img, index) => ({
+      type: "image_url" as const,
+      image_url: {
+        url: `data:${img.mimeType};base64,${img.base64}`,
+      },
+    }));
+    
+    const response = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${apiKey}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        model: 'google/gemini-2.5-flash',
+        messages: [
+          {
+            role: 'system',
+            content: `Jsi expert na analýzu dokumentace aplikací. Analyzuj screenshoty z dokumentace a vytvoř detailní popis toho, co ukazují.
+Pro každý obrázek popiš:
+1. Jaká část aplikace je zobrazena (menu, dialog, formulář, atd.)
+2. Jaké akce jsou vyznačeny (šipky, červená označení, čísla kroků)
+3. Konkrétní kroky, které uživatel má provést
+4. Názvy tlačítek, polí a dalších UI prvků
+
+Piš v češtině. Buď konkrétní a přesný.`,
+          },
+          {
+            role: 'user',
+            content: [
+              {
+                type: 'text',
+                text: `Analyzuj tyto ${images.length} screenshoty z dokumentace aplikace. Popiš co každý ukazuje a jaké kroky dokumentuje:`,
+              },
+              ...imageContents,
+            ],
+          },
+        ],
+      }),
+    });
+    
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error(`AI vision error: ${response.status} - ${errorText}`);
+      return '';
+    }
+    
+    const data = await response.json();
+    const analysis = data.choices?.[0]?.message?.content || '';
+    
+    console.log(`Image analysis complete: ${analysis.length} characters`);
+    return analysis;
+  } catch (error) {
+    console.error('Error analyzing images:', error);
+    return '';
+  }
+}
+
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
@@ -35,7 +184,7 @@ serve(async (req) => {
       });
     }
 
-    const { url } = await req.json();
+    const { url, analyzeImages: shouldAnalyzeImages = true } = await req.json();
 
     if (!url) {
       return new Response(JSON.stringify({ error: 'URL is required' }), {
@@ -44,7 +193,7 @@ serve(async (req) => {
       });
     }
 
-    console.log(`Fetching documentation from: ${url}`);
+    console.log(`Fetching documentation from: ${url}, analyzeImages: ${shouldAnalyzeImages}`);
 
     // Fetch the URL content
     const response = await fetch(url, {
@@ -65,12 +214,33 @@ serve(async (req) => {
 
     const contentType = response.headers.get('content-type') || '';
     let content = '';
+    let imageAnalysis = '';
+    let extractedImages: string[] = [];
 
     if (contentType.includes('text/html')) {
       const html = await response.text();
       
+      // Extract image URLs before cleaning HTML
+      if (shouldAnalyzeImages) {
+        extractedImages = extractImageUrls(html, url);
+        console.log(`Found ${extractedImages.length} images to analyze`);
+        
+        if (extractedImages.length > 0) {
+          // Fetch and convert images to base64
+          const imagePromises = extractedImages.map(imgUrl => imageToBase64(imgUrl));
+          const imageResults = await Promise.all(imagePromises);
+          const validImages = imageResults.filter((img): img is NonNullable<typeof img> => img !== null);
+          
+          console.log(`Successfully fetched ${validImages.length} images`);
+          
+          // Analyze images with AI vision
+          if (validImages.length > 0) {
+            imageAnalysis = await analyzeImages(validImages);
+          }
+        }
+      }
+      
       // Extract text content from HTML
-      // Remove script and style tags
       let text = html
         .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, '')
         .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, '')
@@ -119,14 +289,23 @@ serve(async (req) => {
       });
     }
 
-    // Limit content length
-    if (content.length > 50000) {
-      content = content.substring(0, 50000) + '\n\n... (text zkrácen)';
+    // Combine text content with image analysis
+    if (imageAnalysis) {
+      content = `${content}\n\n---\n\n## Analýza obrázků z dokumentace\n\n${imageAnalysis}`;
     }
 
-    console.log(`Extracted ${content.length} characters from URL`);
+    // Limit content length
+    if (content.length > 80000) {
+      content = content.substring(0, 80000) + '\n\n... (text zkrácen)';
+    }
 
-    return new Response(JSON.stringify({ content }), {
+    console.log(`Extracted ${content.length} characters from URL (including ${imageAnalysis ? 'image analysis' : 'no images'})`);
+
+    return new Response(JSON.stringify({ 
+      content,
+      imagesAnalyzed: extractedImages.length,
+      hasImageAnalysis: !!imageAnalysis,
+    }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });
 
