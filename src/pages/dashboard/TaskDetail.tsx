@@ -117,18 +117,12 @@ export default function TaskDetail() {
       
       const browserUseData = detailsResponse.data;
       
-      // If task is finished, stop the browser to release screenshots
-      if (browserUseData.status === 'finished' && !task.screenshots?.length) {
-        console.log('Task finished, stopping browser to get screenshots...');
-        await supabase.functions.invoke('browser-use', {
-          body: {
-            action: 'stop_task',
-            taskId: task.browser_use_task_id,
-          },
-        });
-        
-        // Wait a moment for browser to close
-        await new Promise(resolve => setTimeout(resolve, 1000));
+      // Update live_url if available and task is running
+      if (browserUseData.live_url && browserUseData.status === 'running' && !task.live_url) {
+        await supabase
+          .from('tasks')
+          .update({ live_url: browserUseData.live_url })
+          .eq('id', task.id);
       }
       
       // Now get media (screenshots)
