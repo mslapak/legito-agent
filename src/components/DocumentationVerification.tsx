@@ -26,11 +26,18 @@ import {
   ChevronDown,
   ChevronRight,
 } from 'lucide-react';
-import * as pdfjsLib from 'pdfjs-dist';
 import { format } from 'date-fns';
 
-// Set up PDF.js worker
-pdfjsLib.GlobalWorkerOptions.workerSrc = `//cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.js`;
+// PDF.js will be loaded dynamically to avoid module resolution issues
+let pdfjsLib: typeof import('pdfjs-dist') | null = null;
+
+const loadPdfJs = async () => {
+  if (!pdfjsLib) {
+    pdfjsLib = await import('pdfjs-dist');
+    pdfjsLib.GlobalWorkerOptions.workerSrc = `//cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.js`;
+  }
+  return pdfjsLib;
+};
 
 interface VerificationStep {
   id: string;
@@ -97,8 +104,9 @@ export default function DocumentationVerification({
   };
 
   const extractTextFromPdf = async (file: File): Promise<string> => {
+    const pdfjs = await loadPdfJs();
     const arrayBuffer = await file.arrayBuffer();
-    const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+    const pdf = await pdfjs.getDocument({ data: arrayBuffer }).promise;
     let fullText = '';
 
     for (let i = 1; i <= pdf.numPages; i++) {
