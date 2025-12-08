@@ -119,22 +119,21 @@ export default function TaskDetail() {
       
       const browserUseData = detailsResponse.data;
       
-      // Now get media (screenshots)
-      const mediaResponse = await supabase.functions.invoke('browser-use', {
+      // Get screenshots using the dedicated endpoint
+      const screenshotResponse = await supabase.functions.invoke('browser-use', {
         body: {
-          action: 'get_media',
+          action: 'get_screenshots',
           taskId: task.browser_use_task_id,
         },
       });
       
-      const mediaData = mediaResponse.data;
+      const screenshotData = screenshotResponse.data;
+      console.log('Screenshot data:', screenshotData);
       
-      // Extract screenshot URLs from media response
+      // Screenshots are returned as array of URLs directly
       let screenshots: string[] = [];
-      if (mediaData && Array.isArray(mediaData.screenshots)) {
-        screenshots = mediaData.screenshots.map((s: { url?: string }) => s.url).filter(Boolean);
-      } else if (mediaData && mediaData.screenshot_url) {
-        screenshots = [mediaData.screenshot_url];
+      if (screenshotData && Array.isArray(screenshotData.screenshots)) {
+        screenshots = screenshotData.screenshots;
       }
       
       const newStatus = browserUseData.status === 'finished' ? 'completed' :
