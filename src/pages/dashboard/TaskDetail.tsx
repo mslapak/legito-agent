@@ -377,18 +377,14 @@ export default function TaskDetail() {
         </div>
       </div>
 
-      {/* Live Browser View with Human-in-the-Loop */}
-      {task.live_url && (
+      {/* Live Browser View with Human-in-the-Loop - only show for running tasks */}
+      {task.live_url && task.status === 'running' && (
         <Card>
           <CardHeader className="flex flex-row items-center justify-between pb-2">
             <div className="flex items-center gap-2">
               <Monitor className="h-5 w-5 text-primary" />
-              <CardTitle className="text-lg">
-                {task.status === 'running' ? 'Živý náhled prohlížeče' : 'Náhled prohlížeče'}
-              </CardTitle>
-              {task.status === 'running' && (
-                <Badge className="bg-success text-success-foreground animate-pulse">LIVE</Badge>
-              )}
+              <CardTitle className="text-lg">Živý náhled prohlížeče</CardTitle>
+              <Badge className="bg-success text-success-foreground animate-pulse">LIVE</Badge>
             </div>
             <Button variant="outline" size="sm" asChild>
               <a href={task.live_url} target="_blank" rel="noopener noreferrer">
@@ -408,31 +404,29 @@ export default function TaskDetail() {
             </div>
             
             {/* Human-in-the-Loop Input */}
-            {task.status === 'running' && (
-              <div className="flex gap-2">
-                <Input
-                  placeholder="Zadejte další pokyn pro agenta..."
-                  value={followUpPrompt}
-                  onChange={(e) => setFollowUpPrompt(e.target.value)}
-                  onKeyDown={(e) => e.key === 'Enter' && !sendingFollowUp && sendFollowUpPrompt()}
-                  disabled={sendingFollowUp}
-                  className="flex-1"
-                />
-                <Button 
-                  onClick={sendFollowUpPrompt} 
-                  disabled={sendingFollowUp || !followUpPrompt.trim()}
-                >
-                  {sendingFollowUp ? (
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                  ) : (
-                    <>
-                      <Send className="h-4 w-4 mr-2" />
-                      Pokračovat
-                    </>
-                  )}
-                </Button>
-              </div>
-            )}
+            <div className="flex gap-2">
+              <Input
+                placeholder="Zadejte další pokyn pro agenta..."
+                value={followUpPrompt}
+                onChange={(e) => setFollowUpPrompt(e.target.value)}
+                onKeyDown={(e) => e.key === 'Enter' && !sendingFollowUp && sendFollowUpPrompt()}
+                disabled={sendingFollowUp}
+                className="flex-1"
+              />
+              <Button 
+                onClick={sendFollowUpPrompt} 
+                disabled={sendingFollowUp || !followUpPrompt.trim()}
+              >
+                {sendingFollowUp ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <>
+                    <Send className="h-4 w-4 mr-2" />
+                    Pokračovat
+                  </>
+                )}
+              </Button>
+            </div>
           </CardContent>
         </Card>
       )}
