@@ -399,6 +399,31 @@ export default function TestGenerator() {
                 </p>
               </div>
 
+              {/* Preview of extracted text */}
+              {uploadedFileName && documentation && (
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <Label className="flex items-center gap-2">
+                      <FileText className="w-4 h-4 text-primary" />
+                      Náhled extrahovaného textu
+                    </Label>
+                    <Badge variant="secondary">{documentation.length.toLocaleString()} znaků</Badge>
+                  </div>
+                  <div className="relative">
+                    <div className="max-h-48 overflow-y-auto rounded-lg border border-border bg-muted/30 p-4">
+                      <pre className="text-xs text-muted-foreground whitespace-pre-wrap font-mono">
+                        {documentation.length > 2000 
+                          ? documentation.substring(0, 2000) + '\n\n... (zkráceno pro náhled)' 
+                          : documentation}
+                      </pre>
+                    </div>
+                    {documentation.length > 2000 && (
+                      <div className="absolute bottom-0 left-0 right-0 h-8 bg-gradient-to-t from-muted/80 to-transparent pointer-events-none rounded-b-lg" />
+                    )}
+                  </div>
+                </div>
+              )}
+
               <div className="space-y-2">
                 <Label>Nebo vložte dokumentaci přímo *</Label>
                 <Textarea
