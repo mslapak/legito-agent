@@ -205,7 +205,7 @@ serve(async (req) => {
       }
 
       case 'get_media': {
-        // Get screenshots/recordings
+        // Get recordings/videos
         console.log(`Fetching media for task: ${taskId}`);
         const browserUseResponse = await fetch(`${BROWSER_USE_API_URL}/task/${taskId}/media`, {
           method: 'GET',
@@ -217,7 +217,6 @@ serve(async (req) => {
         if (!browserUseResponse.ok) {
           const errorText = await browserUseResponse.text();
           console.error(`Media fetch error: ${browserUseResponse.status}, ${errorText}`);
-          // Return empty instead of throwing - media might not be available yet
           return new Response(JSON.stringify({ screenshots: [], recordings: [] }), {
             headers: { ...corsHeaders, 'Content-Type': 'application/json' },
           });
@@ -226,6 +225,31 @@ serve(async (req) => {
         const mediaData = await browserUseResponse.json();
         console.log(`Media fetched:`, JSON.stringify(mediaData));
         return new Response(JSON.stringify(mediaData), {
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+
+      case 'get_screenshots': {
+        // Get screenshots - separate endpoint
+        console.log(`Fetching screenshots for task: ${taskId}`);
+        const browserUseResponse = await fetch(`${BROWSER_USE_API_URL}/task/${taskId}/screenshots`, {
+          method: 'GET',
+          headers: {
+            'Authorization': `Bearer ${BROWSER_USE_API_KEY}`,
+          },
+        });
+
+        if (!browserUseResponse.ok) {
+          const errorText = await browserUseResponse.text();
+          console.error(`Screenshots fetch error: ${browserUseResponse.status}, ${errorText}`);
+          return new Response(JSON.stringify({ screenshots: [] }), {
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          });
+        }
+
+        const screenshotData = await browserUseResponse.json();
+        console.log(`Screenshots fetched:`, JSON.stringify(screenshotData));
+        return new Response(JSON.stringify(screenshotData), {
           headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         });
       }
