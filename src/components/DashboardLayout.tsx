@@ -34,6 +34,7 @@ import {
   Moon,
   Sun,
   LayoutDashboard,
+  FileCheck,
 } from 'lucide-react';
 
 const menuItems = [
@@ -41,6 +42,7 @@ const menuItems = [
   { title: 'Nový úkol', url: '/dashboard/new-task', icon: Play },
   { title: 'Historie', url: '/dashboard/history', icon: History },
   { title: 'Generátor testů', url: '/dashboard/test-generator', icon: TestTube },
+  { title: 'Ověření dokumentace', url: '/dashboard/doc-verify', icon: FileCheck },
   { title: 'Projekty', url: '/dashboard/projects', icon: FolderOpen },
 ];
 

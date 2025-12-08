@@ -13,6 +13,7 @@ import TaskHistory from "./pages/dashboard/TaskHistory";
 import TaskDetail from "./pages/dashboard/TaskDetail";
 import TestGenerator from "./pages/dashboard/TestGenerator";
 import Projects from "./pages/dashboard/Projects";
+import DocumentationVerify from "./pages/dashboard/DocumentationVerify";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -33,6 +34,7 @@ const App = () => (
               <Route path="history" element={<TaskHistory />} />
               <Route path="task/:taskId" element={<TaskDetail />} />
               <Route path="test-generator" element={<TestGenerator />} />
+              <Route path="doc-verify" element={<DocumentationVerify />} />
               <Route path="projects" element={<Projects />} />
             </Route>
             <Route path="*" element={<NotFound />} />
