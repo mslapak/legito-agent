@@ -47,9 +47,20 @@ export default function TaskDetail() {
   useEffect(() => {
     if (taskId) {
       fetchTask();
-      subscribeToTask();
+      const unsubscribe = subscribeToTask();
+      return unsubscribe;
     }
   }, [taskId]);
+
+  // Auto-refresh for running tasks
+  useEffect(() => {
+    if (task?.status === 'running' && task?.browser_use_task_id) {
+      const interval = setInterval(() => {
+        refreshStatus();
+      }, 10000); // Refresh every 10 seconds
+      return () => clearInterval(interval);
+    }
+  }, [task?.status, task?.browser_use_task_id]);
 
   const fetchTask = async () => {
     try {
@@ -91,17 +102,34 @@ export default function TaskDetail() {
     
     setActionLoading(true);
     try {
-      const response = await supabase.functions.invoke('browser-use', {
-        body: {
-          action: 'get_task_details',
-          taskId: task.browser_use_task_id,
-        },
-      });
+      // Get task details and media in parallel
+      const [detailsResponse, mediaResponse] = await Promise.all([
+        supabase.functions.invoke('browser-use', {
+          body: {
+            action: 'get_task_details',
+            taskId: task.browser_use_task_id,
+          },
+        }),
+        supabase.functions.invoke('browser-use', {
+          body: {
+            action: 'get_media',
+            taskId: task.browser_use_task_id,
+          },
+        }),
+      ]);
 
-      if (response.error) throw response.error;
+      if (detailsResponse.error) throw detailsResponse.error;
       
-      // Update local state and database
-      const browserUseData = response.data;
+      const browserUseData = detailsResponse.data;
+      const mediaData = mediaResponse.data;
+      
+      // Extract screenshot URLs from media response
+      let screenshots: string[] = [];
+      if (mediaData && Array.isArray(mediaData.screenshots)) {
+        screenshots = mediaData.screenshots.map((s: { url?: string }) => s.url).filter(Boolean);
+      } else if (mediaData && mediaData.screenshot_url) {
+        screenshots = [mediaData.screenshot_url];
+      }
       
       const newStatus = browserUseData.status === 'finished' ? 'completed' :
                     browserUseData.status === 'failed' ? 'failed' :
@@ -113,6 +141,7 @@ export default function TaskDetail() {
           status: newStatus as 'pending' | 'running' | 'completed' | 'failed' | 'cancelled',
           result: browserUseData.output,
           steps: browserUseData.steps,
+          screenshots: screenshots.length > 0 ? screenshots : task.screenshots,
           completed_at: browserUseData.status === 'finished' || browserUseData.status === 'failed' 
             ? new Date().toISOString() 
             : null,
@@ -298,16 +327,43 @@ export default function TaskDetail() {
             <CardContent>
               {Array.isArray(task.steps) && task.steps.length > 0 ? (
                 <div className="space-y-4">
-                  {(task.steps as Array<{ action?: string; type?: string; description?: string; details?: string }>).map((step, index) => (
+                  {(task.steps as Array<{ 
+                    step?: number; 
+                    url?: string; 
+                    next_goal?: string; 
+                    evaluation_previous_goal?: string;
+                    action?: string; 
+                    type?: string; 
+                    description?: string; 
+                    details?: string 
+                  }>).map((step, index) => (
                     <div key={index} className="flex gap-4 p-4 rounded-lg border border-border">
                       <div className="flex-shrink-0 w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center text-primary font-medium">
-                        {index + 1}
+                        {step.step ?? index + 1}
                       </div>
-                      <div className="flex-1">
-                        <p className="font-medium">{step.action || step.type || 'Krok'}</p>
-                        <p className="text-sm text-muted-foreground mt-1">
-                          {step.description || step.details || JSON.stringify(step)}
-                        </p>
+                      <div className="flex-1 space-y-2">
+                        {step.url && (
+                          <p className="text-xs text-muted-foreground font-mono truncate">
+                            {step.url}
+                          </p>
+                        )}
+                        {step.next_goal && (
+                          <div>
+                            <span className="text-xs font-semibold text-primary">Další cíl:</span>
+                            <p className="text-sm">{step.next_goal}</p>
+                          </div>
+                        )}
+                        {step.evaluation_previous_goal && (
+                          <div>
+                            <span className="text-xs font-semibold text-muted-foreground">Hodnocení:</span>
+                            <p className="text-sm text-muted-foreground">{step.evaluation_previous_goal}</p>
+                          </div>
+                        )}
+                        {!step.next_goal && !step.evaluation_previous_goal && (
+                          <p className="text-sm text-muted-foreground">
+                            {step.action || step.type || step.description || step.details || JSON.stringify(step)}
+                          </p>
+                        )}
                       </div>
                     </div>
                   ))}
