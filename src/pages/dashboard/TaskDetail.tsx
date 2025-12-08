@@ -5,6 +5,7 @@ import { useAuth } from '@/hooks/useAuth';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { toast } from 'sonner';
 import {
@@ -21,6 +22,9 @@ import {
   RefreshCw,
   Monitor,
   ExternalLink,
+  Video,
+  Send,
+  Download,
 } from 'lucide-react';
 
 interface Task {
@@ -32,6 +36,7 @@ interface Task {
   result: unknown;
   error_message: string | null;
   screenshots: string[] | null;
+  recordings: string[] | null;
   steps: unknown;
   started_at: string | null;
   completed_at: string | null;
@@ -46,6 +51,8 @@ export default function TaskDetail() {
   const [task, setTask] = useState<Task | null>(null);
   const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState(false);
+  const [followUpPrompt, setFollowUpPrompt] = useState('');
+  const [sendingFollowUp, setSendingFollowUp] = useState(false);
 
   useEffect(() => {
     if (taskId) {
@@ -119,22 +126,19 @@ export default function TaskDetail() {
       
       const browserUseData = detailsResponse.data;
       
-      // Get screenshots using the dedicated endpoint
-      const screenshotResponse = await supabase.functions.invoke('browser-use', {
+      // Get all media (screenshots + recordings)
+      const mediaResponse = await supabase.functions.invoke('browser-use', {
         body: {
-          action: 'get_screenshots',
+          action: 'get_all_media',
           taskId: task.browser_use_task_id,
         },
       });
       
-      const screenshotData = screenshotResponse.data;
-      console.log('Screenshot data:', screenshotData);
+      const mediaData = mediaResponse.data;
+      console.log('Media data:', mediaData);
       
-      // Screenshots are returned as array of URLs directly
-      let screenshots: string[] = [];
-      if (screenshotData && Array.isArray(screenshotData.screenshots)) {
-        screenshots = screenshotData.screenshots;
-      }
+      const screenshots = mediaData?.screenshots || [];
+      const recordings = mediaData?.recordings || [];
       
       const newStatus = browserUseData.status === 'finished' ? 'completed' :
                     browserUseData.status === 'failed' ? 'failed' :
@@ -148,6 +152,7 @@ export default function TaskDetail() {
           result: browserUseData.output,
           steps: browserUseData.steps,
           screenshots: screenshots.length > 0 ? screenshots : task.screenshots,
+          recordings: recordings.length > 0 ? recordings : task.recordings,
           live_url: browserUseData.live_url || task.live_url,
           completed_at: browserUseData.status === 'finished' || browserUseData.status === 'failed' 
             ? new Date().toISOString() 
@@ -189,7 +194,35 @@ export default function TaskDetail() {
     }
   };
 
-  const stopAndDownloadScreenshots = async () => {
+  const sendFollowUpPrompt = async () => {
+    if (!task?.browser_use_task_id || !followUpPrompt.trim()) return;
+    
+    setSendingFollowUp(true);
+    try {
+      const response = await supabase.functions.invoke('browser-use', {
+        body: {
+          action: 'continue_task',
+          taskId: task.browser_use_task_id,
+          followUpPrompt: followUpPrompt.trim(),
+        },
+      });
+
+      if (response.error) throw response.error;
+      
+      toast.success('Pokyn odeslán');
+      setFollowUpPrompt('');
+      
+      // Refresh task status
+      setTimeout(() => refreshStatus(), 1000);
+    } catch (error) {
+      console.error('Error sending follow-up:', error);
+      toast.error('Nepodařilo se odeslat pokyn');
+    } finally {
+      setSendingFollowUp(false);
+    }
+  };
+
+  const stopAndDownloadMedia = async () => {
     if (!task?.browser_use_task_id) return;
     
     setActionLoading(true);
@@ -212,23 +245,21 @@ export default function TaskDetail() {
         await new Promise(resolve => setTimeout(resolve, 2000));
       }
       
-      toast.info('Stahuji screenshoty...');
+      toast.info('Stahuji média...');
       
-      // Fetch screenshots
-      const screenshotResponse = await supabase.functions.invoke('browser-use', {
+      // Fetch all media
+      const mediaResponse = await supabase.functions.invoke('browser-use', {
         body: {
-          action: 'get_screenshots',
+          action: 'get_all_media',
           taskId: task.browser_use_task_id,
         },
       });
       
-      const screenshotData = screenshotResponse.data;
-      console.log('Screenshot data after stop:', screenshotData);
+      const mediaData = mediaResponse.data;
+      console.log('Media data after stop:', mediaData);
       
-      let screenshots: string[] = [];
-      if (screenshotData && Array.isArray(screenshotData.screenshots)) {
-        screenshots = screenshotData.screenshots;
-      }
+      const screenshots = mediaData?.screenshots || [];
+      const recordings = mediaData?.recordings || [];
       
       // Update task in database
       await supabase
@@ -236,20 +267,22 @@ export default function TaskDetail() {
         .update({
           status: 'completed' as const,
           screenshots: screenshots.length > 0 ? screenshots : task.screenshots,
+          recordings: recordings.length > 0 ? recordings : task.recordings,
           completed_at: new Date().toISOString(),
         })
         .eq('id', task.id);
       
-      if (screenshots.length > 0) {
-        toast.success(`Staženo ${screenshots.length} screenshotů`);
+      const totalMedia = screenshots.length + recordings.length;
+      if (totalMedia > 0) {
+        toast.success(`Staženo ${screenshots.length} screenshotů a ${recordings.length} videí`);
       } else {
-        toast.warning('Žádné screenshoty nebyly nalezeny');
+        toast.warning('Žádná média nebyla nalezena');
       }
       
       fetchTask();
     } catch (error) {
       console.error('Error stopping and downloading:', error);
-      toast.error('Nepodařilo se stáhnout screenshoty');
+      toast.error('Nepodařilo se stáhnout média');
     } finally {
       setActionLoading(false);
     }
@@ -291,6 +324,9 @@ export default function TaskDetail() {
     );
   }
 
+  const screenshotCount = task.screenshots?.length || 0;
+  const recordingCount = task.recordings?.length || 0;
+
   return (
     <div className="space-y-6 animate-fade-in">
       {/* Header */}
@@ -322,26 +358,26 @@ export default function TaskDetail() {
               </Button>
               <Button 
                 variant="default" 
-                onClick={stopAndDownloadScreenshots} 
+                onClick={stopAndDownloadMedia} 
                 disabled={actionLoading}
                 className="bg-primary"
               >
-                <ImageIcon className="h-4 w-4 mr-2" />
+                <Download className="h-4 w-4 mr-2" />
                 Ukončit a stáhnout
               </Button>
             </>
           )}
           
           {task.status !== 'running' && task.status !== 'completed' && task.browser_use_task_id && (
-            <Button variant="outline" onClick={stopAndDownloadScreenshots} disabled={actionLoading}>
-              <ImageIcon className="h-4 w-4 mr-2" />
-              Stáhnout screenshoty
+            <Button variant="outline" onClick={stopAndDownloadMedia} disabled={actionLoading}>
+              <Download className="h-4 w-4 mr-2" />
+              Stáhnout média
             </Button>
           )}
         </div>
       </div>
 
-      {/* Live Browser View */}
+      {/* Live Browser View with Human-in-the-Loop */}
       {task.live_url && (
         <Card>
           <CardHeader className="flex flex-row items-center justify-between pb-2">
@@ -361,7 +397,7 @@ export default function TaskDetail() {
               </a>
             </Button>
           </CardHeader>
-          <CardContent>
+          <CardContent className="space-y-4">
             <div className="relative w-full aspect-video rounded-lg overflow-hidden border border-border bg-muted">
               <iframe
                 src={task.live_url}
@@ -370,6 +406,33 @@ export default function TaskDetail() {
                 allowFullScreen
               />
             </div>
+            
+            {/* Human-in-the-Loop Input */}
+            {task.status === 'running' && (
+              <div className="flex gap-2">
+                <Input
+                  placeholder="Zadejte další pokyn pro agenta..."
+                  value={followUpPrompt}
+                  onChange={(e) => setFollowUpPrompt(e.target.value)}
+                  onKeyDown={(e) => e.key === 'Enter' && !sendingFollowUp && sendFollowUpPrompt()}
+                  disabled={sendingFollowUp}
+                  className="flex-1"
+                />
+                <Button 
+                  onClick={sendFollowUpPrompt} 
+                  disabled={sendingFollowUp || !followUpPrompt.trim()}
+                >
+                  {sendingFollowUp ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <>
+                      <Send className="h-4 w-4 mr-2" />
+                      Pokračovat
+                    </>
+                  )}
+                </Button>
+              </div>
+            )}
           </CardContent>
         </Card>
       )}
@@ -379,7 +442,12 @@ export default function TaskDetail() {
         <TabsList>
           <TabsTrigger value="overview">Přehled</TabsTrigger>
           <TabsTrigger value="steps">Kroky</TabsTrigger>
-          <TabsTrigger value="screenshots">Screenshoty</TabsTrigger>
+          <TabsTrigger value="screenshots">
+            Screenshoty {screenshotCount > 0 && <Badge variant="secondary" className="ml-2">{screenshotCount}</Badge>}
+          </TabsTrigger>
+          <TabsTrigger value="recordings">
+            Videa {recordingCount > 0 && <Badge variant="secondary" className="ml-2">{recordingCount}</Badge>}
+          </TabsTrigger>
           <TabsTrigger value="result">Výsledek</TabsTrigger>
         </TabsList>
 
@@ -521,6 +589,49 @@ export default function TaskDetail() {
                 <div className="text-center py-8 text-muted-foreground">
                   <ImageIcon className="w-12 h-12 mx-auto mb-4 opacity-50" />
                   <p>Žádné screenshoty</p>
+                  <p className="text-sm mt-2">Screenshoty jsou dostupné po ukončení browser session</p>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="recordings">
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-lg flex items-center gap-2">
+                <Video className="h-5 w-5" />
+                Videa
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              {task.recordings && task.recordings.length > 0 ? (
+                <div className="grid gap-4 md:grid-cols-2">
+                  {task.recordings.map((url, index) => (
+                    <div key={index} className="rounded-lg border border-border overflow-hidden">
+                      <video
+                        src={url}
+                        controls
+                        className="w-full"
+                        preload="metadata"
+                      />
+                      <div className="p-2 bg-muted flex justify-between items-center">
+                        <span className="text-sm text-muted-foreground">Video {index + 1}</span>
+                        <Button variant="ghost" size="sm" asChild>
+                          <a href={url} target="_blank" rel="noopener noreferrer" download>
+                            <Download className="h-4 w-4 mr-2" />
+                            Stáhnout
+                          </a>
+                        </Button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="text-center py-8 text-muted-foreground">
+                  <Video className="w-12 h-12 mx-auto mb-4 opacity-50" />
+                  <p>Žádná videa</p>
+                  <p className="text-sm mt-2">Videa jsou dostupná po ukončení browser session</p>
                 </div>
               )}
             </CardContent>

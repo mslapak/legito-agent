@@ -85,6 +85,7 @@ export type Database = {
           priority: Database["public"]["Enums"]["task_priority"]
           project_id: string | null
           prompt: string
+          recordings: string[] | null
           result: Json | null
           screenshots: string[] | null
           started_at: string | null
@@ -104,6 +105,7 @@ export type Database = {
           priority?: Database["public"]["Enums"]["task_priority"]
           project_id?: string | null
           prompt: string
+          recordings?: string[] | null
           result?: Json | null
           screenshots?: string[] | null
           started_at?: string | null
@@ -123,6 +125,7 @@ export type Database = {
           priority?: Database["public"]["Enums"]["task_priority"]
           project_id?: string | null
           prompt?: string
+          recordings?: string[] | null
           result?: Json | null
           screenshots?: string[] | null
           started_at?: string | null

@@ -7,6 +7,7 @@ import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Checkbox } from '@/components/ui/checkbox';
 import {
   Select,
   SelectContent,
@@ -31,6 +32,7 @@ export default function NewTask() {
   const [projects, setProjects] = useState<Project[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [loadingProjects, setLoadingProjects] = useState(true);
+  const [keepBrowserOpen, setKeepBrowserOpen] = useState(false);
 
   useEffect(() => {
     fetchProjects();
@@ -68,6 +70,7 @@ export default function NewTask() {
           prompt: prompt,
           title: title || prompt.substring(0, 50),
           projectId: projectId || null,
+          keepBrowserOpen: keepBrowserOpen,
         },
       });
 
@@ -152,6 +155,24 @@ export default function NewTask() {
               <p className="text-sm text-muted-foreground">
                 Popište úkol přirozeným jazykem. Agent automaticky naviguje prohlížeč a provede požadované akce.
               </p>
+            </div>
+
+            {/* Keep browser open checkbox */}
+            <div className="flex items-center space-x-3 p-4 rounded-lg border border-border bg-muted/30">
+              <Checkbox
+                id="keepBrowserOpen"
+                checked={keepBrowserOpen}
+                onCheckedChange={(checked) => setKeepBrowserOpen(checked === true)}
+                disabled={isLoading}
+              />
+              <div className="flex-1">
+                <Label htmlFor="keepBrowserOpen" className="font-medium cursor-pointer">
+                  Nechat prohlížeč otevřený po dokončení
+                </Label>
+                <p className="text-sm text-muted-foreground mt-1">
+                  Umožní pokračovat v interakci s prohlížečem pomocí dalších promptů
+                </p>
+              </div>
             </div>
 
             {/* Example prompts */}
