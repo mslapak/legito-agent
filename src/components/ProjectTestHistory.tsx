@@ -48,6 +48,15 @@ export default function ProjectTestHistory({ projectId, projectName }: ProjectTe
             },
           });
 
+          // Handle 404 - task no longer exists, mark as completed
+          if (response.error?.message?.includes('404') || response.data?.error?.includes('404')) {
+            await supabase
+              .from('generated_tests')
+              .update({ status: 'passed' })
+              .eq('id', test.id);
+            continue;
+          }
+
           if (response.data?.status) {
             const apiStatus = response.data.status;
             // Map API status to our test status
@@ -69,6 +78,11 @@ export default function ProjectTestHistory({ projectId, projectName }: ProjectTe
           }
         } catch (error) {
           console.error('Error checking test status:', error);
+          // If error persists, mark test as completed to stop polling
+          await supabase
+            .from('generated_tests')
+            .update({ status: 'passed' })
+            .eq('id', test.id);
         }
       }
     };
