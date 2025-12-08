@@ -183,6 +183,35 @@ export default function TestGenerator() {
 
       if (response.data?.testCases) {
         setGeneratedTests(response.data.testCases);
+        
+        // If project is selected, save tests to database
+        if (projectId) {
+          const { data: { user } } = await supabase.auth.getUser();
+          if (user) {
+            const testsToInsert = response.data.testCases.map((tc: GeneratedTestCase) => ({
+              user_id: user.id,
+              project_id: projectId,
+              title: tc.title,
+              prompt: tc.prompt,
+              expected_result: tc.expectedResult,
+              priority: tc.priority,
+              status: 'pending',
+              source_type: sourceTab,
+            }));
+
+            const { error: insertError } = await supabase
+              .from('generated_tests')
+              .insert(testsToInsert);
+
+            if (insertError) {
+              console.error('Error saving tests to DB:', insertError);
+            } else {
+              toast.success(`Vygenerováno a uloženo ${response.data.testCases.length} testů do projektu`);
+              return;
+            }
+          }
+        }
+        
         toast.success(`Vygenerováno ${response.data.testCases.length} testů`);
       } else {
         toast.error('Nepodařilo se vygenerovat testy');
