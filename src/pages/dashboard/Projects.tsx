@@ -47,6 +47,7 @@ import {
 } from 'lucide-react';
 import ProjectTestHistory from '@/components/ProjectTestHistory';
 import ProjectCredentials from '@/components/ProjectCredentials';
+import DocumentationVerification from '@/components/DocumentationVerification';
 
 interface Project {
   id: string;
@@ -419,6 +420,13 @@ export default function Projects() {
                     <div className="pt-4 space-y-6">
                       {/* Credentials Section */}
                       <ProjectCredentials projectId={project.id} />
+                      
+                      {/* Documentation Verification Section */}
+                      <DocumentationVerification
+                        projectId={project.id}
+                        projectName={project.name}
+                        baseUrl={project.base_url}
+                      />
                       
                       {/* Test History Section */}
                       <div>
