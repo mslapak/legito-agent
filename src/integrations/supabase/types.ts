@@ -14,6 +14,66 @@ export type Database = {
   }
   public: {
     Tables: {
+      generated_tests: {
+        Row: {
+          created_at: string
+          expected_result: string | null
+          id: string
+          priority: string
+          project_id: string | null
+          prompt: string
+          source_type: string | null
+          status: string
+          task_id: string | null
+          title: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          expected_result?: string | null
+          id?: string
+          priority?: string
+          project_id?: string | null
+          prompt: string
+          source_type?: string | null
+          status?: string
+          task_id?: string | null
+          title: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          expected_result?: string | null
+          id?: string
+          priority?: string
+          project_id?: string | null
+          prompt?: string
+          source_type?: string | null
+          status?: string
+          task_id?: string | null
+          title?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "generated_tests_project_id_fkey"
+            columns: ["project_id"]
+            isOneToOne: false
+            referencedRelation: "projects"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "generated_tests_task_id_fkey"
+            columns: ["task_id"]
+            isOneToOne: false
+            referencedRelation: "tasks"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       profiles: {
         Row: {
           avatar_url: string | null

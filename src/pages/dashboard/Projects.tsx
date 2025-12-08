@@ -26,6 +26,12 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from '@/components/ui/alert-dialog';
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from '@/components/ui/collapsible';
+import { Badge } from '@/components/ui/badge';
 import { toast } from 'sonner';
 import {
   FolderOpen,
@@ -36,7 +42,10 @@ import {
   Trash2,
   Globe,
   Calendar,
+  ChevronDown,
+  TestTube,
 } from 'lucide-react';
+import ProjectTestHistory from '@/components/ProjectTestHistory';
 
 interface Project {
   id: string;
@@ -47,12 +56,17 @@ interface Project {
   updated_at: string;
 }
 
+interface ProjectWithTestCount extends Project {
+  testCount: number;
+}
+
 export default function Projects() {
   const { user } = useAuth();
-  const [projects, setProjects] = useState<Project[]>([]);
+  const [projects, setProjects] = useState<ProjectWithTestCount[]>([]);
   const [loading, setLoading] = useState(true);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [editingProject, setEditingProject] = useState<Project | null>(null);
+  const [expandedProjectId, setExpandedProjectId] = useState<string | null>(null);
   const [formData, setFormData] = useState({
     name: '',
     description: '',
@@ -68,13 +82,30 @@ export default function Projects() {
 
   const fetchProjects = async () => {
     try {
-      const { data, error } = await supabase
+      // Fetch projects
+      const { data: projectsData, error: projectsError } = await supabase
         .from('projects')
         .select('*')
         .order('created_at', { ascending: false });
 
-      if (error) throw error;
-      setProjects(data || []);
+      if (projectsError) throw projectsError;
+
+      // Fetch test counts for each project
+      const projectsWithCounts: ProjectWithTestCount[] = await Promise.all(
+        (projectsData || []).map(async (project) => {
+          const { count } = await supabase
+            .from('generated_tests')
+            .select('*', { count: 'exact', head: true })
+            .eq('project_id', project.id);
+          
+          return {
+            ...project,
+            testCount: count || 0,
+          };
+        })
+      );
+
+      setProjects(projectsWithCounts);
     } catch (error) {
       console.error('Error fetching projects:', error);
       toast.error('Nepodařilo se načíst projekty');
@@ -162,6 +193,10 @@ export default function Projects() {
       console.error('Error deleting project:', error);
       toast.error('Nepodařilo se smazat projekt');
     }
+  };
+
+  const toggleProjectExpand = (projectId: string) => {
+    setExpandedProjectId(prev => prev === projectId ? null : projectId);
   };
 
   if (loading) {
@@ -263,7 +298,7 @@ export default function Projects() {
         </Dialog>
       </div>
 
-      {/* Projects Grid */}
+      {/* Projects List */}
       {projects.length === 0 ? (
         <Card>
           <CardContent className="py-12 text-center">
@@ -279,79 +314,121 @@ export default function Projects() {
           </CardContent>
         </Card>
       ) : (
-        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+        <div className="space-y-4">
           {projects.map((project) => (
-            <Card 
+            <Collapsible
               key={project.id}
-              className="group hover:border-primary/50 hover:shadow-md transition-all"
+              open={expandedProjectId === project.id}
+              onOpenChange={() => toggleProjectExpand(project.id)}
             >
-              <CardHeader className="pb-3">
-                <div className="flex items-start justify-between">
-                  <CardTitle className="text-lg">{project.name}</CardTitle>
-                  <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="h-8 w-8"
-                      onClick={() => openEditDialog(project)}
-                    >
-                      <Pencil className="h-4 w-4" />
-                    </Button>
-                    <AlertDialog>
-                      <AlertDialogTrigger asChild>
+              <Card className="overflow-hidden">
+                <CollapsibleTrigger asChild>
+                  <CardHeader className="cursor-pointer hover:bg-muted/50 transition-colors">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-4">
+                        <div className="flex-1">
+                          <div className="flex items-center gap-3">
+                            <CardTitle className="text-lg">{project.name}</CardTitle>
+                            {project.testCount > 0 && (
+                              <Badge variant="secondary" className="flex items-center gap-1">
+                                <TestTube className="w-3 h-3" />
+                                {project.testCount} testů
+                              </Badge>
+                            )}
+                          </div>
+                          {project.description && (
+                            <CardDescription className="mt-1">
+                              {project.description}
+                            </CardDescription>
+                          )}
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-2">
                         <Button
                           variant="ghost"
                           size="icon"
-                          className="h-8 w-8 text-muted-foreground hover:text-destructive"
+                          className="h-8 w-8"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            openEditDialog(project);
+                          }}
                         >
-                          <Trash2 className="h-4 w-4" />
+                          <Pencil className="h-4 w-4" />
                         </Button>
-                      </AlertDialogTrigger>
-                      <AlertDialogContent>
-                        <AlertDialogHeader>
-                          <AlertDialogTitle>Smazat projekt?</AlertDialogTitle>
-                          <AlertDialogDescription>
-                            Tato akce je nevratná. Projekt "{project.name}" bude permanentně smazán.
-                          </AlertDialogDescription>
-                        </AlertDialogHeader>
-                        <AlertDialogFooter>
-                          <AlertDialogCancel>Zrušit</AlertDialogCancel>
-                          <AlertDialogAction
-                            onClick={() => handleDelete(project.id)}
-                            className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-                          >
-                            Smazat
-                          </AlertDialogAction>
-                        </AlertDialogFooter>
-                      </AlertDialogContent>
-                    </AlertDialog>
-                  </div>
-                </div>
-                {project.description && (
-                  <CardDescription className="line-clamp-2">
-                    {project.description}
-                  </CardDescription>
-                )}
-              </CardHeader>
-              <CardContent className="space-y-3">
-                {project.base_url && (
-                  <a
-                    href={project.base_url}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="flex items-center gap-2 text-sm text-primary hover:underline"
-                  >
-                    <Globe className="h-4 w-4" />
-                    <span className="truncate">{project.base_url}</span>
-                    <ExternalLink className="h-3 w-3 flex-shrink-0" />
-                  </a>
-                )}
-                <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                  <Calendar className="h-3 w-3" />
-                  <span>Vytvořeno {new Date(project.created_at).toLocaleDateString('cs-CZ')}</span>
-                </div>
-              </CardContent>
-            </Card>
+                        <AlertDialog>
+                          <AlertDialogTrigger asChild>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-8 w-8 text-muted-foreground hover:text-destructive"
+                              onClick={(e) => e.stopPropagation()}
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </Button>
+                          </AlertDialogTrigger>
+                          <AlertDialogContent>
+                            <AlertDialogHeader>
+                              <AlertDialogTitle>Smazat projekt?</AlertDialogTitle>
+                              <AlertDialogDescription>
+                                Tato akce je nevratná. Projekt "{project.name}" a všechny jeho testy budou permanentně smazány.
+                              </AlertDialogDescription>
+                            </AlertDialogHeader>
+                            <AlertDialogFooter>
+                              <AlertDialogCancel>Zrušit</AlertDialogCancel>
+                              <AlertDialogAction
+                                onClick={() => handleDelete(project.id)}
+                                className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                              >
+                                Smazat
+                              </AlertDialogAction>
+                            </AlertDialogFooter>
+                          </AlertDialogContent>
+                        </AlertDialog>
+                        <ChevronDown 
+                          className={`h-5 w-5 text-muted-foreground transition-transform ${
+                            expandedProjectId === project.id ? 'rotate-180' : ''
+                          }`}
+                        />
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-4 mt-2 text-sm text-muted-foreground">
+                      {project.base_url && (
+                        <a
+                          href={project.base_url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="flex items-center gap-1 hover:text-primary"
+                          onClick={(e) => e.stopPropagation()}
+                        >
+                          <Globe className="h-4 w-4" />
+                          <span className="truncate max-w-[200px]">{project.base_url}</span>
+                          <ExternalLink className="h-3 w-3" />
+                        </a>
+                      )}
+                      <span className="flex items-center gap-1">
+                        <Calendar className="h-4 w-4" />
+                        {new Date(project.created_at).toLocaleDateString('cs-CZ')}
+                      </span>
+                    </div>
+                  </CardHeader>
+                </CollapsibleTrigger>
+                
+                <CollapsibleContent>
+                  <CardContent className="pt-0 border-t">
+                    <div className="pt-4">
+                      <h4 className="font-medium mb-4 flex items-center gap-2">
+                        <TestTube className="w-4 h-4 text-primary" />
+                        Historie vygenerovaných testů
+                      </h4>
+                      <ProjectTestHistory 
+                        projectId={project.id} 
+                        projectName={project.name} 
+                      />
+                    </div>
+                  </CardContent>
+                </CollapsibleContent>
+              </Card>
+            </Collapsible>
           ))}
         </div>
       )}
