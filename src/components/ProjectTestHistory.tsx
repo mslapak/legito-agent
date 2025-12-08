@@ -33,6 +33,53 @@ export default function ProjectTestHistory({ projectId, projectName }: ProjectTe
     return unsubscribe;
   }, [projectId]);
 
+  // Poll running tests to check their actual status
+  useEffect(() => {
+    const runningTests = tests.filter(t => t.status === 'running' && t.task_id);
+    if (runningTests.length === 0) return;
+
+    const checkRunningTests = async () => {
+      for (const test of runningTests) {
+        try {
+          const response = await supabase.functions.invoke('browser-use', {
+            body: {
+              action: 'get_task_status',
+              taskId: test.task_id,
+            },
+          });
+
+          if (response.data?.status) {
+            const apiStatus = response.data.status;
+            // Map API status to our test status
+            let newStatus = test.status;
+            if (apiStatus === 'finished' || apiStatus === 'completed' || apiStatus === 'done') {
+              newStatus = 'passed'; // Default to passed, will be evaluated later
+            } else if (apiStatus === 'failed' || apiStatus === 'error') {
+              newStatus = 'failed';
+            } else if (apiStatus === 'stopped') {
+              newStatus = 'pending'; // Reset if stopped
+            }
+
+            if (newStatus !== 'running') {
+              await supabase
+                .from('generated_tests')
+                .update({ status: newStatus })
+                .eq('id', test.id);
+            }
+          }
+        } catch (error) {
+          console.error('Error checking test status:', error);
+        }
+      }
+    };
+
+    // Check immediately and then every 5 seconds
+    checkRunningTests();
+    const interval = setInterval(checkRunningTests, 5000);
+
+    return () => clearInterval(interval);
+  }, [tests]);
+
   const fetchTests = async () => {
     try {
       const { data, error } = await supabase
