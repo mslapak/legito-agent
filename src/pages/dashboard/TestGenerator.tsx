@@ -17,6 +17,10 @@ import {
 import { Badge } from '@/components/ui/badge';
 import { toast } from 'sonner';
 import { TestTube, Sparkles, Loader2, Play, Save, Trash2, FileText, Upload, X } from 'lucide-react';
+import * as pdfjsLib from 'pdfjs-dist';
+
+// Set up PDF.js worker
+pdfjsLib.GlobalWorkerOptions.workerSrc = `//cdnjs.cloudflare.com/ajax/libs/pdf.js/4.0.379/pdf.worker.min.js`;
 
 interface Project {
   id: string;
@@ -44,6 +48,7 @@ export default function TestGenerator() {
   const [savingIndex, setSavingIndex] = useState<number | null>(null);
   const [sourceTab, setSourceTab] = useState<'description' | 'documentation'>('description');
   const [uploadedFileName, setUploadedFileName] = useState<string>('');
+  const [isExtractingPdf, setIsExtractingPdf] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -69,34 +74,75 @@ export default function TestGenerator() {
     }
   };
 
+  const extractTextFromPdf = async (file: File): Promise<string> => {
+    const arrayBuffer = await file.arrayBuffer();
+    const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+    
+    let fullText = '';
+    
+    for (let i = 1; i <= pdf.numPages; i++) {
+      const page = await pdf.getPage(i);
+      const textContent = await page.getTextContent();
+      const pageText = textContent.items
+        .map((item: any) => item.str)
+        .join(' ');
+      fullText += pageText + '\n\n';
+    }
+    
+    return fullText.trim();
+  };
+
   const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (!file) return;
 
-    // Check file size (max 1MB for text)
-    if (file.size > 1024 * 1024) {
-      toast.error('Soubor je příliš velký (max 1MB)');
+    // Check file size (max 10MB for PDFs, 1MB for text)
+    const maxSize = file.name.toLowerCase().endsWith('.pdf') ? 10 * 1024 * 1024 : 1024 * 1024;
+    if (file.size > maxSize) {
+      toast.error(`Soubor je příliš velký (max ${file.name.toLowerCase().endsWith('.pdf') ? '10MB' : '1MB'})`);
       return;
     }
 
     // Check file type
-    const allowedTypes = ['text/plain', 'text/markdown', 'application/json'];
-    const allowedExtensions = ['.txt', '.md', '.markdown', '.json'];
-    const hasAllowedExtension = allowedExtensions.some(ext => file.name.toLowerCase().endsWith(ext));
+    const isPdf = file.name.toLowerCase().endsWith('.pdf') || file.type === 'application/pdf';
+    const allowedTextTypes = ['text/plain', 'text/markdown', 'application/json'];
+    const allowedTextExtensions = ['.txt', '.md', '.markdown', '.json'];
+    const hasAllowedTextExtension = allowedTextExtensions.some(ext => file.name.toLowerCase().endsWith(ext));
     
-    if (!allowedTypes.includes(file.type) && !hasAllowedExtension) {
-      toast.error('Nepodporovaný formát. Použijte .txt, .md nebo .json');
+    if (!isPdf && !allowedTextTypes.includes(file.type) && !hasAllowedTextExtension) {
+      toast.error('Nepodporovaný formát. Použijte .pdf, .txt, .md nebo .json');
       return;
     }
 
     try {
-      const text = await file.text();
+      let text: string;
+      
+      if (isPdf) {
+        setIsExtractingPdf(true);
+        toast.info('Extrahuji text z PDF...');
+        text = await extractTextFromPdf(file);
+        
+        if (!text.trim()) {
+          toast.error('PDF neobsahuje čitelný text (možná obsahuje pouze obrázky)');
+          setIsExtractingPdf(false);
+          return;
+        }
+        
+        toast.success(`Text extrahován z PDF (${text.length} znaků)`);
+      } else {
+        text = await file.text();
+      }
+      
       setDocumentation(text);
       setUploadedFileName(file.name);
-      toast.success(`Soubor "${file.name}" načten`);
+      if (!isPdf) {
+        toast.success(`Soubor "${file.name}" načten`);
+      }
     } catch (error) {
       console.error('Error reading file:', error);
       toast.error('Nepodařilo se přečíst soubor');
+    } finally {
+      setIsExtractingPdf(false);
     }
   };
 
@@ -308,7 +354,7 @@ export default function TestGenerator() {
                   <input
                     ref={fileInputRef}
                     type="file"
-                    accept=".txt,.md,.markdown,.json"
+                    accept=".txt,.md,.markdown,.json,.pdf,application/pdf"
                     onChange={handleFileUpload}
                     className="hidden"
                     id="doc-upload"
@@ -318,9 +364,19 @@ export default function TestGenerator() {
                     variant="outline"
                     onClick={() => fileInputRef.current?.click()}
                     className="flex items-center gap-2"
+                    disabled={isExtractingPdf}
                   >
-                    <Upload className="w-4 h-4" />
-                    Nahrát soubor
+                    {isExtractingPdf ? (
+                      <>
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                        Extrahuji PDF...
+                      </>
+                    ) : (
+                      <>
+                        <Upload className="w-4 h-4" />
+                        Nahrát soubor
+                      </>
+                    )}
                   </Button>
                   {uploadedFileName && (
                     <div className="flex items-center gap-2 text-sm text-muted-foreground">
@@ -339,7 +395,7 @@ export default function TestGenerator() {
                   )}
                 </div>
                 <p className="text-xs text-muted-foreground">
-                  Podporované formáty: .txt, .md, .json (max 1MB)
+                  Podporované formáty: .pdf, .txt, .md, .json (PDF max 10MB, ostatní max 1MB)
                 </p>
               </div>
 
