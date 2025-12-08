@@ -187,12 +187,12 @@ export default function TestGenerator() {
           <div className="grid gap-4 md:grid-cols-2">
             <div className="space-y-2">
               <Label>Projekt (volitelný)</Label>
-              <Select value={projectId} onValueChange={handleProjectChange}>
+              <Select value={projectId || "none"} onValueChange={(val) => handleProjectChange(val === "none" ? "" : val)}>
                 <SelectTrigger>
                   <SelectValue placeholder="Vyberte projekt" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="">Bez projektu</SelectItem>
+                  <SelectItem value="none">Bez projektu</SelectItem>
                   {projects.map((project) => (
                     <SelectItem key={project.id} value={project.id}>
                       {project.name}

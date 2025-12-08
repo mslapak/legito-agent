@@ -123,12 +123,12 @@ export default function NewTask() {
 
             <div className="space-y-2">
               <Label htmlFor="project">Projekt (volitelný)</Label>
-              <Select value={projectId} onValueChange={setProjectId} disabled={loadingProjects}>
+              <Select value={projectId} onValueChange={(val) => setProjectId(val === "none" ? "" : val)} disabled={loadingProjects}>
                 <SelectTrigger>
                   <SelectValue placeholder="Vyberte projekt" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="">Bez projektu</SelectItem>
+                  <SelectItem value="none">Bez projektu</SelectItem>
                   {projects.map((project) => (
                     <SelectItem key={project.id} value={project.id}>
                       {project.name}
