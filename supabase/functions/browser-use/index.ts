@@ -40,7 +40,7 @@ serve(async (req) => {
       });
     }
 
-    const { action, taskId, prompt, title, projectId } = await req.json();
+    const { action, taskId, prompt, title, projectId, keepBrowserOpen, followUpPrompt } = await req.json();
     console.log(`Action: ${action}, User: ${user.id}, TaskId: ${taskId || 'N/A'}`);
 
     // Browser-Use Cloud API base URL
@@ -49,15 +49,24 @@ serve(async (req) => {
     switch (action) {
       case 'create_task': {
         // Create task in Browser-Use Cloud
+        const requestBody: Record<string, unknown> = {
+          task: prompt,
+        };
+        
+        // Add keep_browser_open if specified
+        if (keepBrowserOpen) {
+          requestBody.keep_browser_open = true;
+        }
+        
+        console.log('Creating task with body:', JSON.stringify(requestBody));
+        
         const browserUseResponse = await fetch(`${BROWSER_USE_API_URL}/run-task`, {
           method: 'POST',
           headers: {
             'Authorization': `Bearer ${BROWSER_USE_API_KEY}`,
             'Content-Type': 'application/json',
           },
-          body: JSON.stringify({
-            task: prompt,
-          }),
+          body: JSON.stringify(requestBody),
         });
 
         if (!browserUseResponse.ok) {
@@ -91,6 +100,37 @@ serve(async (req) => {
         }
 
         return new Response(JSON.stringify({ task, browserUseTaskId: browserUseData.id }), {
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+
+      case 'continue_task': {
+        // Continue a task with a follow-up prompt (human-in-the-loop)
+        console.log(`Continuing task ${taskId} with prompt: ${followUpPrompt}`);
+        
+        const browserUseResponse = await fetch(`${BROWSER_USE_API_URL}/run-task`, {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${BROWSER_USE_API_KEY}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            task: followUpPrompt,
+            task_id: taskId,
+            keep_browser_open: true,
+          }),
+        });
+
+        if (!browserUseResponse.ok) {
+          const errorText = await browserUseResponse.text();
+          console.error('Browser-Use API error:', errorText);
+          throw new Error(`Browser-Use API error: ${browserUseResponse.status}`);
+        }
+
+        const browserUseData = await browserUseResponse.json();
+        console.log('Continue task response:', browserUseData);
+
+        return new Response(JSON.stringify({ success: true, data: browserUseData }), {
           headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         });
       }
@@ -217,7 +257,7 @@ serve(async (req) => {
         if (!browserUseResponse.ok) {
           const errorText = await browserUseResponse.text();
           console.error(`Media fetch error: ${browserUseResponse.status}, ${errorText}`);
-          return new Response(JSON.stringify({ screenshots: [], recordings: [] }), {
+          return new Response(JSON.stringify({ recordings: [] }), {
             headers: { ...corsHeaders, 'Content-Type': 'application/json' },
           });
         }
@@ -250,6 +290,51 @@ serve(async (req) => {
         const screenshotData = await browserUseResponse.json();
         console.log(`Screenshots fetched:`, JSON.stringify(screenshotData));
         return new Response(JSON.stringify(screenshotData), {
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+
+      case 'get_all_media': {
+        // Get both screenshots and recordings
+        console.log(`Fetching all media for task: ${taskId}`);
+        
+        const [screenshotsRes, mediaRes] = await Promise.all([
+          fetch(`${BROWSER_USE_API_URL}/task/${taskId}/screenshots`, {
+            method: 'GET',
+            headers: { 'Authorization': `Bearer ${BROWSER_USE_API_KEY}` },
+          }),
+          fetch(`${BROWSER_USE_API_URL}/task/${taskId}/media`, {
+            method: 'GET',
+            headers: { 'Authorization': `Bearer ${BROWSER_USE_API_KEY}` },
+          }),
+        ]);
+
+        let screenshots: string[] = [];
+        let recordings: string[] = [];
+
+        if (screenshotsRes.ok) {
+          const screenshotData = await screenshotsRes.json();
+          console.log('Screenshots response:', JSON.stringify(screenshotData));
+          if (Array.isArray(screenshotData.screenshots)) {
+            screenshots = screenshotData.screenshots;
+          } else if (Array.isArray(screenshotData)) {
+            screenshots = screenshotData;
+          }
+        }
+
+        if (mediaRes.ok) {
+          const mediaData = await mediaRes.json();
+          console.log('Media response:', JSON.stringify(mediaData));
+          if (Array.isArray(mediaData.recordings)) {
+            recordings = mediaData.recordings;
+          } else if (mediaData.recording_url) {
+            recordings = [mediaData.recording_url];
+          } else if (Array.isArray(mediaData)) {
+            recordings = mediaData;
+          }
+        }
+
+        return new Response(JSON.stringify({ screenshots, recordings }), {
           headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         });
       }
