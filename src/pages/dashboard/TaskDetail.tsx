@@ -55,12 +55,14 @@ export default function TaskDetail() {
     }
   }, [taskId]);
 
-  // Auto-refresh for running tasks
+  // Auto-refresh for running tasks - immediately and every 5 seconds
   useEffect(() => {
     if (task?.status === 'running' && task?.browser_use_task_id) {
+      // Immediate refresh to get live_url
+      refreshStatus();
       const interval = setInterval(() => {
         refreshStatus();
-      }, 10000); // Refresh every 10 seconds
+      }, 5000); // Refresh every 5 seconds
       return () => clearInterval(interval);
     }
   }, [task?.status, task?.browser_use_task_id]);
@@ -117,14 +119,6 @@ export default function TaskDetail() {
       
       const browserUseData = detailsResponse.data;
       
-      // Update live_url if available and task is running
-      if (browserUseData.live_url && browserUseData.status === 'running' && !task.live_url) {
-        await supabase
-          .from('tasks')
-          .update({ live_url: browserUseData.live_url })
-          .eq('id', task.id);
-      }
-      
       // Now get media (screenshots)
       const mediaResponse = await supabase.functions.invoke('browser-use', {
         body: {
@@ -147,6 +141,7 @@ export default function TaskDetail() {
                     browserUseData.status === 'failed' ? 'failed' :
                     browserUseData.status === 'running' ? 'running' : task.status;
 
+      // Update task with all data including live_url
       await supabase
         .from('tasks')
         .update({
@@ -154,6 +149,7 @@ export default function TaskDetail() {
           result: browserUseData.output,
           steps: browserUseData.steps,
           screenshots: screenshots.length > 0 ? screenshots : task.screenshots,
+          live_url: browserUseData.live_url || task.live_url,
           completed_at: browserUseData.status === 'finished' || browserUseData.status === 'failed' 
             ? new Date().toISOString() 
             : null,
@@ -269,13 +265,17 @@ export default function TaskDetail() {
       </div>
 
       {/* Live Browser View */}
-      {task.status === 'running' && task.live_url && (
+      {task.live_url && (
         <Card>
           <CardHeader className="flex flex-row items-center justify-between pb-2">
             <div className="flex items-center gap-2">
               <Monitor className="h-5 w-5 text-primary" />
-              <CardTitle className="text-lg">Živý náhled prohlížeče</CardTitle>
-              <Badge className="bg-success text-success-foreground animate-pulse">LIVE</Badge>
+              <CardTitle className="text-lg">
+                {task.status === 'running' ? 'Živý náhled prohlížeče' : 'Náhled prohlížeče'}
+              </CardTitle>
+              {task.status === 'running' && (
+                <Badge className="bg-success text-success-foreground animate-pulse">LIVE</Badge>
+              )}
             </div>
             <Button variant="outline" size="sm" asChild>
               <a href={task.live_url} target="_blank" rel="noopener noreferrer">
