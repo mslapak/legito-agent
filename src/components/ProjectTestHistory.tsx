@@ -48,9 +48,8 @@ export default function ProjectTestHistory({ projectId, projectName }: ProjectTe
             },
           });
 
-          // Handle 404 - task no longer exists, mark as completed
-          const errorMsg = response.error?.message || JSON.stringify(response.data) || '';
-          if (errorMsg.includes('404') || response.data?.error?.includes('404')) {
+          // Handle expired/not found task - session no longer exists, mark as passed
+          if (response.data?.expired || response.data?.status === 'not_found') {
             await supabase
               .from('generated_tests')
               .update({ status: 'passed' })
