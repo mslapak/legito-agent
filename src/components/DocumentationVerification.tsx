@@ -28,7 +28,6 @@ import {
 } from 'lucide-react';
 import * as pdfjsLib from 'pdfjs-dist';
 import { format } from 'date-fns';
-import { cs } from 'date-fns/locale';
 
 // Set up PDF.js worker
 pdfjsLib.GlobalWorkerOptions.workerSrc = `//cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.js`;
@@ -700,7 +699,7 @@ DŮLEŽITÉ: Na konci ověř, jestli tento krok funguje správně podle dokument
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2 mb-1">
                       <span className="text-xs text-muted-foreground">
-                        {format(new Date(item.created_at), 'd. M. yyyy HH:mm', { locale: cs })}
+                        {format(new Date(item.created_at), 'd. M. yyyy HH:mm')}
                       </span>
                       <Badge variant="secondary" className="text-xs">
                         {item.documentation_source === 'url' ? 'URL' : 
