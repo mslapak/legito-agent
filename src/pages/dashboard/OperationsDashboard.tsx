@@ -49,6 +49,7 @@ const OperationsDashboard = () => {
       const { data: tasksData } = await supabase
         .from('tasks')
         .select('id, title, status, created_at')
+        .eq('user_id', user!.id)
         .eq('task_type', 'operation')
         .order('created_at', { ascending: false })
         .limit(5);
@@ -58,6 +59,7 @@ const OperationsDashboard = () => {
       const { data: allTasks } = await supabase
         .from('tasks')
         .select('status')
+        .eq('user_id', user!.id)
         .eq('task_type', 'operation');
       
       if (allTasks) {
