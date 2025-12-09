@@ -284,25 +284,43 @@ export default function OperationDetail() {
           console.error('Stop task error:', stopResponse.error);
         }
 
-        // Wait a moment for the session to close properly
-        await new Promise(resolve => setTimeout(resolve, 2000));
+        // Wait longer for video processing (5 seconds)
+        await new Promise(resolve => setTimeout(resolve, 5000));
       }
 
       toast.info('Stahuji média...');
 
-      // Fetch all media
-      const mediaResponse = await supabase.functions.invoke('browser-use', {
-        body: {
-          action: 'get_all_media',
-          taskId: operation.browser_use_task_id,
-        },
-      });
+      // Retry mechanism for fetching recordings
+      let screenshots: string[] = [];
+      let recordings: string[] = [];
+      let attempts = 0;
+      const maxAttempts = 3;
 
-      const mediaData = mediaResponse.data;
-      console.log('Media data after stop:', mediaData);
+      while (attempts < maxAttempts) {
+        const mediaResponse = await supabase.functions.invoke('browser-use', {
+          body: {
+            action: 'get_all_media',
+            taskId: operation.browser_use_task_id,
+          },
+        });
 
-      const screenshots = mediaData?.screenshots || [];
-      const recordings = mediaData?.recordings || [];
+        const mediaData = mediaResponse.data;
+        console.log(`Media fetch attempt ${attempts + 1}:`, mediaData);
+
+        screenshots = mediaData?.screenshots || [];
+        recordings = mediaData?.recordings || [];
+
+        // If we have recordings, stop retrying
+        if (recordings.length > 0) {
+          break;
+        }
+
+        attempts++;
+        if (attempts < maxAttempts) {
+          toast.info(`Video se zpracovává, zkouším znovu (${attempts}/${maxAttempts})...`);
+          await new Promise(resolve => setTimeout(resolve, 3000));
+        }
+      }
 
       // Update task in database
       await supabase
