@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useAuth } from '@/hooks/useAuth';
 import { supabase } from '@/integrations/supabase/client';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
@@ -23,16 +23,21 @@ import {
   Ban,
   Image as ImageIcon,
   Video,
-  ListOrdered,
   FileText,
+  Monitor,
+  ExternalLink,
+  Download,
 } from 'lucide-react';
 import { format } from 'date-fns';
 import { cs } from 'date-fns/locale';
 import type { Json } from '@/integrations/supabase/types';
 
 interface Step {
-  step: number;
-  action: string;
+  step?: number;
+  next_goal?: string;
+  evaluation_previous_goal?: string;
+  url?: string;
+  action?: string;
   result?: string;
 }
 
@@ -74,9 +79,10 @@ export default function OperationDetail() {
     }
   }, [operationId, user]);
 
-  // Auto-refresh for running operations - every 5 seconds
+  // Auto-refresh for running operations - immediately and every 5 seconds
   useEffect(() => {
     if (operation?.status === 'running' && operation?.browser_use_task_id) {
+      refreshStatus();
       const interval = setInterval(() => {
         refreshStatus();
       }, 5000);
@@ -150,9 +156,10 @@ export default function OperationDetail() {
                         browserStatus === 'running' ? 'running' : operation.status;
 
       // Update database with new status and media
-      const updateData: any = {
+      const updateData: Record<string, unknown> = {
         status: newStatus,
         steps: detailsData?.steps || operation.steps,
+        live_url: detailsData?.live_url || operation.live_url,
       };
 
       if (detailsData?.output) {
@@ -182,7 +189,7 @@ export default function OperationDetail() {
       if (showToast) {
         toast.success('Status aktualizován');
       }
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('Error refreshing status:', error);
       if (showToast) {
         toast.error('Nepodařilo se aktualizovat status');
@@ -207,7 +214,7 @@ export default function OperationDetail() {
       if (error) throw error;
       toast.success(action === 'pause_task' ? 'Pozastaveno' : action === 'resume_task' ? 'Obnoveno' : 'Zastaveno');
       await fetchOperation();
-    } catch (error: any) {
+    } catch (error: unknown) {
       toast.error('Akce se nezdařila');
     } finally {
       setActionLoading(null);
@@ -231,10 +238,77 @@ export default function OperationDetail() {
       toast.success('Pokyn odeslán');
       setFollowUpPrompt('');
       await fetchOperation();
-    } catch (error: any) {
+    } catch (error: unknown) {
       toast.error('Nepodařilo se odeslat pokyn');
     } finally {
       setSendingPrompt(false);
+    }
+  };
+
+  const stopAndDownloadMedia = async () => {
+    if (!operation?.browser_use_task_id) return;
+    setActionLoading('stop_download');
+
+    try {
+      // Stop the task first if running
+      if (operation.status === 'running') {
+        toast.info('Ukončuji browser session...');
+        const stopResponse = await supabase.functions.invoke('browser-use', {
+          body: {
+            action: 'stop_task',
+            taskId: operation.browser_use_task_id,
+          },
+        });
+
+        if (stopResponse.error) {
+          console.error('Stop task error:', stopResponse.error);
+        }
+
+        // Wait a moment for the session to close properly
+        await new Promise(resolve => setTimeout(resolve, 2000));
+      }
+
+      toast.info('Stahuji média...');
+
+      // Fetch all media
+      const mediaResponse = await supabase.functions.invoke('browser-use', {
+        body: {
+          action: 'get_all_media',
+          taskId: operation.browser_use_task_id,
+        },
+      });
+
+      const mediaData = mediaResponse.data;
+      console.log('Media data after stop:', mediaData);
+
+      const screenshots = mediaData?.screenshots || [];
+      const recordings = mediaData?.recordings || [];
+
+      // Update task in database
+      await supabase
+        .from('tasks')
+        .update({
+          status: 'completed' as const,
+          screenshots: screenshots.length > 0 ? screenshots : operation.screenshots,
+          recordings: recordings.length > 0 ? recordings : operation.recordings,
+          completed_at: new Date().toISOString(),
+        })
+        .eq('id', operation.id)
+        .eq('user_id', user!.id);
+
+      const totalMedia = screenshots.length + recordings.length;
+      if (totalMedia > 0) {
+        toast.success(`Staženo ${screenshots.length} screenshotů a ${recordings.length} videí`);
+      } else {
+        toast.warning('Žádná média nebyla nalezena');
+      }
+
+      await fetchOperation();
+    } catch (error) {
+      console.error('Error stopping and downloading:', error);
+      toast.error('Nepodařilo se stáhnout média');
+    } finally {
+      setActionLoading(null);
     }
   };
 
@@ -242,7 +316,7 @@ export default function OperationDetail() {
     switch (status) {
       case 'completed':
         return (
-          <Badge className="bg-green-500/10 text-green-500 border-green-500/20">
+          <Badge className="bg-success text-success-foreground">
             <CheckCircle className="w-3 h-3 mr-1" />
             Dokončeno
           </Badge>
@@ -256,8 +330,8 @@ export default function OperationDetail() {
         );
       case 'running':
         return (
-          <Badge className="bg-blue-500/10 text-blue-500 border-blue-500/20">
-            <Play className="w-3 h-3 mr-1" />
+          <Badge className="bg-warning text-warning-foreground">
+            <Loader2 className="w-3 h-3 mr-1 animate-spin" />
             Běží
           </Badge>
         );
@@ -285,8 +359,8 @@ export default function OperationDetail() {
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center py-12">
-        <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+      <div className="flex items-center justify-center h-64">
+        <Loader2 className="h-8 w-8 animate-spin text-primary" />
       </div>
     );
   }
@@ -304,22 +378,26 @@ export default function OperationDetail() {
 
   const isRunning = operation.status === 'running';
   const steps = parseSteps(operation.steps);
+  const screenshotCount = operation.screenshots?.length || 0;
+  const recordingCount = operation.recordings?.length || 0;
 
   return (
-    <div className="space-y-6">
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-        <div className="flex items-center gap-4">
-          <Button variant="ghost" size="icon" onClick={() => navigate('/dashboard/operations/history')}>
-            <ArrowLeft className="h-4 w-4" />
-          </Button>
-          <div>
-            <h1 className="text-xl font-semibold">{operation.title}</h1>
-            <p className="text-sm text-muted-foreground">
-              {format(new Date(operation.created_at), 'PPp', { locale: cs })}
-            </p>
+    <div className="space-y-6 animate-fade-in">
+      {/* Header */}
+      <div className="flex items-center gap-4">
+        <Button variant="outline" size="icon" onClick={() => navigate('/dashboard/operations/history')}>
+          <ArrowLeft className="h-4 w-4" />
+        </Button>
+        <div className="flex-1">
+          <div className="flex items-center gap-3">
+            <h1 className="text-2xl font-bold">{operation.title}</h1>
+            {getStatusBadge(operation.status)}
           </div>
-          {getStatusBadge(operation.status)}
+          <p className="text-sm text-muted-foreground mt-1">
+            Vytvořeno: {format(new Date(operation.created_at), 'PPp', { locale: cs })}
+          </p>
         </div>
+        
         <div className="flex items-center gap-2">
           <Button
             variant="outline"
@@ -330,118 +408,227 @@ export default function OperationDetail() {
             Duplikovat
           </Button>
           <Button variant="outline" size="sm" onClick={() => refreshStatus(true)} disabled={refreshing}>
-            <RefreshCw className={`h-4 w-4 mr-1 ${refreshing ? 'animate-spin' : ''}`} />
+            <RefreshCw className={`h-4 w-4 mr-2 ${refreshing ? 'animate-spin' : ''}`} />
             Obnovit
           </Button>
+          
+          {isRunning && (
+            <>
+              <Button variant="outline" size="sm" onClick={() => handleAction('pause_task')} disabled={!!actionLoading}>
+                {actionLoading === 'pause_task' ? <Loader2 className="h-4 w-4 animate-spin" /> : <Pause className="h-4 w-4 mr-1" />}
+                Pozastavit
+              </Button>
+              <Button 
+                variant="default" 
+                size="sm"
+                onClick={stopAndDownloadMedia} 
+                disabled={!!actionLoading}
+                className="bg-primary"
+              >
+                {actionLoading === 'stop_download' ? <Loader2 className="h-4 w-4 animate-spin mr-1" /> : <Download className="h-4 w-4 mr-1" />}
+                Ukončit a stáhnout
+              </Button>
+            </>
+          )}
+          
+          {!isRunning && operation.status !== 'completed' && operation.browser_use_task_id && (
+            <Button variant="outline" size="sm" onClick={stopAndDownloadMedia} disabled={!!actionLoading}>
+              <Download className="h-4 w-4 mr-1" />
+              Stáhnout média
+            </Button>
+          )}
         </div>
       </div>
 
-      {/* Live Browser View */}
+      {/* Live Browser View with Human-in-the-Loop */}
       {isRunning && operation.live_url && (
         <Card>
-          <CardHeader className="pb-3">
-            <div className="flex items-center justify-between">
-              <CardTitle className="text-base">Live náhled</CardTitle>
-              <div className="flex items-center gap-2">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => handleAction('pause_task')}
-                  disabled={!!actionLoading}
-                >
-                  {actionLoading === 'pause_task' ? (
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                  ) : (
-                    <Pause className="h-4 w-4" />
-                  )}
-                </Button>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => handleAction('resume_task')}
-                  disabled={!!actionLoading}
-                >
-                  {actionLoading === 'resume_task' ? (
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                  ) : (
-                    <Play className="h-4 w-4" />
-                  )}
-                </Button>
-                <Button
-                  variant="destructive"
-                  size="sm"
-                  onClick={() => handleAction('stop_task')}
-                  disabled={!!actionLoading}
-                >
-                  {actionLoading === 'stop_task' ? (
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                  ) : (
-                    <Square className="h-4 w-4" />
-                  )}
-                </Button>
-              </div>
+          <CardHeader className="flex flex-row items-center justify-between pb-2">
+            <div className="flex items-center gap-2">
+              <Monitor className="h-5 w-5 text-primary" />
+              <CardTitle className="text-lg">Živý náhled prohlížeče</CardTitle>
+              <Badge className="bg-success text-success-foreground animate-pulse">LIVE</Badge>
+            </div>
+            <div className="flex items-center gap-2">
+              <Button variant="outline" size="sm" asChild>
+                <a href={operation.live_url} target="_blank" rel="noopener noreferrer">
+                  <ExternalLink className="h-4 w-4 mr-2" />
+                  Otevřít v novém okně
+                </a>
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => handleAction('pause_task')}
+                disabled={!!actionLoading}
+              >
+                {actionLoading === 'pause_task' ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <Pause className="h-4 w-4" />
+                )}
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => handleAction('resume_task')}
+                disabled={!!actionLoading}
+              >
+                {actionLoading === 'resume_task' ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <Play className="h-4 w-4" />
+                )}
+              </Button>
+              <Button
+                variant="destructive"
+                size="sm"
+                onClick={() => handleAction('stop_task')}
+                disabled={!!actionLoading}
+              >
+                {actionLoading === 'stop_task' ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <Square className="h-4 w-4" />
+                )}
+              </Button>
             </div>
           </CardHeader>
-          <CardContent>
-            <div className="aspect-video bg-muted rounded-lg overflow-hidden">
+          <CardContent className="space-y-4">
+            <div className="relative w-full aspect-video rounded-lg overflow-hidden border border-border bg-muted">
               <iframe
                 src={operation.live_url}
-                className="w-full h-full border-0"
+                className="absolute inset-0 w-full h-full"
                 title="Live Browser View"
+                allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                allowFullScreen
               />
             </div>
-            <div className="mt-4 flex gap-2">
+            
+            {/* Human-in-the-Loop Input */}
+            <div className="flex gap-2">
               <Input
                 value={followUpPrompt}
                 onChange={(e) => setFollowUpPrompt(e.target.value)}
-                placeholder="Zadejte další pokyn..."
-                onKeyDown={(e) => e.key === 'Enter' && sendFollowUp()}
+                placeholder="Zadejte další pokyn pro agenta..."
+                onKeyDown={(e) => e.key === 'Enter' && !sendingPrompt && sendFollowUp()}
+                disabled={sendingPrompt}
+                className="flex-1"
               />
               <Button onClick={sendFollowUp} disabled={sendingPrompt || !followUpPrompt.trim()}>
-                {sendingPrompt ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
+                {sendingPrompt ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <>
+                    <Send className="h-4 w-4 mr-2" />
+                    Pokračovat
+                  </>
+                )}
               </Button>
             </div>
           </CardContent>
         </Card>
       )}
 
-      <Tabs defaultValue="steps">
+      {/* Main Content Tabs */}
+      <Tabs defaultValue="overview" className="space-y-4">
         <TabsList>
-          <TabsTrigger value="steps">
-            <ListOrdered className="h-4 w-4 mr-1" />
-            Kroky ({steps.length})
-          </TabsTrigger>
+          <TabsTrigger value="overview">Přehled</TabsTrigger>
+          <TabsTrigger value="steps">Kroky</TabsTrigger>
           <TabsTrigger value="screenshots">
-            <ImageIcon className="h-4 w-4 mr-1" />
-            Screenshoty ({operation.screenshots?.length || 0})
+            Screenshoty {screenshotCount > 0 && <Badge variant="secondary" className="ml-2">{screenshotCount}</Badge>}
           </TabsTrigger>
           <TabsTrigger value="recordings">
-            <Video className="h-4 w-4 mr-1" />
-            Nahrávky ({operation.recordings?.length || 0})
+            Videa {recordingCount > 0 && <Badge variant="secondary" className="ml-2">{recordingCount}</Badge>}
           </TabsTrigger>
-          <TabsTrigger value="result">
-            <FileText className="h-4 w-4 mr-1" />
-            Výsledek
-          </TabsTrigger>
+          <TabsTrigger value="result">Výsledek</TabsTrigger>
         </TabsList>
 
-        <TabsContent value="steps" className="mt-4">
+        <TabsContent value="overview">
+          <div className="grid gap-6 md:grid-cols-2">
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-lg">Zadání</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <p className="text-muted-foreground whitespace-pre-wrap">{operation.prompt}</p>
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-lg">Informace</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">Status</span>
+                  {getStatusBadge(operation.status)}
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">Browser-Use ID</span>
+                  <span className="font-mono text-sm">{operation.browser_use_task_id || '-'}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">Spuštěno</span>
+                  <span>{operation.started_at ? format(new Date(operation.started_at), 'PPp', { locale: cs }) : '-'}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">Dokončeno</span>
+                  <span>{operation.completed_at ? format(new Date(operation.completed_at), 'PPp', { locale: cs }) : '-'}</span>
+                </div>
+              </CardContent>
+            </Card>
+
+            {operation.error_message && (
+              <Card className="md:col-span-2 border-destructive">
+                <CardHeader>
+                  <CardTitle className="text-lg text-destructive">Chyba</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <p className="text-destructive font-mono text-sm">{operation.error_message}</p>
+                </CardContent>
+              </Card>
+            )}
+          </div>
+        </TabsContent>
+
+        <TabsContent value="steps">
           <Card>
-            <CardContent className="p-4">
+            <CardHeader>
+              <CardTitle className="text-lg flex items-center gap-2">
+                <FileText className="h-5 w-5" />
+                Kroky agenta
+              </CardTitle>
+              <CardDescription>
+                Detailní přehled akcí provedených agentem
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
               {steps.length === 0 ? (
                 <p className="text-muted-foreground text-center py-4">Zatím žádné kroky</p>
               ) : (
                 <div className="space-y-3">
                   {steps.map((step, index) => (
-                    <div key={index} className="p-3 rounded-lg bg-muted/50">
+                    <div key={index} className="p-3 rounded-lg bg-muted/50 border">
                       <div className="flex items-start gap-3">
                         <span className="flex-shrink-0 w-6 h-6 rounded-full bg-primary/10 text-primary text-xs flex items-center justify-center font-medium">
-                          {step.step}
+                          {step.step || index + 1}
                         </span>
-                        <div className="flex-1">
-                          <p className="text-sm">{step.action}</p>
+                        <div className="flex-1 space-y-1">
+                          {step.next_goal && (
+                            <p className="text-sm font-medium">{step.next_goal}</p>
+                          )}
+                          {step.action && (
+                            <p className="text-sm font-medium">{step.action}</p>
+                          )}
+                          {step.evaluation_previous_goal && (
+                            <p className="text-xs text-muted-foreground">{step.evaluation_previous_goal}</p>
+                          )}
                           {step.result && (
-                            <p className="text-xs text-muted-foreground mt-1">{step.result}</p>
+                            <p className="text-xs text-muted-foreground">{step.result}</p>
+                          )}
+                          {step.url && (
+                            <p className="text-xs text-primary/70 font-mono truncate">{step.url}</p>
                           )}
                         </div>
                       </div>
@@ -453,15 +640,21 @@ export default function OperationDetail() {
           </Card>
         </TabsContent>
 
-        <TabsContent value="screenshots" className="mt-4">
+        <TabsContent value="screenshots">
           <Card>
-            <CardContent className="p-4">
+            <CardHeader>
+              <CardTitle className="text-lg flex items-center gap-2">
+                <ImageIcon className="h-5 w-5" />
+                Screenshoty ({screenshotCount})
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
               {!operation.screenshots?.length ? (
                 <p className="text-muted-foreground text-center py-4">Žádné screenshoty</p>
               ) : (
                 <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
                   {operation.screenshots.map((url, index) => (
-                    <a key={index} href={url} target="_blank" rel="noopener noreferrer">
+                    <a key={index} href={url} target="_blank" rel="noopener noreferrer" className="group">
                       <img
                         src={url}
                         alt={`Screenshot ${index + 1}`}
@@ -475,9 +668,15 @@ export default function OperationDetail() {
           </Card>
         </TabsContent>
 
-        <TabsContent value="recordings" className="mt-4">
+        <TabsContent value="recordings">
           <Card>
-            <CardContent className="p-4">
+            <CardHeader>
+              <CardTitle className="text-lg flex items-center gap-2">
+                <Video className="h-5 w-5" />
+                Nahrávky ({recordingCount})
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
               {!operation.recordings?.length ? (
                 <p className="text-muted-foreground text-center py-4">Žádné nahrávky</p>
               ) : (
@@ -491,29 +690,30 @@ export default function OperationDetail() {
           </Card>
         </TabsContent>
 
-        <TabsContent value="result" className="mt-4">
+        <TabsContent value="result">
           <Card>
-            <CardContent className="p-4">
-              <div className="space-y-4">
-                <div>
-                  <h4 className="text-sm font-medium mb-2">Prompt</h4>
-                  <p className="text-sm text-muted-foreground whitespace-pre-wrap">{operation.prompt}</p>
-                </div>
-                {operation.error_message && (
-                  <div>
-                    <h4 className="text-sm font-medium mb-2 text-destructive">Chyba</h4>
-                    <p className="text-sm text-destructive">{operation.error_message}</p>
-                  </div>
-                )}
-                {operation.result && (
-                  <div>
-                    <h4 className="text-sm font-medium mb-2">Výsledek</h4>
-                    <pre className="text-xs bg-muted p-3 rounded-lg overflow-auto max-h-60">
-                      {JSON.stringify(operation.result, null, 2)}
-                    </pre>
-                  </div>
-                )}
+            <CardHeader>
+              <CardTitle className="text-lg">Výsledek operace</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div>
+                <h4 className="text-sm font-medium mb-2">Původní prompt</h4>
+                <p className="text-sm text-muted-foreground whitespace-pre-wrap bg-muted p-3 rounded-lg">{operation.prompt}</p>
               </div>
+              {operation.error_message && (
+                <div>
+                  <h4 className="text-sm font-medium mb-2 text-destructive">Chybová zpráva</h4>
+                  <p className="text-sm text-destructive bg-destructive/10 p-3 rounded-lg">{operation.error_message}</p>
+                </div>
+              )}
+              {operation.result && (
+                <div>
+                  <h4 className="text-sm font-medium mb-2">Výstup</h4>
+                  <pre className="text-xs bg-muted p-3 rounded-lg overflow-auto max-h-60">
+                    {JSON.stringify(operation.result, null, 2)}
+                  </pre>
+                </div>
+              )}
             </CardContent>
           </Card>
         </TabsContent>
