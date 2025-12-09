@@ -103,7 +103,9 @@ export default function DashboardLayout() {
         <Sidebar className="border-r border-sidebar-border bg-sidebar">
           <div className="p-4">
             <div className="flex items-center gap-3">
-              <img src={pwcLogo} alt="PwC" className="h-10 w-auto" />
+              <div className="bg-black px-2 py-1 rounded">
+                <img src={pwcLogo} alt="PwC" className="h-8 w-auto" />
+              </div>
               <div className="flex-1 min-w-0">
                 <span className="font-bold text-sidebar-foreground text-sm">Browser Automation</span>
               </div>
