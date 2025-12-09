@@ -220,13 +220,18 @@ export default function NewOperation() {
 
       if (error) throw error;
 
+      const taskId = data.task?.id;
+      if (!taskId) {
+        throw new Error('Task nebyl vytvořen správně');
+      }
+
       // Wait for task to be saved to database before navigating
       let attempts = 0;
       while (attempts < 10) {
         const { data: taskExists } = await supabase
           .from('tasks')
           .select('id')
-          .eq('id', data.taskId)
+          .eq('id', taskId)
           .maybeSingle();
         
         if (taskExists) break;
@@ -235,7 +240,7 @@ export default function NewOperation() {
       }
 
       toast.success('Operace spuštěna');
-      navigate(`/dashboard/operations/${data.taskId}`);
+      navigate(`/dashboard/operations/${taskId}`);
     } catch (error: any) {
       console.error('Error creating operation:', error);
       toast.error(error.message || 'Nepodařilo se spustit operaci');
