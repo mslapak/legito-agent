@@ -24,7 +24,6 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import {
-  Bot,
   Play,
   History,
   TestTube,
@@ -38,6 +37,7 @@ import {
   FileText,
   GraduationCap,
 } from 'lucide-react';
+import pwcLogo from '@/assets/pwc-logo.png';
 
 const testingItems = [
   { title: 'Dashboard', url: '/dashboard', icon: LayoutDashboard },
@@ -100,22 +100,19 @@ export default function DashboardLayout() {
   return (
     <SidebarProvider>
       <div className="min-h-screen flex w-full">
-        <Sidebar className="border-r border-sidebar-border">
+        <Sidebar className="border-r border-sidebar-border bg-sidebar">
           <div className="p-4">
             <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-xl gradient-primary flex items-center justify-center">
-                <Bot className="w-5 h-5 text-primary-foreground" />
-              </div>
+              <img src={pwcLogo} alt="PwC" className="h-10 w-auto" />
               <div className="flex-1 min-w-0">
-                <span className="font-bold text-sidebar-foreground">Browser-Use</span>
-                <p className="text-xs text-sidebar-foreground/60 truncate">Test Dashboard</p>
+                <span className="font-bold text-sidebar-foreground text-sm">Browser Automation</span>
               </div>
             </div>
           </div>
 
           <SidebarContent>
             <SidebarGroup>
-              <SidebarGroupLabel>Testování</SidebarGroupLabel>
+              <SidebarGroupLabel className="text-sidebar-foreground/60">Testování</SidebarGroupLabel>
               <SidebarGroupContent>
                 <SidebarMenu>
                   {testingItems.map((item) => (
@@ -138,7 +135,7 @@ export default function DashboardLayout() {
             </SidebarGroup>
 
             <SidebarGroup>
-              <SidebarGroupLabel>Operace v Legito</SidebarGroupLabel>
+              <SidebarGroupLabel className="text-sidebar-foreground/60">Operace v Legito</SidebarGroupLabel>
               <SidebarGroupContent>
                 <SidebarMenu>
                   {operationItems.map((item) => (
@@ -163,7 +160,7 @@ export default function DashboardLayout() {
           <div className="mt-auto p-4 border-t border-sidebar-border">
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
-                <Button variant="ghost" className="w-full justify-start gap-3 h-auto py-2">
+                <Button variant="ghost" className="w-full justify-start gap-3 h-auto py-2 text-sidebar-foreground hover:bg-sidebar-accent">
                   <Avatar className="h-8 w-8">
                     <AvatarFallback className="gradient-primary text-primary-foreground text-xs">
                       {userInitials}

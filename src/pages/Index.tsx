@@ -2,7 +2,8 @@ import { useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/hooks/useAuth';
 import { Button } from '@/components/ui/button';
-import { Bot, Play, History, TestTube, Settings, ArrowRight, Sparkles } from 'lucide-react';
+import { Play, History, TestTube, Settings, ArrowRight, Sparkles } from 'lucide-react';
+import pwcLogo from '@/assets/pwc-logo.png';
 
 export default function Index() {
   const { user, loading } = useAuth();
@@ -36,10 +37,7 @@ export default function Index() {
         <div className="relative max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-20 pb-24">
           <nav className="flex items-center justify-between mb-16">
             <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-xl gradient-primary flex items-center justify-center">
-                <Bot className="w-5 h-5 text-primary-foreground" />
-              </div>
-              <span className="text-xl font-bold">Browser-Use</span>
+              <img src={pwcLogo} alt="PwC" className="h-12 w-auto" />
             </div>
             <Button onClick={() => navigate('/auth')} className="gradient-primary glow">
               Přihlásit se <ArrowRight className="ml-2 h-4 w-4" />
@@ -52,8 +50,8 @@ export default function Index() {
               <span className="text-sm font-medium">AI-Powered Testing & Scraping</span>
             </div>
             <h1 className="text-5xl md:text-6xl lg:text-7xl font-bold tracking-tight mb-6">
-              <span className="bg-clip-text text-transparent bg-gradient-to-r from-primary to-accent">Browser Automation</span>
-              <br /><span>Dashboard</span>
+              <span className="text-primary">Browser Automation</span>
+              <br /><span className="text-foreground">Dashboard</span>
             </h1>
             <p className="text-xl text-muted-foreground max-w-2xl mx-auto mb-10">
               Ovládejte své Browser-Use agenty, testujte webové aplikace a scrapujte data pomocí intuitivního dashboardu.
@@ -84,6 +82,17 @@ export default function Index() {
           </div>
         </div>
       </section>
+
+      <footer className="py-8 border-t border-border">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+          <div className="flex items-center justify-between">
+            <img src={pwcLogo} alt="PwC" className="h-8 w-auto" />
+            <p className="text-sm text-muted-foreground">
+              © {new Date().getFullYear()} PwC. All rights reserved.
+            </p>
+          </div>
+        </div>
+      </footer>
     </div>
   );
 }

@@ -70,6 +70,12 @@ export default {
           border: "hsl(var(--sidebar-border))",
           ring: "hsl(var(--sidebar-ring))",
         },
+        // PwC brand colors
+        pwc: {
+          orange: "hsl(22, 100%, 45%)",
+          black: "hsl(0, 0%, 13%)",
+          white: "hsl(0, 0%, 100%)",
+        },
       },
       borderRadius: {
         lg: "var(--radius)",
@@ -77,7 +83,8 @@ export default {
         sm: "calc(var(--radius) - 4px)",
       },
       fontFamily: {
-        sans: ["Inter", "system-ui", "sans-serif"],
+        sans: ["Georgia", "Times New Roman", "serif"],
+        heading: ["Georgia", "Times New Roman", "serif"],
         mono: ["JetBrains Mono", "Fira Code", "monospace"],
       },
       keyframes: {
