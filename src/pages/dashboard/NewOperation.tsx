@@ -53,7 +53,7 @@ export default function NewOperation() {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
-  const [keepBrowserOpen, setKeepBrowserOpen] = useState(true);
+  const [keepBrowserOpen, setKeepBrowserOpen] = useState(false);
   const [loading, setLoading] = useState(false);
   const [duplicateTask, setDuplicateTask] = useState<DuplicateTask | null>(null);
   const [editableSteps, setEditableSteps] = useState<Step[]>([]);
