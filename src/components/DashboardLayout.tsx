@@ -35,6 +35,7 @@ import {
   Sun,
   LayoutDashboard,
   FileCheck,
+  FileText,
 } from 'lucide-react';
 
 const testingItems = [
@@ -49,6 +50,7 @@ const testingItems = [
 const operationItems = [
   { title: 'Nová operace', url: '/dashboard/operations/new', icon: Play },
   { title: 'Historie operací', url: '/dashboard/operations/history', icon: History },
+  { title: 'Šablony', url: '/dashboard/operations/templates', icon: FileText },
 ];
 
 export default function DashboardLayout() {
