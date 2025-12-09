@@ -37,7 +37,9 @@ export default function Index() {
         <div className="relative max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-20 pb-24">
           <nav className="flex items-center justify-between mb-16">
             <div className="flex items-center gap-3">
-              <img src={pwcLogo} alt="PwC" className="h-14 w-auto rounded" />
+              <div className="bg-white p-2 rounded">
+                <img src={pwcLogo} alt="PwC" className="h-10 w-auto" />
+              </div>
             </div>
             <Button onClick={() => navigate('/auth')} className="gradient-primary glow">
               Přihlásit se <ArrowRight className="ml-2 h-4 w-4" />
@@ -86,7 +88,9 @@ export default function Index() {
       <footer className="py-8 border-t border-border">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex items-center justify-between">
-            <img src={pwcLogo} alt="PwC" className="h-10 w-auto rounded" />
+            <div className="bg-white p-1.5 rounded">
+              <img src={pwcLogo} alt="PwC" className="h-6 w-auto" />
+            </div>
             <p className="text-sm text-muted-foreground">
               © {new Date().getFullYear()} PwC. All rights reserved.
             </p>
