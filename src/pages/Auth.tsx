@@ -7,7 +7,8 @@ import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { toast } from 'sonner';
-import { Bot, Eye, EyeOff, Loader2 } from 'lucide-react';
+import { Eye, EyeOff, Loader2 } from 'lucide-react';
+import pwcLogo from '@/assets/pwc-logo.png';
 
 export default function Auth() {
   const [email, setEmail] = useState('');
@@ -70,11 +71,11 @@ export default function Auth() {
       
       <Card className="w-full max-w-md relative z-10 glass">
         <CardHeader className="text-center space-y-4">
-          <div className="mx-auto w-16 h-16 rounded-2xl gradient-primary flex items-center justify-center glow">
-            <Bot className="w-8 h-8 text-primary-foreground" />
+          <div className="mx-auto">
+            <img src={pwcLogo} alt="PwC" className="h-16 w-auto mx-auto" />
           </div>
           <div>
-            <CardTitle className="text-2xl font-bold">Browser-Use Dashboard</CardTitle>
+            <CardTitle className="text-2xl font-bold">Browser Automation</CardTitle>
             <CardDescription className="mt-2">
               AI-powered browser automation & testing
             </CardDescription>

@@ -2,32 +2,35 @@
 @tailwind components;
 @tailwind utilities;
 
-/* Browser-Use Test Dashboard Design System */
+/* PwC Branded Design System */
 
 @layer base {
   :root {
-    --background: 220 20% 97%;
-    --foreground: 220 30% 10%;
+    /* PwC Brand Colors */
+    --background: 0 0% 100%;
+    --foreground: 0 0% 13%;
 
     --card: 0 0% 100%;
-    --card-foreground: 220 30% 10%;
+    --card-foreground: 0 0% 13%;
 
     --popover: 0 0% 100%;
-    --popover-foreground: 220 30% 10%;
+    --popover-foreground: 0 0% 13%;
 
-    --primary: 250 84% 54%;
+    /* PwC Orange - Primary brand color */
+    --primary: 22 100% 45%;
     --primary-foreground: 0 0% 100%;
 
-    --secondary: 220 14% 96%;
-    --secondary-foreground: 220 30% 20%;
+    --secondary: 0 0% 96%;
+    --secondary-foreground: 0 0% 20%;
 
-    --muted: 220 14% 96%;
-    --muted-foreground: 220 10% 46%;
+    --muted: 0 0% 96%;
+    --muted-foreground: 0 0% 45%;
 
-    --accent: 172 66% 50%;
-    --accent-foreground: 172 100% 10%;
+    /* PwC Rose/Coral - Accent color */
+    --accent: 22 85% 55%;
+    --accent-foreground: 0 0% 100%;
 
-    --destructive: 0 84% 60%;
+    --destructive: 0 84% 50%;
     --destructive-foreground: 0 0% 100%;
 
     --success: 142 76% 36%;
@@ -36,53 +39,56 @@
     --warning: 38 92% 50%;
     --warning-foreground: 38 100% 10%;
 
-    --border: 220 13% 91%;
-    --input: 220 13% 91%;
-    --ring: 250 84% 54%;
+    --border: 0 0% 90%;
+    --input: 0 0% 90%;
+    --ring: 22 100% 45%;
 
-    --radius: 0.75rem;
+    --radius: 0.5rem;
 
-    --sidebar-background: 0 0% 100%;
-    --sidebar-foreground: 220 30% 20%;
-    --sidebar-primary: 250 84% 54%;
+    /* PwC Sidebar */
+    --sidebar-background: 0 0% 13%;
+    --sidebar-foreground: 0 0% 100%;
+    --sidebar-primary: 22 100% 45%;
     --sidebar-primary-foreground: 0 0% 100%;
-    --sidebar-accent: 250 84% 97%;
-    --sidebar-accent-foreground: 250 84% 40%;
-    --sidebar-border: 220 13% 91%;
-    --sidebar-ring: 250 84% 54%;
+    --sidebar-accent: 22 100% 30%;
+    --sidebar-accent-foreground: 0 0% 100%;
+    --sidebar-border: 0 0% 20%;
+    --sidebar-ring: 22 100% 45%;
 
-    /* Custom gradients */
-    --gradient-primary: linear-gradient(135deg, hsl(250, 84%, 54%) 0%, hsl(280, 84%, 60%) 100%);
-    --gradient-accent: linear-gradient(135deg, hsl(172, 66%, 50%) 0%, hsl(190, 80%, 45%) 100%);
-    --gradient-hero: linear-gradient(135deg, hsl(250, 84%, 54%) 0%, hsl(172, 66%, 50%) 100%);
+    /* PwC Gradients */
+    --gradient-primary: linear-gradient(135deg, hsl(22, 100%, 45%) 0%, hsl(22, 85%, 55%) 100%);
+    --gradient-accent: linear-gradient(135deg, hsl(22, 85%, 55%) 0%, hsl(30, 90%, 50%) 100%);
+    --gradient-hero: linear-gradient(135deg, hsl(22, 100%, 45%) 0%, hsl(22, 85%, 55%) 100%);
 
     /* Shadows */
-    --shadow-sm: 0 1px 2px 0 hsl(220 30% 10% / 0.05);
-    --shadow-md: 0 4px 6px -1px hsl(220 30% 10% / 0.1), 0 2px 4px -2px hsl(220 30% 10% / 0.1);
-    --shadow-lg: 0 10px 15px -3px hsl(220 30% 10% / 0.1), 0 4px 6px -4px hsl(220 30% 10% / 0.1);
-    --shadow-glow: 0 0 20px hsl(250 84% 54% / 0.3);
+    --shadow-sm: 0 1px 2px 0 hsl(0 0% 0% / 0.05);
+    --shadow-md: 0 4px 6px -1px hsl(0 0% 0% / 0.1), 0 2px 4px -2px hsl(0 0% 0% / 0.1);
+    --shadow-lg: 0 10px 15px -3px hsl(0 0% 0% / 0.1), 0 4px 6px -4px hsl(0 0% 0% / 0.1);
+    --shadow-glow: 0 0 20px hsl(22 100% 45% / 0.3);
   }
 
   .dark {
-    --background: 224 30% 8%;
-    --foreground: 220 20% 95%;
+    --background: 0 0% 8%;
+    --foreground: 0 0% 95%;
 
-    --card: 224 25% 12%;
-    --card-foreground: 220 20% 95%;
+    --card: 0 0% 12%;
+    --card-foreground: 0 0% 95%;
 
-    --popover: 224 25% 12%;
-    --popover-foreground: 220 20% 95%;
+    --popover: 0 0% 12%;
+    --popover-foreground: 0 0% 95%;
 
-    --primary: 250 84% 60%;
+    /* PwC Orange - Primary brand color */
+    --primary: 22 100% 50%;
     --primary-foreground: 0 0% 100%;
 
-    --secondary: 224 20% 18%;
-    --secondary-foreground: 220 20% 90%;
+    --secondary: 0 0% 18%;
+    --secondary-foreground: 0 0% 90%;
 
-    --muted: 224 20% 18%;
-    --muted-foreground: 220 15% 60%;
+    --muted: 0 0% 18%;
+    --muted-foreground: 0 0% 60%;
 
-    --accent: 172 66% 45%;
+    /* PwC Rose/Coral - Accent color */
+    --accent: 22 85% 50%;
     --accent-foreground: 0 0% 100%;
 
     --destructive: 0 72% 50%;
@@ -94,20 +100,21 @@
     --warning: 38 92% 50%;
     --warning-foreground: 38 100% 10%;
 
-    --border: 224 20% 20%;
-    --input: 224 20% 20%;
-    --ring: 250 84% 60%;
+    --border: 0 0% 20%;
+    --input: 0 0% 20%;
+    --ring: 22 100% 50%;
 
-    --sidebar-background: 224 25% 10%;
-    --sidebar-foreground: 220 20% 90%;
-    --sidebar-primary: 250 84% 60%;
+    /* PwC Sidebar - Dark */
+    --sidebar-background: 0 0% 6%;
+    --sidebar-foreground: 0 0% 95%;
+    --sidebar-primary: 22 100% 50%;
     --sidebar-primary-foreground: 0 0% 100%;
-    --sidebar-accent: 250 50% 20%;
-    --sidebar-accent-foreground: 250 84% 70%;
-    --sidebar-border: 224 20% 18%;
-    --sidebar-ring: 250 84% 60%;
+    --sidebar-accent: 22 50% 20%;
+    --sidebar-accent-foreground: 22 100% 70%;
+    --sidebar-border: 0 0% 15%;
+    --sidebar-ring: 22 100% 50%;
 
-    --shadow-glow: 0 0 25px hsl(250 84% 60% / 0.4);
+    --shadow-glow: 0 0 25px hsl(22 100% 50% / 0.4);
   }
 }
 
@@ -145,6 +152,23 @@
 
   .glass {
     @apply bg-card/80 backdrop-blur-md border border-border/50;
+  }
+
+  /* PwC specific utilities */
+  .pwc-orange {
+    color: hsl(22, 100%, 45%);
+  }
+
+  .bg-pwc-orange {
+    background-color: hsl(22, 100%, 45%);
+  }
+
+  .bg-pwc-black {
+    background-color: hsl(0, 0%, 13%);
+  }
+
+  .text-pwc-black {
+    color: hsl(0, 0%, 13%);
   }
 }
 
