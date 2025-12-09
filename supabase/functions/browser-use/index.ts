@@ -190,13 +190,11 @@ serve(async (req) => {
 
       case 'stop_task': {
         // Stop a running task
-        const browserUseResponse = await fetch(`${BROWSER_USE_API_URL}/stop-task`, {
-          method: 'POST',
+        const browserUseResponse = await fetch(`${BROWSER_USE_API_URL}/stop-task?task_id=${taskId}`, {
+          method: 'PUT',
           headers: {
             'Authorization': `Bearer ${BROWSER_USE_API_KEY}`,
-            'Content-Type': 'application/json',
           },
-          body: JSON.stringify({ task_id: taskId }),
         });
 
         if (!browserUseResponse.ok) {
@@ -218,13 +216,11 @@ serve(async (req) => {
       }
 
       case 'pause_task': {
-        const browserUseResponse = await fetch(`${BROWSER_USE_API_URL}/pause-task`, {
-          method: 'POST',
+        const browserUseResponse = await fetch(`${BROWSER_USE_API_URL}/pause-task?task_id=${taskId}`, {
+          method: 'PUT',
           headers: {
             'Authorization': `Bearer ${BROWSER_USE_API_KEY}`,
-            'Content-Type': 'application/json',
           },
-          body: JSON.stringify({ task_id: taskId }),
         });
 
         if (!browserUseResponse.ok) {
@@ -237,13 +233,11 @@ serve(async (req) => {
       }
 
       case 'resume_task': {
-        const browserUseResponse = await fetch(`${BROWSER_USE_API_URL}/resume-task`, {
-          method: 'POST',
+        const browserUseResponse = await fetch(`${BROWSER_USE_API_URL}/resume-task?task_id=${taskId}`, {
+          method: 'PUT',
           headers: {
             'Authorization': `Bearer ${BROWSER_USE_API_KEY}`,
-            'Content-Type': 'application/json',
           },
-          body: JSON.stringify({ task_id: taskId }),
         });
 
         if (!browserUseResponse.ok) {
