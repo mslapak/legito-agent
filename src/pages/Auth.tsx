@@ -71,8 +71,8 @@ export default function Auth() {
       
       <Card className="w-full max-w-md relative z-10 glass">
         <CardHeader className="text-center space-y-4">
-          <div className="mx-auto">
-            <img src={pwcLogo} alt="PwC" className="h-16 w-auto mx-auto" />
+          <div className="mx-auto bg-black px-4 py-2 rounded">
+            <img src={pwcLogo} alt="PwC" className="h-12 w-auto" />
           </div>
           <div>
             <CardTitle className="text-2xl font-bold">Browser Automation</CardTitle>
