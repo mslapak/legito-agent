@@ -17,6 +17,8 @@ import NewOperation from "./pages/dashboard/NewOperation";
 import OperationHistory from "./pages/dashboard/OperationHistory";
 import OperationDetail from "./pages/dashboard/OperationDetail";
 import OperationTemplates from "./pages/dashboard/OperationTemplates";
+import OperationsDashboard from "./pages/dashboard/OperationsDashboard";
+import OperationTraining from "./pages/dashboard/OperationTraining";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -38,10 +40,12 @@ const App = () => (
               <Route path="test-generator" element={<TestGenerator />} />
               <Route path="doc-verify" element={<DocumentationVerify />} />
               <Route path="projects" element={<Projects />} />
+              <Route path="operations" element={<OperationsDashboard />} />
               <Route path="operations/new" element={<NewOperation />} />
               <Route path="operations/history" element={<OperationHistory />} />
               <Route path="operations/:operationId" element={<OperationDetail />} />
               <Route path="operations/templates" element={<OperationTemplates />} />
+              <Route path="operations/training" element={<OperationTraining />} />
             </Route>
             <Route path="*" element={<NotFound />} />
           </Routes>
