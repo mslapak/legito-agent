@@ -36,6 +36,7 @@ import {
   LayoutDashboard,
   FileCheck,
   FileText,
+  GraduationCap,
 } from 'lucide-react';
 
 const testingItems = [
@@ -48,9 +49,11 @@ const testingItems = [
 ];
 
 const operationItems = [
+  { title: 'Dashboard', url: '/dashboard/operations', icon: LayoutDashboard },
   { title: 'Nová operace', url: '/dashboard/operations/new', icon: Play },
   { title: 'Historie operací', url: '/dashboard/operations/history', icon: History },
   { title: 'Šablony', url: '/dashboard/operations/templates', icon: FileText },
+  { title: 'Školení', url: '/dashboard/operations/training', icon: GraduationCap },
 ];
 
 export default function DashboardLayout() {

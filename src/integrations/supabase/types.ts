@@ -160,6 +160,42 @@ export type Database = {
         }
         Relationships: []
       }
+      operation_trainings: {
+        Row: {
+          created_at: string
+          description: string | null
+          id: string
+          name: string
+          source_content: string | null
+          source_type: string | null
+          structured_instructions: Json | null
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          description?: string | null
+          id?: string
+          name: string
+          source_content?: string | null
+          source_type?: string | null
+          structured_instructions?: Json | null
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          description?: string | null
+          id?: string
+          name?: string
+          source_content?: string | null
+          source_type?: string | null
+          structured_instructions?: Json | null
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       profiles: {
         Row: {
           avatar_url: string | null
