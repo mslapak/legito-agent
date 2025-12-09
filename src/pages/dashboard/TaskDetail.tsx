@@ -140,9 +140,29 @@ export default function TaskDetail() {
       const screenshots = mediaData?.screenshots || [];
       const recordings = mediaData?.recordings || [];
       
-      const newStatus = browserUseData.status === 'finished' ? 'completed' :
-                    browserUseData.status === 'failed' ? 'failed' :
-                    browserUseData.status === 'running' ? 'running' : task.status;
+      console.log('Browser-Use API response:', { 
+        status: browserUseData.status, 
+        hasOutput: !!browserUseData.output,
+        finishedAt: browserUseData.finished_at 
+      });
+      
+      let newStatus: string;
+      if (browserUseData.status === 'finished') {
+        newStatus = 'completed';
+      } else if (browserUseData.status === 'failed') {
+        newStatus = 'failed';
+      } else if (browserUseData.status === 'stopped') {
+        // Stopped může znamenat dokončeno NEBO manuálně zrušeno
+        if (browserUseData.output || browserUseData.finished_at) {
+          newStatus = 'completed';
+        } else {
+          newStatus = 'cancelled';
+        }
+      } else if (browserUseData.status === 'running') {
+        newStatus = 'running';
+      } else {
+        newStatus = task.status;
+      }
 
       // Update task with all data including live_url
       await supabase
