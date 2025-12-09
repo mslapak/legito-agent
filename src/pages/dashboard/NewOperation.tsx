@@ -95,7 +95,7 @@ export default function NewOperation() {
       const { data, error } = await supabase.functions.invoke('browser-use', {
         body: {
           action: 'create_task',
-          task: fullPrompt,
+          prompt: fullPrompt,
           title: title || 'Operace v Legito',
           userId: user.id,
           keepBrowserOpen,
