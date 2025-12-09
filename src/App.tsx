@@ -16,6 +16,7 @@ import DocumentationVerify from "./pages/dashboard/DocumentationVerify";
 import NewOperation from "./pages/dashboard/NewOperation";
 import OperationHistory from "./pages/dashboard/OperationHistory";
 import OperationDetail from "./pages/dashboard/OperationDetail";
+import OperationTemplates from "./pages/dashboard/OperationTemplates";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -40,6 +41,7 @@ const App = () => (
               <Route path="operations/new" element={<NewOperation />} />
               <Route path="operations/history" element={<OperationHistory />} />
               <Route path="operations/:operationId" element={<OperationDetail />} />
+              <Route path="operations/templates" element={<OperationTemplates />} />
             </Route>
             <Route path="*" element={<NotFound />} />
           </Routes>
