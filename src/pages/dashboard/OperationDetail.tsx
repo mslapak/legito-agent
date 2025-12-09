@@ -79,7 +79,8 @@ export default function OperationDetail() {
       .from('tasks')
       .select('*')
       .eq('id', operationId)
-      .single();
+      .eq('user_id', user!.id)
+      .maybeSingle();
 
     if (error) {
       toast.error('Nepodařilo se načíst operaci');

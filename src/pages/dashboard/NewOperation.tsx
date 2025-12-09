@@ -220,6 +220,20 @@ export default function NewOperation() {
 
       if (error) throw error;
 
+      // Wait for task to be saved to database before navigating
+      let attempts = 0;
+      while (attempts < 10) {
+        const { data: taskExists } = await supabase
+          .from('tasks')
+          .select('id')
+          .eq('id', data.taskId)
+          .maybeSingle();
+        
+        if (taskExists) break;
+        await new Promise(resolve => setTimeout(resolve, 300));
+        attempts++;
+      }
+
       toast.success('Operace spuštěna');
       navigate(`/dashboard/operations/${data.taskId}`);
     } catch (error: any) {
