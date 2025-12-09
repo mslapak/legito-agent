@@ -74,6 +74,16 @@ export default function OperationDetail() {
     }
   }, [operationId, user]);
 
+  // Auto-refresh for running operations - every 5 seconds
+  useEffect(() => {
+    if (operation?.status === 'running' && operation?.browser_use_task_id) {
+      const interval = setInterval(() => {
+        refreshStatus();
+      }, 5000);
+      return () => clearInterval(interval);
+    }
+  }, [operation?.status, operation?.browser_use_task_id]);
+
   const fetchOperation = async () => {
     const { data, error } = await supabase
       .from('tasks')
@@ -109,23 +119,74 @@ export default function OperationDetail() {
       .subscribe();
   };
 
-  const refreshStatus = async () => {
+  const refreshStatus = async (showToast = false) => {
     if (!operation?.browser_use_task_id) return;
     setRefreshing(true);
 
     try {
-      const { data, error } = await supabase.functions.invoke('browser-use', {
+      // Get task details from Browser-Use
+      const { data: detailsData, error: detailsError } = await supabase.functions.invoke('browser-use', {
         body: {
-          action: 'get_task_status',
+          action: 'get_task_details',
           taskId: operation.browser_use_task_id,
         },
       });
 
-      if (error) throw error;
+      if (detailsError) throw detailsError;
+
+      // Get media
+      const { data: mediaData } = await supabase.functions.invoke('browser-use', {
+        body: {
+          action: 'get_all_media',
+          taskId: operation.browser_use_task_id,
+        },
+      });
+
+      // Map Browser-Use status to our status
+      const browserStatus = detailsData?.status;
+      const newStatus = browserStatus === 'finished' ? 'completed' :
+                        browserStatus === 'failed' ? 'failed' :
+                        browserStatus === 'stopped' ? 'cancelled' :
+                        browserStatus === 'running' ? 'running' : operation.status;
+
+      // Update database with new status and media
+      const updateData: any = {
+        status: newStatus,
+        steps: detailsData?.steps || operation.steps,
+      };
+
+      if (detailsData?.output) {
+        updateData.result = detailsData.output;
+      }
+
+      if (mediaData?.screenshots?.length) {
+        updateData.screenshots = mediaData.screenshots;
+      }
+
+      if (mediaData?.recordings?.length) {
+        updateData.recordings = mediaData.recordings;
+      }
+
+      if (newStatus === 'completed' || newStatus === 'failed' || newStatus === 'cancelled') {
+        updateData.completed_at = new Date().toISOString();
+      }
+
+      await supabase
+        .from('tasks')
+        .update(updateData)
+        .eq('id', operation.id)
+        .eq('user_id', user!.id);
+
       await fetchOperation();
-      toast.success('Status aktualizován');
+      
+      if (showToast) {
+        toast.success('Status aktualizován');
+      }
     } catch (error: any) {
-      toast.error('Nepodařilo se aktualizovat status');
+      console.error('Error refreshing status:', error);
+      if (showToast) {
+        toast.error('Nepodařilo se aktualizovat status');
+      }
     } finally {
       setRefreshing(false);
     }
@@ -268,7 +329,7 @@ export default function OperationDetail() {
             <Copy className="h-4 w-4 mr-1" />
             Duplikovat
           </Button>
-          <Button variant="outline" size="sm" onClick={refreshStatus} disabled={refreshing}>
+          <Button variant="outline" size="sm" onClick={() => refreshStatus(true)} disabled={refreshing}>
             <RefreshCw className={`h-4 w-4 mr-1 ${refreshing ? 'animate-spin' : ''}`} />
             Obnovit
           </Button>
