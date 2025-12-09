@@ -40,8 +40,8 @@ serve(async (req) => {
       });
     }
 
-    const { action, taskId, prompt, title, projectId, keepBrowserOpen, followUpPrompt } = await req.json();
-    console.log(`Action: ${action}, User: ${user.id}, TaskId: ${taskId || 'N/A'}`);
+    const { action, taskId, prompt, title, projectId, keepBrowserOpen, followUpPrompt, taskType } = await req.json();
+    console.log(`Action: ${action}, User: ${user.id}, TaskId: ${taskId || 'N/A'}, TaskType: ${taskType || 'test'}`);
 
     // Browser-Use Cloud API base URL
     const BROWSER_USE_API_URL = 'https://api.browser-use.com/api/v1';
@@ -92,6 +92,7 @@ serve(async (req) => {
             browser_use_task_id: browserUseData.id,
             live_url: browserUseData.live_url || null,
             started_at: new Date().toISOString(),
+            task_type: taskType || 'test',
           })
           .select()
           .single();

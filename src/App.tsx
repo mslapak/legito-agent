@@ -13,6 +13,9 @@ import TaskDetail from "./pages/dashboard/TaskDetail";
 import TestGenerator from "./pages/dashboard/TestGenerator";
 import Projects from "./pages/dashboard/Projects";
 import DocumentationVerify from "./pages/dashboard/DocumentationVerify";
+import NewOperation from "./pages/dashboard/NewOperation";
+import OperationHistory from "./pages/dashboard/OperationHistory";
+import OperationDetail from "./pages/dashboard/OperationDetail";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -34,6 +37,9 @@ const App = () => (
               <Route path="test-generator" element={<TestGenerator />} />
               <Route path="doc-verify" element={<DocumentationVerify />} />
               <Route path="projects" element={<Projects />} />
+              <Route path="operations/new" element={<NewOperation />} />
+              <Route path="operations/history" element={<OperationHistory />} />
+              <Route path="operations/:operationId" element={<OperationDetail />} />
             </Route>
             <Route path="*" element={<NotFound />} />
           </Routes>

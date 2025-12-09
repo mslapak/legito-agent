@@ -248,6 +248,7 @@ export type Database = {
           started_at: string | null
           status: Database["public"]["Enums"]["task_status"]
           steps: Json | null
+          task_type: string
           title: string
           updated_at: string
           user_id: string
@@ -268,6 +269,7 @@ export type Database = {
           started_at?: string | null
           status?: Database["public"]["Enums"]["task_status"]
           steps?: Json | null
+          task_type?: string
           title: string
           updated_at?: string
           user_id: string
@@ -288,6 +290,7 @@ export type Database = {
           started_at?: string | null
           status?: Database["public"]["Enums"]["task_status"]
           steps?: Json | null
+          task_type?: string
           title?: string
           updated_at?: string
           user_id?: string

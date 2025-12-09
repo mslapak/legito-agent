@@ -37,13 +37,18 @@ import {
   FileCheck,
 } from 'lucide-react';
 
-const menuItems = [
+const testingItems = [
   { title: 'Dashboard', url: '/dashboard', icon: LayoutDashboard },
   { title: 'Nový úkol', url: '/dashboard/new-task', icon: Play },
-  { title: 'Historie', url: '/dashboard/history', icon: History },
+  { title: 'Historie testů', url: '/dashboard/history', icon: History },
   { title: 'Generátor testů', url: '/dashboard/test-generator', icon: TestTube },
   { title: 'Ověření dokumentace', url: '/dashboard/doc-verify', icon: FileCheck },
   { title: 'Projekty', url: '/dashboard/projects', icon: FolderOpen },
+];
+
+const operationItems = [
+  { title: 'Nová operace', url: '/dashboard/operations/new', icon: Play },
+  { title: 'Historie operací', url: '/dashboard/operations/history', icon: History },
 ];
 
 export default function DashboardLayout() {
@@ -105,15 +110,37 @@ export default function DashboardLayout() {
 
           <SidebarContent>
             <SidebarGroup>
-              <SidebarGroupLabel>Navigace</SidebarGroupLabel>
+              <SidebarGroupLabel>Testování</SidebarGroupLabel>
               <SidebarGroupContent>
                 <SidebarMenu>
-                  {menuItems.map((item) => (
+                  {testingItems.map((item) => (
                     <SidebarMenuItem key={item.title}>
                       <SidebarMenuButton asChild>
                         <NavLink
                           to={item.url}
                           end={item.url === '/dashboard'}
+                          className="flex items-center gap-3 px-3 py-2 rounded-lg text-sidebar-foreground hover:bg-sidebar-accent transition-colors"
+                          activeClassName="bg-sidebar-accent text-sidebar-accent-foreground font-medium"
+                        >
+                          <item.icon className="w-5 h-5" />
+                          <span>{item.title}</span>
+                        </NavLink>
+                      </SidebarMenuButton>
+                    </SidebarMenuItem>
+                  ))}
+                </SidebarMenu>
+              </SidebarGroupContent>
+            </SidebarGroup>
+
+            <SidebarGroup>
+              <SidebarGroupLabel>Operace v Legito</SidebarGroupLabel>
+              <SidebarGroupContent>
+                <SidebarMenu>
+                  {operationItems.map((item) => (
+                    <SidebarMenuItem key={item.title}>
+                      <SidebarMenuButton asChild>
+                        <NavLink
+                          to={item.url}
                           className="flex items-center gap-3 px-3 py-2 rounded-lg text-sidebar-foreground hover:bg-sidebar-accent transition-colors"
                           activeClassName="bg-sidebar-accent text-sidebar-accent-foreground font-medium"
                         >
@@ -166,7 +193,7 @@ export default function DashboardLayout() {
             <div className="flex items-center gap-4">
               <SidebarTrigger />
               <h1 className="text-lg font-semibold">
-                {menuItems.find((item) => 
+                {[...testingItems, ...operationItems].find((item) => 
                   item.url === '/dashboard' 
                     ? location.pathname === '/dashboard' 
                     : location.pathname.startsWith(item.url)
