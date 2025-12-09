@@ -51,8 +51,9 @@ serve(async (req) => {
         // Create task in Browser-Use Cloud
         const requestBody: Record<string, unknown> = {
           task: prompt,
-          // Enable video recording
+          // Enable video recording and data saving
           save_browser_data: true,
+          record_video: true,
         };
         
         // Add keep_browser_open if specified
