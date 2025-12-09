@@ -150,10 +150,30 @@ export default function OperationDetail() {
 
       // Map Browser-Use status to our status
       const browserStatus = detailsData?.status;
-      const newStatus = browserStatus === 'finished' ? 'completed' :
-                        browserStatus === 'failed' ? 'failed' :
-                        browserStatus === 'stopped' ? 'cancelled' :
-                        browserStatus === 'running' ? 'running' : operation.status;
+      console.log('Browser-Use API response:', { 
+        status: browserStatus, 
+        hasOutput: !!detailsData?.output,
+        finishedAt: detailsData?.finished_at 
+      });
+      
+      let newStatus: string;
+      if (browserStatus === 'finished') {
+        newStatus = 'completed';
+      } else if (browserStatus === 'failed') {
+        newStatus = 'failed';
+      } else if (browserStatus === 'stopped') {
+        // Stopped může znamenat dokončeno NEBO manuálně zrušeno
+        // Pokud máme output nebo finished_at, považujeme za dokončeno
+        if (detailsData?.output || detailsData?.finished_at) {
+          newStatus = 'completed';
+        } else {
+          newStatus = 'cancelled';
+        }
+      } else if (browserStatus === 'running') {
+        newStatus = 'running';
+      } else {
+        newStatus = operation.status;
+      }
 
       // Update database with new status and media
       const updateData: Record<string, unknown> = {
