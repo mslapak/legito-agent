@@ -17,8 +17,16 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { toast } from 'sonner';
-import { Play, Loader2, ChevronDown, Copy, Eye, EyeOff, Trash2, Plus, Save, FileText } from 'lucide-react';
+import { Play, Loader2, ChevronDown, Copy, Eye, EyeOff, Trash2, Plus, Save, FileText, Upload, X } from 'lucide-react';
+import { Badge } from '@/components/ui/badge';
 import type { Json } from '@/integrations/supabase/types';
+
+interface UploadedFile {
+  name: string;
+  content: string;
+  type: string;
+  size: number;
+}
 
 interface Step {
   step: number;
@@ -65,6 +73,10 @@ export default function NewOperation() {
   const [savingTemplate, setSavingTemplate] = useState(false);
   const [templateName, setTemplateName] = useState('');
   const [showSaveTemplate, setShowSaveTemplate] = useState(false);
+  
+  // File uploads
+  const [uploadedFiles, setUploadedFiles] = useState<UploadedFile[]>([]);
+  const [uploadingFile, setUploadingFile] = useState(false);
 
   useEffect(() => {
     if (user) {
@@ -185,6 +197,77 @@ export default function NewOperation() {
     ]);
   };
 
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    // Check file size (max 10MB)
+    if (file.size > 10 * 1024 * 1024) {
+      toast.error('Soubor je příliš velký (max 10MB)');
+      return;
+    }
+
+    // Check file type
+    const allowedTypes = [
+      'application/vnd.openxmlformats-officedocument.wordprocessingml.document', // docx
+      'application/msword', // doc
+      'application/pdf',
+      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', // xlsx
+      'application/vnd.ms-excel', // xls
+      'text/plain',
+    ];
+    
+    if (!allowedTypes.includes(file.type)) {
+      toast.error('Nepodporovaný formát souboru. Povolené: DOCX, DOC, PDF, XLSX, XLS, TXT');
+      return;
+    }
+
+    // Check if file already uploaded
+    if (uploadedFiles.some(f => f.name === file.name)) {
+      toast.error('Soubor s tímto názvem již byl přidán');
+      return;
+    }
+
+    setUploadingFile(true);
+    try {
+      // Convert to base64
+      const reader = new FileReader();
+      reader.onload = () => {
+        const base64 = (reader.result as string).split(',')[1];
+        setUploadedFiles(prev => [...prev, { 
+          name: file.name, 
+          content: base64, 
+          type: file.type,
+          size: file.size 
+        }]);
+        setUploadingFile(false);
+        toast.success(`Soubor ${file.name} připraven k nahrání`);
+      };
+      reader.onerror = () => {
+        toast.error('Nepodařilo se načíst soubor');
+        setUploadingFile(false);
+      };
+      reader.readAsDataURL(file);
+    } catch (error) {
+      console.error('File read error:', error);
+      toast.error('Nepodařilo se načíst soubor');
+      setUploadingFile(false);
+    }
+    
+    // Reset input
+    e.target.value = '';
+  };
+
+  const removeFile = (fileName: string) => {
+    setUploadedFiles(prev => prev.filter(f => f.name !== fileName));
+  };
+
+  const formatFileSize = (bytes: number) => {
+    if (bytes < 1024) return `${bytes} B`;
+    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+    return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
@@ -201,10 +284,39 @@ export default function NewOperation() {
     setLoading(true);
 
     try {
-      // Build prompt with credentials if provided
+      // Upload files first if any
+      const uploadedFileNames: string[] = [];
+      if (uploadedFiles.length > 0) {
+        toast.info('Nahrávám soubory...');
+        for (const file of uploadedFiles) {
+          const { data: uploadData, error: uploadError } = await supabase.functions.invoke('browser-use', {
+            body: {
+              action: 'upload_file',
+              fileName: file.name,
+              fileBase64: file.content,
+              contentType: file.type,
+            },
+          });
+
+          if (uploadError) {
+            throw new Error(`Nepodařilo se nahrát soubor ${file.name}`);
+          }
+          uploadedFileNames.push(file.name);
+        }
+        toast.success('Soubory nahrány');
+      }
+
+      // Build prompt with credentials and file info
       let fullPrompt = prompt;
+      
+      // Add file info to prompt
+      if (uploadedFileNames.length > 0) {
+        const fileList = uploadedFileNames.map(f => `"${f}"`).join(', ');
+        fullPrompt = `Máš k dispozici soubory: ${fileList}. Tyto soubory můžeš použít pro import/upload na webové stránce.\n\n${fullPrompt}`;
+      }
+      
       if (username && password) {
-        fullPrompt = `Credentials for login:\nUsername: ${username}\nPassword: ${password}\n\nInstructions:\n${prompt}`;
+        fullPrompt = `Credentials for login:\nUsername: ${username}\nPassword: ${password}\n\n${fullPrompt}`;
       }
 
       const { data, error } = await supabase.functions.invoke('browser-use', {
@@ -215,6 +327,7 @@ export default function NewOperation() {
           userId: user.id,
           keepBrowserOpen,
           taskType: 'operation',
+          includedFiles: uploadedFileNames.length > 0 ? uploadedFileNames : undefined,
         },
       });
 
@@ -406,6 +519,50 @@ export default function NewOperation() {
                 rows={6}
                 className="resize-none"
               />
+            </div>
+
+            {/* File upload section */}
+            <div className="space-y-3">
+              <Label>Soubory k nahrání (volitelné)</Label>
+              <p className="text-xs text-muted-foreground">
+                Nahrajte dokumenty (DOCX, PDF, XLSX atd.), které agent použije pro import na webové stránce.
+              </p>
+              <div className="flex items-center gap-2">
+                <Input
+                  type="file"
+                  accept=".docx,.doc,.pdf,.xlsx,.xls,.txt"
+                  onChange={handleFileUpload}
+                  disabled={uploadingFile}
+                  className="flex-1"
+                />
+                {uploadingFile && <Loader2 className="h-4 w-4 animate-spin" />}
+              </div>
+              {uploadedFiles.length > 0 && (
+                <div className="flex flex-wrap gap-2">
+                  {uploadedFiles.map(file => (
+                    <Badge 
+                      key={file.name} 
+                      variant="secondary" 
+                      className="flex items-center gap-1 pr-1"
+                    >
+                      <Upload className="h-3 w-3" />
+                      {file.name}
+                      <span className="text-xs text-muted-foreground ml-1">
+                        ({formatFileSize(file.size)})
+                      </span>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        className="h-4 w-4 ml-1 hover:bg-destructive/20"
+                        onClick={() => removeFile(file.name)}
+                      >
+                        <X className="h-3 w-3" />
+                      </Button>
+                    </Badge>
+                  ))}
+                </div>
+              )}
             </div>
 
             <Collapsible>

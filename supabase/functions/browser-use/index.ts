@@ -40,13 +40,61 @@ serve(async (req) => {
       });
     }
 
-    const { action, taskId, prompt, title, projectId, keepBrowserOpen, followUpPrompt, taskType } = await req.json();
+const { action, taskId, prompt, title, projectId, keepBrowserOpen, followUpPrompt, taskType, fileName, fileBase64, contentType, includedFiles } = await req.json();
     console.log(`Action: ${action}, User: ${user.id}, TaskId: ${taskId || 'N/A'}, TaskType: ${taskType || 'test'}`);
 
     // Browser-Use Cloud API base URL
     const BROWSER_USE_API_URL = 'https://api.browser-use.com/api/v1';
 
     switch (action) {
+      case 'upload_file': {
+        // Upload file using presigned URL
+        console.log(`Uploading file: ${fileName}, type: ${contentType}`);
+        
+        // 1. Get presigned URL
+        const presignedRes = await fetch(`${BROWSER_USE_API_URL}/uploads/presigned-url`, {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${BROWSER_USE_API_KEY}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ file_name: fileName, content_type: contentType }),
+        });
+
+        if (!presignedRes.ok) {
+          const errorText = await presignedRes.text();
+          console.error('Presigned URL error:', errorText);
+          throw new Error(`Failed to get presigned URL: ${presignedRes.status}`);
+        }
+
+        const presignedData = await presignedRes.json();
+        console.log('Presigned URL response:', JSON.stringify(presignedData));
+        const uploadUrl = presignedData.upload_url;
+
+        if (!uploadUrl) {
+          throw new Error('No upload_url in presigned response');
+        }
+
+        // 2. Upload file content
+        const fileBuffer = Uint8Array.from(atob(fileBase64), c => c.charCodeAt(0));
+        const uploadRes = await fetch(uploadUrl, {
+          method: 'PUT',
+          body: fileBuffer,
+          headers: { 'Content-Type': contentType },
+        });
+
+        if (!uploadRes.ok) {
+          const errorText = await uploadRes.text();
+          console.error('File upload error:', errorText);
+          throw new Error(`Failed to upload file: ${uploadRes.status}`);
+        }
+
+        console.log(`File ${fileName} uploaded successfully`);
+        return new Response(JSON.stringify({ success: true, fileName }), {
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+
       case 'create_task': {
         // Create task in Browser-Use Cloud
         const requestBody: Record<string, unknown> = {
@@ -59,6 +107,12 @@ serve(async (req) => {
         // Add keep_browser_open if specified
         if (keepBrowserOpen) {
           requestBody.keep_browser_open = true;
+        }
+
+        // Add uploaded files if specified
+        if (includedFiles && includedFiles.length > 0) {
+          requestBody.included_file_names = includedFiles;
+          console.log('Including files in task:', includedFiles);
         }
         
         console.log('Creating task with body:', JSON.stringify(requestBody));
