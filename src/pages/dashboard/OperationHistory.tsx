@@ -24,6 +24,15 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from '@/components/ui/alert-dialog';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
+import { Label } from '@/components/ui/label';
 import { toast } from 'sonner';
 import {
   Search,
@@ -36,15 +45,18 @@ import {
   Play,
   Ban,
   Copy,
+  Save,
 } from 'lucide-react';
 import { format } from 'date-fns';
 import { cs } from 'date-fns/locale';
+import type { Json } from '@/integrations/supabase/types';
 
 interface Operation {
   id: string;
   title: string;
   prompt: string;
   status: string;
+  steps: Json | null;
   created_at: string;
   completed_at: string | null;
 }
@@ -56,6 +68,12 @@ export default function OperationHistory() {
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('all');
+  
+  // Save as template dialog
+  const [saveTemplateOpen, setSaveTemplateOpen] = useState(false);
+  const [selectedOperation, setSelectedOperation] = useState<Operation | null>(null);
+  const [templateName, setTemplateName] = useState('');
+  const [savingTemplate, setSavingTemplate] = useState(false);
 
   useEffect(() => {
     if (user) {
@@ -70,7 +88,7 @@ export default function OperationHistory() {
   const fetchOperations = async () => {
     const { data, error } = await supabase
       .from('tasks')
-      .select('id, title, prompt, status, created_at, completed_at')
+      .select('id, title, prompt, status, steps, created_at, completed_at')
       .eq('user_id', user!.id)
       .eq('task_type', 'operation')
       .order('created_at', { ascending: false });
@@ -113,6 +131,40 @@ export default function OperationHistory() {
     }
   };
 
+  const openSaveTemplateDialog = (operation: Operation) => {
+    setSelectedOperation(operation);
+    setTemplateName(operation.title);
+    setSaveTemplateOpen(true);
+  };
+
+  const handleSaveAsTemplate = async () => {
+    if (!templateName.trim() || !selectedOperation) {
+      toast.error('Zadejte název šablony');
+      return;
+    }
+
+    setSavingTemplate(true);
+    try {
+      const { error } = await supabase.from('operation_templates').insert({
+        user_id: user!.id,
+        name: templateName,
+        prompt: selectedOperation.prompt,
+        steps: selectedOperation.steps,
+      });
+
+      if (error) throw error;
+
+      toast.success('Šablona uložena');
+      setSaveTemplateOpen(false);
+      setSelectedOperation(null);
+      setTemplateName('');
+    } catch (error: any) {
+      toast.error('Nepodařilo se uložit šablonu');
+    } finally {
+      setSavingTemplate(false);
+    }
+  };
+
   const getStatusBadge = (status: string) => {
     switch (status) {
       case 'completed':
@@ -151,6 +203,11 @@ export default function OperationHistory() {
           </Badge>
         );
     }
+  };
+
+  const getStepsCount = (steps: Json | null): number => {
+    if (!steps || !Array.isArray(steps)) return 0;
+    return steps.length;
   };
 
   const filteredOperations = operations.filter((op) => {
@@ -219,28 +276,42 @@ export default function OperationHistory() {
                     <div className="flex items-center gap-2 mb-1">
                       <h3 className="font-medium truncate">{operation.title}</h3>
                       {getStatusBadge(operation.status)}
+                      {getStepsCount(operation.steps) > 0 && (
+                        <Badge variant="outline" className="text-xs">
+                          {getStepsCount(operation.steps)} kroků
+                        </Badge>
+                      )}
                     </div>
                     <p className="text-sm text-muted-foreground line-clamp-2">{operation.prompt}</p>
                     <p className="text-xs text-muted-foreground mt-2">
                       {format(new Date(operation.created_at), 'PPp', { locale: cs })}
                     </p>
                   </div>
-                  <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => openSaveTemplateDialog(operation)}
+                      title="Uložit jako šablonu"
+                    >
+                      <Save className="h-4 w-4 sm:mr-1" />
+                      <span className="hidden sm:inline">Šablona</span>
+                    </Button>
                     <Button
                       variant="outline"
                       size="sm"
                       onClick={() => navigate(`/dashboard/operations/new?duplicate_from=${operation.id}`)}
                     >
-                      <Copy className="h-4 w-4 mr-1" />
-                      Duplikovat
+                      <Copy className="h-4 w-4 sm:mr-1" />
+                      <span className="hidden sm:inline">Duplikovat</span>
                     </Button>
                     <Button
                       variant="outline"
                       size="sm"
                       onClick={() => navigate(`/dashboard/operations/${operation.id}`)}
                     >
-                      <Eye className="h-4 w-4 mr-1" />
-                      Detail
+                      <Eye className="h-4 w-4 sm:mr-1" />
+                      <span className="hidden sm:inline">Detail</span>
                     </Button>
                     <AlertDialog>
                       <AlertDialogTrigger asChild>
@@ -270,6 +341,47 @@ export default function OperationHistory() {
           ))}
         </div>
       )}
+
+      {/* Save as Template Dialog */}
+      <Dialog open={saveTemplateOpen} onOpenChange={setSaveTemplateOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Uložit jako šablonu</DialogTitle>
+            <DialogDescription>
+              Uložte tuto operaci jako šablonu pro opakované použití.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div className="space-y-2">
+              <Label htmlFor="template-name">Název šablony</Label>
+              <Input
+                id="template-name"
+                value={templateName}
+                onChange={(e) => setTemplateName(e.target.value)}
+                placeholder="Např. Vytvoření template v Legito"
+              />
+            </div>
+            {selectedOperation && getStepsCount(selectedOperation.steps) > 0 && (
+              <p className="text-sm text-muted-foreground">
+                Šablona bude obsahovat {getStepsCount(selectedOperation.steps)} kroků.
+              </p>
+            )}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setSaveTemplateOpen(false)}>
+              Zrušit
+            </Button>
+            <Button onClick={handleSaveAsTemplate} disabled={savingTemplate}>
+              {savingTemplate ? (
+                <Loader2 className="h-4 w-4 animate-spin mr-2" />
+              ) : (
+                <Save className="h-4 w-4 mr-2" />
+              )}
+              Uložit šablonu
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
