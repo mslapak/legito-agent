@@ -40,7 +40,107 @@ serve(async (req) => {
       });
     }
 
-    const { description, documentation, baseUrl, testType, projectId } = await req.json();
+    const { action, description, documentation, baseUrl, testType, projectId, rawText } = await req.json();
+    
+    // Handle parse_tests action - parse tests from raw text
+    if (action === 'parse_tests') {
+      console.log(`Parsing tests from raw text, length: ${rawText?.length || 0}`);
+      
+      const parseSystemPrompt = `You are an expert QA engineer who extracts structured test cases from unstructured text.
+The user will provide text that contains test cases in various formats (numbered lists, bullet points, tables, Azure DevOps exports, etc.)
+
+Your task is to extract ALL test cases and structure them properly.
+
+For each test case, extract or infer:
+- title: A short, descriptive title
+- prompt: Detailed step-by-step instructions for browser automation (convert any shorthand into clear steps)
+- expectedResult: What should happen if the test passes (extract from text or infer from context)
+- priority: low/medium/high (infer from keywords like "critical", "important", or default to medium)
+
+Be thorough - extract EVERY test case mentioned. If steps are abbreviated, expand them into clear automation instructions.`;
+
+      const parseUserPrompt = `Extract and structure all test cases from the following text:
+
+${baseUrl ? `Application URL: ${baseUrl}\n` : ''}
+=== RAW TEXT START ===
+${rawText}
+=== RAW TEXT END ===
+
+Convert each test case into a structured format with clear automation steps.`;
+
+      const parseResponse = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${LOVABLE_API_KEY}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          model: "google/gemini-2.5-flash",
+          messages: [
+            { role: "system", content: parseSystemPrompt },
+            { role: "user", content: parseUserPrompt }
+          ],
+          tools: [
+            {
+              type: "function",
+              function: {
+                name: "generate_test_cases",
+                description: "Extract structured test cases from raw text",
+                parameters: {
+                  type: "object",
+                  properties: {
+                    testCases: {
+                      type: "array",
+                      items: {
+                        type: "object",
+                        properties: {
+                          title: { type: "string", description: "Short descriptive title for the test case" },
+                          prompt: { type: "string", description: "Detailed step-by-step instructions for browser automation" },
+                          expectedResult: { type: "string", description: "Expected outcome if test passes" },
+                          priority: { type: "string", enum: ["low", "medium", "high"], description: "Priority level" }
+                        },
+                        required: ["title", "prompt", "expectedResult", "priority"]
+                      }
+                    }
+                  },
+                  required: ["testCases"]
+                }
+              }
+            }
+          ],
+          tool_choice: { type: "function", function: { name: "generate_test_cases" } }
+        }),
+      });
+
+      if (!parseResponse.ok) {
+        if (parseResponse.status === 429) {
+          return new Response(JSON.stringify({ error: "Rate limit exceeded, please try again later." }), {
+            status: 429,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          });
+        }
+        if (parseResponse.status === 402) {
+          return new Response(JSON.stringify({ error: "Payment required, please add credits." }), {
+            status: 402,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          });
+        }
+        throw new Error(`AI Gateway error: ${parseResponse.status}`);
+      }
+
+      const parseData = await parseResponse.json();
+      let testCases = [];
+      if (parseData.choices?.[0]?.message?.tool_calls?.[0]?.function?.arguments) {
+        const args = JSON.parse(parseData.choices[0].message.tool_calls[0].function.arguments);
+        testCases = args.testCases;
+        console.log(`Parsed ${testCases.length} test cases from raw text`);
+      }
+
+      return new Response(JSON.stringify({ testCases }), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+    
     const hasDocumentation = documentation && documentation.trim().length > 0;
     
     console.log(`Generating tests - Source: ${hasDocumentation ? 'documentation' : 'description'}, Type: ${testType}, Project: ${projectId || 'none'}`);
