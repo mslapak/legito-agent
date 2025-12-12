@@ -16,8 +16,15 @@ import {
 } from '@/components/ui/select';
 import { Badge } from '@/components/ui/badge';
 import { toast } from 'sonner';
-import { TestTube, Sparkles, Loader2, Play, Save, Trash2, FileText, Upload, X } from 'lucide-react';
+import { TestTube, Sparkles, Loader2, Play, Save, Trash2, FileText, Upload, X, ClipboardPaste, Table2 } from 'lucide-react';
 import { getDocument, GlobalWorkerOptions } from 'pdfjs-dist';
+
+interface CsvPreviewRow {
+  title: string;
+  prompt: string;
+  expectedResult: string;
+  priority: string;
+}
 
 // Set up PDF.js worker
 GlobalWorkerOptions.workerSrc = `//cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js`;
@@ -46,10 +53,20 @@ export default function TestGenerator() {
   const [isLoading, setIsLoading] = useState(false);
   const [generatedTests, setGeneratedTests] = useState<GeneratedTestCase[]>([]);
   const [savingIndex, setSavingIndex] = useState<number | null>(null);
-  const [sourceTab, setSourceTab] = useState<'description' | 'documentation'>('description');
+  const [sourceTab, setSourceTab] = useState<'description' | 'documentation' | 'import_text' | 'import_csv'>('description');
   const [uploadedFileName, setUploadedFileName] = useState<string>('');
   const [isExtractingPdf, setIsExtractingPdf] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  
+  // Import from text state
+  const [rawTestsInput, setRawTestsInput] = useState('');
+  const [isParsingText, setIsParsingText] = useState(false);
+  
+  // CSV import state
+  const [csvFile, setCsvFile] = useState<File | null>(null);
+  const [csvPreview, setCsvPreview] = useState<CsvPreviewRow[]>([]);
+  const [parsedCsvTests, setParsedCsvTests] = useState<GeneratedTestCase[]>([]);
+  const csvInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     fetchProjects();
@@ -152,6 +169,213 @@ export default function TestGenerator() {
     if (fileInputRef.current) {
       fileInputRef.current.value = '';
     }
+  };
+
+  // Parse tests from raw text using AI
+  const handleParseFromText = async () => {
+    if (!rawTestsInput.trim()) {
+      toast.error('Vložte text s testy');
+      return;
+    }
+
+    setIsParsingText(true);
+    setGeneratedTests([]);
+
+    try {
+      const response = await supabase.functions.invoke('generate-tests', {
+        body: {
+          action: 'parse_tests',
+          rawText: rawTestsInput,
+          baseUrl,
+          projectId: projectId || undefined,
+        },
+      });
+
+      if (response.error) {
+        throw new Error(response.error.message);
+      }
+
+      if (response.data?.testCases) {
+        setGeneratedTests(response.data.testCases);
+        
+        if (projectId) {
+          const { data: { user } } = await supabase.auth.getUser();
+          if (user) {
+            const testsToInsert = response.data.testCases.map((tc: GeneratedTestCase) => ({
+              user_id: user.id,
+              project_id: projectId,
+              title: tc.title,
+              prompt: tc.prompt,
+              expected_result: tc.expectedResult,
+              priority: tc.priority,
+              status: 'pending',
+              source_type: 'import_text',
+            }));
+
+            const { error: insertError } = await supabase
+              .from('generated_tests')
+              .insert(testsToInsert);
+
+            if (insertError) {
+              console.error('Error saving tests to DB:', insertError);
+            } else {
+              toast.success(`Importováno a uloženo ${response.data.testCases.length} testů do projektu`);
+              return;
+            }
+          }
+        }
+        
+        toast.success(`Importováno ${response.data.testCases.length} testů`);
+      } else {
+        toast.error('Nepodařilo se parsovat testy');
+      }
+    } catch (error) {
+      console.error('Error parsing tests:', error);
+      toast.error(error instanceof Error ? error.message : 'Chyba při parsování testů');
+    } finally {
+      setIsParsingText(false);
+    }
+  };
+
+  // CSV parsing
+  const parseCSV = (text: string): CsvPreviewRow[] => {
+    const lines = text.split('\n').filter(line => line.trim());
+    if (lines.length < 2) return [];
+    
+    // Parse header - handle both comma and semicolon delimiters
+    const delimiter = lines[0].includes(';') ? ';' : ',';
+    const headers = lines[0].split(delimiter).map(h => h.trim().toLowerCase().replace(/"/g, ''));
+    
+    // Find column indices with flexible naming
+    const titleIdx = headers.findIndex(h => ['title', 'název', 'name', 'test', 'test_name', 'testname'].includes(h));
+    const promptIdx = headers.findIndex(h => ['prompt', 'steps', 'kroky', 'description', 'popis', 'step', 'instructions'].includes(h));
+    const expectedIdx = headers.findIndex(h => ['expected', 'expected_result', 'expectedresult', 'očekávaný', 'result', 'výsledek', 'očekávaný_výsledek'].includes(h));
+    const priorityIdx = headers.findIndex(h => ['priority', 'priorita', 'severity', 'importance'].includes(h));
+    
+    if (titleIdx === -1 || promptIdx === -1) {
+      throw new Error('CSV musí obsahovat sloupce "title" a "prompt" (nebo jejich varianty)');
+    }
+    
+    return lines.slice(1).map(line => {
+      // Handle quoted values with commas
+      const values: string[] = [];
+      let current = '';
+      let inQuotes = false;
+      
+      for (const char of line) {
+        if (char === '"') {
+          inQuotes = !inQuotes;
+        } else if ((char === delimiter) && !inQuotes) {
+          values.push(current.trim().replace(/^"|"$/g, ''));
+          current = '';
+        } else {
+          current += char;
+        }
+      }
+      values.push(current.trim().replace(/^"|"$/g, ''));
+      
+      const priorityValue = priorityIdx !== -1 ? values[priorityIdx]?.toLowerCase() : 'medium';
+      const normalizedPriority = ['high', 'vysoká', 'critical'].includes(priorityValue) ? 'high' 
+        : ['low', 'nízká', 'minor'].includes(priorityValue) ? 'low' 
+        : 'medium';
+      
+      return {
+        title: values[titleIdx] || '',
+        prompt: values[promptIdx] || '',
+        expectedResult: expectedIdx !== -1 ? values[expectedIdx] || '' : '',
+        priority: normalizedPriority,
+      };
+    }).filter(row => row.title && row.prompt);
+  };
+
+  const handleCsvUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    if (!file.name.toLowerCase().endsWith('.csv')) {
+      toast.error('Nahrajte soubor ve formátu CSV');
+      return;
+    }
+
+    if (file.size > 5 * 1024 * 1024) {
+      toast.error('Soubor je příliš velký (max 5MB)');
+      return;
+    }
+
+    try {
+      const text = await file.text();
+      const parsed = parseCSV(text);
+      
+      if (parsed.length === 0) {
+        toast.error('CSV neobsahuje žádné validní testy');
+        return;
+      }
+      
+      setCsvFile(file);
+      setCsvPreview(parsed.slice(0, 5));
+      setParsedCsvTests(parsed.map(row => ({
+        title: row.title,
+        prompt: row.prompt,
+        expectedResult: row.expectedResult,
+        priority: row.priority as 'low' | 'medium' | 'high',
+      })));
+      
+      toast.success(`Načteno ${parsed.length} testů z CSV`);
+    } catch (error) {
+      console.error('Error parsing CSV:', error);
+      toast.error(error instanceof Error ? error.message : 'Chyba při čtení CSV');
+    }
+  };
+
+  const clearCsvFile = () => {
+    setCsvFile(null);
+    setCsvPreview([]);
+    setParsedCsvTests([]);
+    if (csvInputRef.current) {
+      csvInputRef.current.value = '';
+    }
+  };
+
+  const handleImportCsv = async () => {
+    if (parsedCsvTests.length === 0) {
+      toast.error('Nejsou načteny žádné testy');
+      return;
+    }
+
+    setGeneratedTests(parsedCsvTests);
+
+    if (projectId) {
+      try {
+        const { data: { user } } = await supabase.auth.getUser();
+        if (user) {
+          const testsToInsert = parsedCsvTests.map((tc) => ({
+            user_id: user.id,
+            project_id: projectId,
+            title: tc.title,
+            prompt: tc.prompt,
+            expected_result: tc.expectedResult,
+            priority: tc.priority,
+            status: 'pending',
+            source_type: 'import_csv',
+          }));
+
+          const { error: insertError } = await supabase
+            .from('generated_tests')
+            .insert(testsToInsert);
+
+          if (insertError) {
+            console.error('Error saving tests to DB:', insertError);
+          } else {
+            toast.success(`Importováno a uloženo ${parsedCsvTests.length} testů do projektu`);
+            return;
+          }
+        }
+      } catch (error) {
+        console.error('Error saving CSV tests:', error);
+      }
+    }
+    
+    toast.success(`Importováno ${parsedCsvTests.length} testů`);
   };
 
   const handleGenerate = async () => {
@@ -354,15 +578,27 @@ export default function TestGenerator() {
           </div>
 
           {/* Source Tabs */}
-          <Tabs value={sourceTab} onValueChange={(v) => setSourceTab(v as 'description' | 'documentation')}>
-            <TabsList className="grid w-full grid-cols-2">
+          <Tabs value={sourceTab} onValueChange={(v) => setSourceTab(v as 'description' | 'documentation' | 'import_text' | 'import_csv')}>
+            <TabsList className="grid w-full grid-cols-4">
               <TabsTrigger value="description" className="flex items-center gap-2">
                 <Sparkles className="w-4 h-4" />
-                Popis aplikace
+                <span className="hidden sm:inline">Popis aplikace</span>
+                <span className="sm:hidden">Popis</span>
               </TabsTrigger>
               <TabsTrigger value="documentation" className="flex items-center gap-2">
                 <FileText className="w-4 h-4" />
-                Dokumentace
+                <span className="hidden sm:inline">Dokumentace</span>
+                <span className="sm:hidden">Docs</span>
+              </TabsTrigger>
+              <TabsTrigger value="import_text" className="flex items-center gap-2">
+                <ClipboardPaste className="w-4 h-4" />
+                <span className="hidden sm:inline">Import z textu</span>
+                <span className="sm:hidden">Text</span>
+              </TabsTrigger>
+              <TabsTrigger value="import_csv" className="flex items-center gap-2">
+                <Table2 className="w-4 h-4" />
+                <span className="hidden sm:inline">Import CSV</span>
+                <span className="sm:hidden">CSV</span>
               </TabsTrigger>
             </TabsList>
 
@@ -476,25 +712,173 @@ export default function TestGenerator() {
                 />
               </div>
             </TabsContent>
+
+            <TabsContent value="import_text" className="space-y-4 mt-4">
+              <div className="space-y-2">
+                <Label>Vložte testy z Azure DevOps nebo jiného zdroje *</Label>
+                <Textarea
+                  placeholder={`Vložte testy v libovolném formátu. Např.:
+
+TC001: Přihlášení uživatele
+Kroky: Otevřít stránku /login, zadat email test@example.com a heslo, kliknout na "Přihlásit"
+Očekávaný výsledek: Uživatel je přesměrován na dashboard
+
+TC002: Registrace nového uživatele  
+Kroky: Otevřít /register, vyplnit formulář, potvrdit
+Očekávaný výsledek: Účet je vytvořen
+
+Nebo:
+1. Test přihlášení - zkontrolovat login flow
+2. Test odhlášení - ověřit logout
+...`}
+                  value={rawTestsInput}
+                  onChange={(e) => setRawTestsInput(e.target.value)}
+                  rows={12}
+                  className="resize-none font-mono text-sm"
+                />
+                <p className="text-xs text-muted-foreground">
+                  AI automaticky rozpozná formát a extrahuje strukturované testy (název, kroky, očekávaný výsledek, priorita)
+                </p>
+              </div>
+            </TabsContent>
+
+            <TabsContent value="import_csv" className="space-y-4 mt-4">
+              <div className="space-y-2">
+                <Label>Nahrát CSV soubor s testy</Label>
+                <div className="flex items-center gap-3">
+                  <input
+                    ref={csvInputRef}
+                    type="file"
+                    accept=".csv"
+                    onChange={handleCsvUpload}
+                    className="hidden"
+                    id="csv-upload"
+                  />
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => csvInputRef.current?.click()}
+                    className="flex items-center gap-2"
+                  >
+                    <Upload className="w-4 h-4" />
+                    Nahrát CSV
+                  </Button>
+                  {csvFile && (
+                    <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                      <Table2 className="w-4 h-4" />
+                      <span>{csvFile.name}</span>
+                      <Badge variant="secondary">{parsedCsvTests.length} testů</Badge>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        onClick={clearCsvFile}
+                        className="h-6 w-6 p-0"
+                      >
+                        <X className="w-4 h-4" />
+                      </Button>
+                    </div>
+                  )}
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  CSV musí obsahovat sloupce: <code className="bg-muted px-1 rounded">title</code>, <code className="bg-muted px-1 rounded">prompt</code> (nebo steps), volitelně <code className="bg-muted px-1 rounded">expected_result</code>, <code className="bg-muted px-1 rounded">priority</code>
+                </p>
+              </div>
+
+              {/* CSV Preview */}
+              {csvPreview.length > 0 && (
+                <div className="space-y-2">
+                  <Label className="flex items-center gap-2">
+                    <Table2 className="w-4 h-4 text-primary" />
+                    Náhled (prvních {Math.min(5, parsedCsvTests.length)} z {parsedCsvTests.length} testů)
+                  </Label>
+                  <div className="rounded-lg border border-border overflow-hidden">
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-sm">
+                        <thead className="bg-muted/50">
+                          <tr>
+                            <th className="px-3 py-2 text-left font-medium">#</th>
+                            <th className="px-3 py-2 text-left font-medium">Název</th>
+                            <th className="px-3 py-2 text-left font-medium">Priorita</th>
+                            <th className="px-3 py-2 text-left font-medium">Kroky</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {csvPreview.map((row, idx) => (
+                            <tr key={idx} className="border-t border-border">
+                              <td className="px-3 py-2 text-muted-foreground">{idx + 1}</td>
+                              <td className="px-3 py-2 font-medium max-w-[200px] truncate">{row.title}</td>
+                              <td className="px-3 py-2">
+                                <Badge 
+                                  variant={row.priority === 'high' ? 'destructive' : row.priority === 'low' ? 'secondary' : 'outline'}
+                                  className={row.priority === 'medium' ? 'bg-warning text-warning-foreground' : ''}
+                                >
+                                  {row.priority === 'high' ? 'Vysoká' : row.priority === 'low' ? 'Nízká' : 'Střední'}
+                                </Badge>
+                              </td>
+                              <td className="px-3 py-2 max-w-[300px] truncate text-muted-foreground">{row.prompt}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </TabsContent>
           </Tabs>
 
-          <Button 
-            onClick={handleGenerate} 
-            disabled={isLoading} 
-            className="w-full gradient-primary"
-          >
-            {isLoading ? (
-              <>
-                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                Generuji testy...
-              </>
-            ) : (
-              <>
-                <Sparkles className="mr-2 h-4 w-4" />
-                Vygenerovat testy
-              </>
-            )}
-          </Button>
+          {/* Action buttons based on selected tab */}
+          {(sourceTab === 'description' || sourceTab === 'documentation') && (
+            <Button 
+              onClick={handleGenerate} 
+              disabled={isLoading} 
+              className="w-full gradient-primary"
+            >
+              {isLoading ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Generuji testy...
+                </>
+              ) : (
+                <>
+                  <Sparkles className="mr-2 h-4 w-4" />
+                  Vygenerovat testy
+                </>
+              )}
+            </Button>
+          )}
+
+          {sourceTab === 'import_text' && (
+            <Button 
+              onClick={handleParseFromText} 
+              disabled={isParsingText || !rawTestsInput.trim()} 
+              className="w-full gradient-primary"
+            >
+              {isParsingText ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Zpracovávám testy...
+                </>
+              ) : (
+                <>
+                  <ClipboardPaste className="mr-2 h-4 w-4" />
+                  Importovat testy z textu
+                </>
+              )}
+            </Button>
+          )}
+
+          {sourceTab === 'import_csv' && (
+            <Button 
+              onClick={handleImportCsv} 
+              disabled={parsedCsvTests.length === 0} 
+              className="w-full gradient-primary"
+            >
+              <Table2 className="mr-2 h-4 w-4" />
+              Importovat {parsedCsvTests.length} testů z CSV
+            </Button>
+          )}
         </CardContent>
       </Card>
 
