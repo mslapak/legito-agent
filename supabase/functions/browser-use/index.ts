@@ -44,7 +44,7 @@ const { action, taskId, prompt, title, projectId, keepBrowserOpen, followUpPromp
     console.log(`Action: ${action}, User: ${user.id}, TaskId: ${taskId || 'N/A'}, TaskType: ${taskType || 'test'}`);
 
     // Browser-Use Cloud API base URL - v2 API
-    const BROWSER_USE_API_URL = 'https://api.browser-use.com/v2';
+    const BROWSER_USE_API_URL = 'https://api.browser-use.com/api/v2';
 
     switch (action) {
       case 'upload_file': {
