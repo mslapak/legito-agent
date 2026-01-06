@@ -135,10 +135,11 @@ const { action, taskId, prompt, title, projectId, keepBrowserOpen, followUpPromp
         const browserUseData = await browserUseResponse.json();
         console.log('Browser-Use response:', JSON.stringify(browserUseData));
 
-        // V2 API: Construct live_url from sessionId
-        const liveUrl = browserUseData.sessionId 
-          ? `https://www.browser-use.com/playground/live?session_id=${browserUseData.sessionId}`
-          : (browserUseData.live_url || null);
+        // V2 API: Live preview URL is based on taskId (not sessionId)
+        // Docs: https://previews.browser-use.com/{taskId}
+        const liveUrl = browserUseData.live_url
+          ? String(browserUseData.live_url)
+          : `https://previews.browser-use.com/${browserUseData.id}`;
         console.log('Constructed live_url:', liveUrl);
 
         // Save task to database with live_url
@@ -246,9 +247,9 @@ const { action, taskId, prompt, title, projectId, keepBrowserOpen, followUpPromp
         const taskData = await browserUseResponse.json();
         console.log('Task details raw:', JSON.stringify(taskData));
         
-        // V2 API: Construct live_url from sessionId if not present
-        if (taskData.sessionId && !taskData.live_url) {
-          taskData.live_url = `https://www.browser-use.com/playground/live?session_id=${taskData.sessionId}`;
+        // V2 API: Ensure live_url is present (based on taskId)
+        if (!taskData.live_url) {
+          taskData.live_url = `https://previews.browser-use.com/${taskData.id}`;
         }
         
         return new Response(JSON.stringify(taskData), {
@@ -370,7 +371,7 @@ const { action, taskId, prompt, title, projectId, keepBrowserOpen, followUpPromp
       case 'get_all_media': {
         // Get both screenshots and recordings
         console.log(`Fetching all media for task: ${taskId}`);
-        
+
         const [screenshotsRes, mediaRes] = await Promise.all([
           fetch(`${BROWSER_USE_API_URL}/tasks/${taskId}/screenshots`, {
             method: 'GET',
@@ -382,28 +383,97 @@ const { action, taskId, prompt, title, projectId, keepBrowserOpen, followUpPromp
           }),
         ]);
 
+        const normalizeUrls = (val: unknown): string[] => {
+          if (!val) return [];
+          if (typeof val === 'string') return [val];
+          if (Array.isArray(val)) {
+            return val
+              .map((x) => {
+                if (typeof x === 'string') return x;
+                if (x && typeof x === 'object') {
+                  const obj = x as Record<string, unknown>;
+                  const candidate =
+                    obj.url ??
+                    obj.downloadUrl ??
+                    obj.download_url ??
+                    obj.signedUrl ??
+                    obj.signed_url ??
+                    obj.recordingUrl ??
+                    obj.recording_url ??
+                    obj.videoUrl ??
+                    obj.video_url;
+                  return typeof candidate === 'string' ? candidate : null;
+                }
+                return null;
+              })
+              .filter((x): x is string => !!x);
+          }
+          if (typeof val === 'object') {
+            const obj = val as Record<string, unknown>;
+            return normalizeUrls(
+              obj.screenshots ??
+                obj.recordings ??
+                obj.recording_url ??
+                obj.recordingUrl ??
+                obj.video_url ??
+                obj.videoUrl ??
+                obj.urls
+            );
+          }
+          return [];
+        };
+
         let screenshots: string[] = [];
         let recordings: string[] = [];
 
-        if (screenshotsRes.ok) {
-          const screenshotData = await screenshotsRes.json();
-          console.log('Screenshots response:', JSON.stringify(screenshotData));
-          if (Array.isArray(screenshotData.screenshots)) {
-            screenshots = screenshotData.screenshots;
-          } else if (Array.isArray(screenshotData)) {
-            screenshots = screenshotData;
+        // Screenshots
+        {
+          const raw = await screenshotsRes.text();
+          console.log(`Screenshots HTTP ${screenshotsRes.status}:`, raw);
+          if (screenshotsRes.ok) {
+            try {
+              const json = JSON.parse(raw);
+              screenshots = normalizeUrls(json);
+            } catch (e) {
+              console.error('Failed to parse screenshots JSON:', e);
+            }
           }
         }
 
-        if (mediaRes.ok) {
-          const mediaData = await mediaRes.json();
-          console.log('Media response:', JSON.stringify(mediaData));
-          if (Array.isArray(mediaData.recordings)) {
-            recordings = mediaData.recordings;
-          } else if (mediaData.recording_url) {
-            recordings = [mediaData.recording_url];
-          } else if (Array.isArray(mediaData)) {
-            recordings = mediaData;
+        // Recordings
+        {
+          const raw = await mediaRes.text();
+          console.log(`Media HTTP ${mediaRes.status}:`, raw);
+          if (mediaRes.ok) {
+            try {
+              const json = JSON.parse(raw);
+              recordings = normalizeUrls(json);
+            } catch (e) {
+              console.error('Failed to parse media JSON:', e);
+            }
+          }
+        }
+
+        // Fallback: v2 already provides screenshotUrl per step in task details
+        if (screenshots.length === 0) {
+          try {
+            const detailsRes = await fetch(`${BROWSER_USE_API_URL}/tasks/${taskId}`, {
+              method: 'GET',
+              headers: { 'X-Browser-Use-API-Key': BROWSER_USE_API_KEY },
+            });
+            const detailsRaw = await detailsRes.text();
+            console.log(`Task details (fallback) HTTP ${detailsRes.status}:`, detailsRaw);
+            if (detailsRes.ok) {
+              const detailsJson = JSON.parse(detailsRaw);
+              const stepShots = Array.isArray(detailsJson?.steps)
+                ? detailsJson.steps
+                    .map((s: any) => (typeof s?.screenshotUrl === 'string' ? s.screenshotUrl : null))
+                    .filter((x: any): x is string => !!x)
+                : [];
+              screenshots = Array.from(new Set(stepShots));
+            }
+          } catch (e) {
+            console.error('Fallback screenshots from task details failed:', e);
           }
         }
 
