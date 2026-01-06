@@ -148,12 +148,14 @@ export default function OperationDetail() {
         },
       });
 
-      // Map Browser-Use status to our status
+      // Map Browser-Use v2 API status to our status
       const browserStatus = detailsData?.status;
       console.log('Browser-Use API response:', { 
         status: browserStatus, 
         hasOutput: !!detailsData?.output,
-        finishedAt: detailsData?.finished_at 
+        finishedAt: detailsData?.finished_at || detailsData?.finishedAt,
+        sessionId: detailsData?.sessionId,
+        liveUrl: detailsData?.live_url
       });
       
       let newStatus: string;
@@ -163,13 +165,14 @@ export default function OperationDetail() {
         newStatus = 'failed';
       } else if (browserStatus === 'stopped') {
         // Stopped může znamenat dokončeno NEBO manuálně zrušeno
-        // Pokud máme output nebo finished_at, považujeme za dokončeno
-        if (detailsData?.output || detailsData?.finished_at) {
+        // Pokud máme output nebo finished_at/finishedAt, považujeme za dokončeno
+        if (detailsData?.output || detailsData?.finished_at || detailsData?.finishedAt) {
           newStatus = 'completed';
         } else {
           newStatus = 'cancelled';
         }
-      } else if (browserStatus === 'running') {
+      } else if (browserStatus === 'running' || browserStatus === 'started' || browserStatus === 'created') {
+        // V2 API: 'started' a 'created' jsou také running stavy
         newStatus = 'running';
       } else {
         newStatus = operation.status;

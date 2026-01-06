@@ -143,7 +143,9 @@ export default function TaskDetail() {
       console.log('Browser-Use API response:', { 
         status: browserUseData.status, 
         hasOutput: !!browserUseData.output,
-        finishedAt: browserUseData.finished_at 
+        finishedAt: browserUseData.finished_at || browserUseData.finishedAt,
+        sessionId: browserUseData.sessionId,
+        liveUrl: browserUseData.live_url
       });
       
       let newStatus: string;
@@ -153,12 +155,13 @@ export default function TaskDetail() {
         newStatus = 'failed';
       } else if (browserUseData.status === 'stopped') {
         // Stopped může znamenat dokončeno NEBO manuálně zrušeno
-        if (browserUseData.output || browserUseData.finished_at) {
+        if (browserUseData.output || browserUseData.finished_at || browserUseData.finishedAt) {
           newStatus = 'completed';
         } else {
           newStatus = 'cancelled';
         }
-      } else if (browserUseData.status === 'running') {
+      } else if (browserUseData.status === 'running' || browserUseData.status === 'started' || browserUseData.status === 'created') {
+        // V2 API: 'started' a 'created' jsou také running stavy
         newStatus = 'running';
       } else {
         newStatus = task.status;

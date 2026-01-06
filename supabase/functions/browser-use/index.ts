@@ -133,7 +133,13 @@ const { action, taskId, prompt, title, projectId, keepBrowserOpen, followUpPromp
         }
 
         const browserUseData = await browserUseResponse.json();
-        console.log('Browser-Use response:', browserUseData);
+        console.log('Browser-Use response:', JSON.stringify(browserUseData));
+
+        // V2 API: Construct live_url from sessionId
+        const liveUrl = browserUseData.sessionId 
+          ? `https://www.browser-use.com/playground/live?session_id=${browserUseData.sessionId}`
+          : (browserUseData.live_url || null);
+        console.log('Constructed live_url:', liveUrl);
 
         // Save task to database with live_url
         const { data: task, error: insertError } = await supabase
@@ -145,7 +151,7 @@ const { action, taskId, prompt, title, projectId, keepBrowserOpen, followUpPromp
             prompt: prompt,
             status: 'running',
             browser_use_task_id: browserUseData.id,
-            live_url: browserUseData.live_url || null,
+            live_url: liveUrl,
             started_at: new Date().toISOString(),
             task_type: taskType || 'test',
           })
@@ -223,6 +229,7 @@ const { action, taskId, prompt, title, projectId, keepBrowserOpen, followUpPromp
 
       case 'get_task_details': {
         // Get full task details from Browser-Use Cloud
+        console.log(`Fetching task details for: ${taskId}`);
         const browserUseResponse = await fetch(`${BROWSER_USE_API_URL}/tasks/${taskId}`, {
           method: 'GET',
           headers: {
@@ -237,6 +244,13 @@ const { action, taskId, prompt, title, projectId, keepBrowserOpen, followUpPromp
         }
 
         const taskData = await browserUseResponse.json();
+        console.log('Task details raw:', JSON.stringify(taskData));
+        
+        // V2 API: Construct live_url from sessionId if not present
+        if (taskData.sessionId && !taskData.live_url) {
+          taskData.live_url = `https://www.browser-use.com/playground/live?session_id=${taskData.sessionId}`;
+        }
+        
         return new Response(JSON.stringify(taskData), {
           headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         });

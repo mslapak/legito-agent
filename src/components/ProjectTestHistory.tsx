@@ -59,14 +59,23 @@ export default function ProjectTestHistory({ projectId, projectName }: ProjectTe
 
           if (response.data?.status) {
             const apiStatus = response.data.status;
-            // Map API status to our test status
+            console.log(`Test ${test.id} API status:`, apiStatus);
+            // Map API status to our test status - V2 API compatible
             let newStatus = test.status;
             if (apiStatus === 'finished' || apiStatus === 'completed' || apiStatus === 'done') {
               newStatus = 'passed'; // Default to passed, will be evaluated later
             } else if (apiStatus === 'failed' || apiStatus === 'error') {
               newStatus = 'failed';
             } else if (apiStatus === 'stopped') {
-              newStatus = 'pending'; // Reset if stopped
+              // V2: stopped with output = completed, without = cancelled
+              if (response.data?.output || response.data?.finished_at || response.data?.finishedAt) {
+                newStatus = 'passed';
+              } else {
+                newStatus = 'pending'; // Reset if stopped without output
+              }
+            } else if (apiStatus === 'started' || apiStatus === 'created' || apiStatus === 'running') {
+              // V2 API: 'started' a 'created' jsou running stavy
+              newStatus = 'running';
             }
 
             if (newStatus !== 'running') {
