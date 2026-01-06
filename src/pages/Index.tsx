@@ -2,7 +2,7 @@ import { useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/hooks/useAuth';
 import { Button } from '@/components/ui/button';
-import { Play, History, TestTube, Settings, ArrowRight, Sparkles } from 'lucide-react';
+import { Play, History, TestTube, Settings, ArrowRight, Sparkles, ClipboardList, FileCheck2, FolderKanban } from 'lucide-react';
 import pwcLogo from '@/assets/pwc-logo.png';
 
 export default function Index() {
@@ -24,10 +24,12 @@ export default function Index() {
   }
 
   const features = [
-    { icon: Play, title: 'Task Runner', description: 'Spouštějte AI agenty pro automatizaci prohlížeče' },
-    { icon: History, title: 'Historie úkolů', description: 'Přehled všech úkolů s detaily a výsledky' },
-    { icon: TestTube, title: 'Generátor testů', description: 'AI-powered generování testovacích scénářů' },
-    { icon: Settings, title: 'Live monitoring', description: 'Sledování běžících úkolů v reálném čase' },
+    { icon: TestTube, title: 'AI Generátor testů', description: 'Generujte testovací scénáře z popisu aplikace nebo dokumentace pomocí AI' },
+    { icon: ClipboardList, title: 'Import testů', description: 'Importujte testy z Azure DevOps, CSV souborů nebo libovolného textu' },
+    { icon: Play, title: 'Browser Automation', description: 'Spouštějte AI agenty pro automatické testování webových aplikací' },
+    { icon: FileCheck2, title: 'Verifikace dokumentace', description: 'Ověřte, že vaše aplikace odpovídá technické dokumentaci' },
+    { icon: History, title: 'Historie & Reporting', description: 'Kompletní přehled všech testů s detailními výsledky a screenshoty' },
+    { icon: FolderKanban, title: 'Správa projektů', description: 'Organizujte testy do projektů s vlastními credentials a nastavením' },
   ];
 
   return (
@@ -47,18 +49,21 @@ export default function Index() {
           <div className="text-center max-w-4xl mx-auto">
             <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-primary/10 text-primary mb-8">
               <Sparkles className="w-4 h-4" />
-              <span className="text-sm font-medium">AI-Powered Testing & Scraping</span>
+              <span className="text-sm font-medium">AI-Powered QA Automation Platform</span>
             </div>
             <h1 className="text-5xl md:text-6xl lg:text-7xl font-bold tracking-tight mb-6">
-              <span className="text-primary">Browser Automation</span>
-              <br /><span className="text-foreground">Dashboard</span>
+              <span className="text-primary">Automatizované</span>
+              <br /><span className="text-foreground">testování s AI</span>
             </h1>
-            <p className="text-xl text-muted-foreground max-w-2xl mx-auto mb-10">
-              Ovládejte své Browser-Use agenty, testujte webové aplikace a scrapujte data pomocí intuitivního dashboardu.
+            <p className="text-xl text-muted-foreground max-w-2xl mx-auto mb-8">
+              Generujte testy pomocí AI, importujte z Azure DevOps nebo CSV, 
+              spouštějte automatizované browser testy a ověřujte aplikace proti dokumentaci.
             </p>
-            <Button size="lg" onClick={() => navigate('/auth')} className="gradient-primary glow text-lg px-8">
-              Začít zdarma <ArrowRight className="ml-2 h-5 w-5" />
-            </Button>
+            <div className="flex flex-col sm:flex-row gap-4 justify-center">
+              <Button size="lg" onClick={() => navigate('/auth')} className="gradient-primary glow text-lg px-8">
+                Začít používat <ArrowRight className="ml-2 h-5 w-5" />
+              </Button>
+            </div>
           </div>
         </div>
       </div>
@@ -66,17 +71,17 @@ export default function Index() {
       <section className="py-24 bg-secondary/30">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="text-center mb-16">
-            <h2 className="text-3xl md:text-4xl font-bold mb-4">Vše co potřebujete</h2>
-            <p className="text-muted-foreground text-lg">Kompletní nástroje pro automatizaci prohlížeče</p>
+            <h2 className="text-3xl md:text-4xl font-bold mb-4">Kompletní QA platforma</h2>
+            <p className="text-muted-foreground text-lg">Vše pro efektivní testování webových aplikací na jednom místě</p>
           </div>
-          <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-6">
+          <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
             {features.map((feature) => (
-              <div key={feature.title} className="p-6 rounded-2xl bg-card border border-border hover:border-primary/50 transition-all">
+              <div key={feature.title} className="p-6 rounded-2xl bg-card border border-border hover:border-primary/50 transition-all hover:shadow-lg">
                 <div className="w-12 h-12 rounded-xl gradient-primary flex items-center justify-center mb-4">
                   <feature.icon className="w-6 h-6 text-primary-foreground" />
                 </div>
                 <h3 className="text-lg font-semibold mb-2">{feature.title}</h3>
-                <p className="text-muted-foreground">{feature.description}</p>
+                <p className="text-muted-foreground text-sm">{feature.description}</p>
               </div>
             ))}
           </div>
