@@ -55,7 +55,7 @@ const { action, taskId, prompt, title, projectId, keepBrowserOpen, followUpPromp
         const presignedRes = await fetch(`${BROWSER_USE_API_URL}/files/presigned-url`, {
           method: 'POST',
           headers: {
-            'Authorization': `Bearer ${BROWSER_USE_API_KEY}`,
+            'X-Browser-Use-API-Key': BROWSER_USE_API_KEY,
             'Content-Type': 'application/json',
           },
           body: JSON.stringify({ file_name: fileName, content_type: contentType }),
@@ -120,7 +120,7 @@ const { action, taskId, prompt, title, projectId, keepBrowserOpen, followUpPromp
         const browserUseResponse = await fetch(`${BROWSER_USE_API_URL}/tasks`, {
           method: 'POST',
           headers: {
-            'Authorization': `Bearer ${BROWSER_USE_API_KEY}`,
+            'X-Browser-Use-API-Key': BROWSER_USE_API_KEY,
             'Content-Type': 'application/json',
           },
           body: JSON.stringify(requestBody),
@@ -169,7 +169,7 @@ const { action, taskId, prompt, title, projectId, keepBrowserOpen, followUpPromp
         const browserUseResponse = await fetch(`${BROWSER_USE_API_URL}/tasks/${taskId}/continue`, {
           method: 'POST',
           headers: {
-            'Authorization': `Bearer ${BROWSER_USE_API_KEY}`,
+            'X-Browser-Use-API-Key': BROWSER_USE_API_KEY,
             'Content-Type': 'application/json',
           },
           body: JSON.stringify({
@@ -197,7 +197,7 @@ const { action, taskId, prompt, title, projectId, keepBrowserOpen, followUpPromp
         const browserUseResponse = await fetch(`${BROWSER_USE_API_URL}/tasks/${taskId}/status`, {
           method: 'GET',
           headers: {
-            'Authorization': `Bearer ${BROWSER_USE_API_KEY}`,
+            'X-Browser-Use-API-Key': BROWSER_USE_API_KEY,
           },
         });
 
@@ -226,7 +226,7 @@ const { action, taskId, prompt, title, projectId, keepBrowserOpen, followUpPromp
         const browserUseResponse = await fetch(`${BROWSER_USE_API_URL}/tasks/${taskId}`, {
           method: 'GET',
           headers: {
-            'Authorization': `Bearer ${BROWSER_USE_API_KEY}`,
+            'X-Browser-Use-API-Key': BROWSER_USE_API_KEY,
           },
         });
 
@@ -247,7 +247,7 @@ const { action, taskId, prompt, title, projectId, keepBrowserOpen, followUpPromp
         const browserUseResponse = await fetch(`${BROWSER_USE_API_URL}/tasks/${taskId}/stop`, {
           method: 'PUT',
           headers: {
-            'Authorization': `Bearer ${BROWSER_USE_API_KEY}`,
+            'X-Browser-Use-API-Key': BROWSER_USE_API_KEY,
           },
         });
 
@@ -273,7 +273,7 @@ const { action, taskId, prompt, title, projectId, keepBrowserOpen, followUpPromp
         const browserUseResponse = await fetch(`${BROWSER_USE_API_URL}/tasks/${taskId}/pause`, {
           method: 'PUT',
           headers: {
-            'Authorization': `Bearer ${BROWSER_USE_API_KEY}`,
+            'X-Browser-Use-API-Key': BROWSER_USE_API_KEY,
           },
         });
 
@@ -290,7 +290,7 @@ const { action, taskId, prompt, title, projectId, keepBrowserOpen, followUpPromp
         const browserUseResponse = await fetch(`${BROWSER_USE_API_URL}/tasks/${taskId}/resume`, {
           method: 'PUT',
           headers: {
-            'Authorization': `Bearer ${BROWSER_USE_API_KEY}`,
+            'X-Browser-Use-API-Key': BROWSER_USE_API_KEY,
           },
         });
 
@@ -309,7 +309,7 @@ const { action, taskId, prompt, title, projectId, keepBrowserOpen, followUpPromp
         const browserUseResponse = await fetch(`${BROWSER_USE_API_URL}/tasks/${taskId}/media`, {
           method: 'GET',
           headers: {
-            'Authorization': `Bearer ${BROWSER_USE_API_KEY}`,
+            'X-Browser-Use-API-Key': BROWSER_USE_API_KEY,
           },
         });
 
@@ -334,7 +334,7 @@ const { action, taskId, prompt, title, projectId, keepBrowserOpen, followUpPromp
         const browserUseResponse = await fetch(`${BROWSER_USE_API_URL}/tasks/${taskId}/screenshots`, {
           method: 'GET',
           headers: {
-            'Authorization': `Bearer ${BROWSER_USE_API_KEY}`,
+            'X-Browser-Use-API-Key': BROWSER_USE_API_KEY,
           },
         });
 
@@ -360,11 +360,11 @@ const { action, taskId, prompt, title, projectId, keepBrowserOpen, followUpPromp
         const [screenshotsRes, mediaRes] = await Promise.all([
           fetch(`${BROWSER_USE_API_URL}/tasks/${taskId}/screenshots`, {
             method: 'GET',
-            headers: { 'Authorization': `Bearer ${BROWSER_USE_API_KEY}` },
+            headers: { 'X-Browser-Use-API-Key': BROWSER_USE_API_KEY },
           }),
           fetch(`${BROWSER_USE_API_URL}/tasks/${taskId}/media`, {
             method: 'GET',
-            headers: { 'Authorization': `Bearer ${BROWSER_USE_API_KEY}` },
+            headers: { 'X-Browser-Use-API-Key': BROWSER_USE_API_KEY },
           }),
         ]);
 
