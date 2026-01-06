@@ -43,8 +43,8 @@ serve(async (req) => {
 const { action, taskId, prompt, title, projectId, keepBrowserOpen, followUpPrompt, taskType, fileName, fileBase64, contentType, includedFiles } = await req.json();
     console.log(`Action: ${action}, User: ${user.id}, TaskId: ${taskId || 'N/A'}, TaskType: ${taskType || 'test'}`);
 
-    // Browser-Use Cloud API base URL
-    const BROWSER_USE_API_URL = 'https://api.browser-use.com/api/v1';
+    // Browser-Use Cloud API base URL - v2 API
+    const BROWSER_USE_API_URL = 'https://api.browser-use.com/v2';
 
     switch (action) {
       case 'upload_file': {
@@ -52,7 +52,7 @@ const { action, taskId, prompt, title, projectId, keepBrowserOpen, followUpPromp
         console.log(`Uploading file: ${fileName}, type: ${contentType}`);
         
         // 1. Get presigned URL
-        const presignedRes = await fetch(`${BROWSER_USE_API_URL}/uploads/presigned-url`, {
+        const presignedRes = await fetch(`${BROWSER_USE_API_URL}/files/presigned-url`, {
           method: 'POST',
           headers: {
             'Authorization': `Bearer ${BROWSER_USE_API_KEY}`,
@@ -117,7 +117,7 @@ const { action, taskId, prompt, title, projectId, keepBrowserOpen, followUpPromp
         
         console.log('Creating task with body:', JSON.stringify(requestBody));
         
-        const browserUseResponse = await fetch(`${BROWSER_USE_API_URL}/run-task`, {
+        const browserUseResponse = await fetch(`${BROWSER_USE_API_URL}/tasks`, {
           method: 'POST',
           headers: {
             'Authorization': `Bearer ${BROWSER_USE_API_KEY}`,
@@ -166,7 +166,7 @@ const { action, taskId, prompt, title, projectId, keepBrowserOpen, followUpPromp
         // Continue a task with a follow-up prompt (human-in-the-loop)
         console.log(`Continuing task ${taskId} with prompt: ${followUpPrompt}`);
         
-        const browserUseResponse = await fetch(`${BROWSER_USE_API_URL}/run-task`, {
+        const browserUseResponse = await fetch(`${BROWSER_USE_API_URL}/tasks/${taskId}/continue`, {
           method: 'POST',
           headers: {
             'Authorization': `Bearer ${BROWSER_USE_API_KEY}`,
@@ -174,7 +174,6 @@ const { action, taskId, prompt, title, projectId, keepBrowserOpen, followUpPromp
           },
           body: JSON.stringify({
             task: followUpPrompt,
-            task_id: taskId,
             keep_browser_open: true,
           }),
         });
@@ -195,7 +194,7 @@ const { action, taskId, prompt, title, projectId, keepBrowserOpen, followUpPromp
 
       case 'get_task_status': {
         // Get task status from Browser-Use Cloud
-        const browserUseResponse = await fetch(`${BROWSER_USE_API_URL}/task/${taskId}/status`, {
+        const browserUseResponse = await fetch(`${BROWSER_USE_API_URL}/tasks/${taskId}/status`, {
           method: 'GET',
           headers: {
             'Authorization': `Bearer ${BROWSER_USE_API_KEY}`,
@@ -224,7 +223,7 @@ const { action, taskId, prompt, title, projectId, keepBrowserOpen, followUpPromp
 
       case 'get_task_details': {
         // Get full task details from Browser-Use Cloud
-        const browserUseResponse = await fetch(`${BROWSER_USE_API_URL}/task/${taskId}`, {
+        const browserUseResponse = await fetch(`${BROWSER_USE_API_URL}/tasks/${taskId}`, {
           method: 'GET',
           headers: {
             'Authorization': `Bearer ${BROWSER_USE_API_KEY}`,
@@ -245,7 +244,7 @@ const { action, taskId, prompt, title, projectId, keepBrowserOpen, followUpPromp
 
       case 'stop_task': {
         // Stop a running task
-        const browserUseResponse = await fetch(`${BROWSER_USE_API_URL}/stop-task?task_id=${taskId}`, {
+        const browserUseResponse = await fetch(`${BROWSER_USE_API_URL}/tasks/${taskId}/stop`, {
           method: 'PUT',
           headers: {
             'Authorization': `Bearer ${BROWSER_USE_API_KEY}`,
@@ -271,7 +270,7 @@ const { action, taskId, prompt, title, projectId, keepBrowserOpen, followUpPromp
       }
 
       case 'pause_task': {
-        const browserUseResponse = await fetch(`${BROWSER_USE_API_URL}/pause-task?task_id=${taskId}`, {
+        const browserUseResponse = await fetch(`${BROWSER_USE_API_URL}/tasks/${taskId}/pause`, {
           method: 'PUT',
           headers: {
             'Authorization': `Bearer ${BROWSER_USE_API_KEY}`,
@@ -288,7 +287,7 @@ const { action, taskId, prompt, title, projectId, keepBrowserOpen, followUpPromp
       }
 
       case 'resume_task': {
-        const browserUseResponse = await fetch(`${BROWSER_USE_API_URL}/resume-task?task_id=${taskId}`, {
+        const browserUseResponse = await fetch(`${BROWSER_USE_API_URL}/tasks/${taskId}/resume`, {
           method: 'PUT',
           headers: {
             'Authorization': `Bearer ${BROWSER_USE_API_KEY}`,
@@ -307,7 +306,7 @@ const { action, taskId, prompt, title, projectId, keepBrowserOpen, followUpPromp
       case 'get_media': {
         // Get recordings/videos
         console.log(`Fetching media for task: ${taskId}`);
-        const browserUseResponse = await fetch(`${BROWSER_USE_API_URL}/task/${taskId}/media`, {
+        const browserUseResponse = await fetch(`${BROWSER_USE_API_URL}/tasks/${taskId}/media`, {
           method: 'GET',
           headers: {
             'Authorization': `Bearer ${BROWSER_USE_API_KEY}`,
@@ -332,7 +331,7 @@ const { action, taskId, prompt, title, projectId, keepBrowserOpen, followUpPromp
       case 'get_screenshots': {
         // Get screenshots - separate endpoint
         console.log(`Fetching screenshots for task: ${taskId}`);
-        const browserUseResponse = await fetch(`${BROWSER_USE_API_URL}/task/${taskId}/screenshots`, {
+        const browserUseResponse = await fetch(`${BROWSER_USE_API_URL}/tasks/${taskId}/screenshots`, {
           method: 'GET',
           headers: {
             'Authorization': `Bearer ${BROWSER_USE_API_KEY}`,
@@ -359,11 +358,11 @@ const { action, taskId, prompt, title, projectId, keepBrowserOpen, followUpPromp
         console.log(`Fetching all media for task: ${taskId}`);
         
         const [screenshotsRes, mediaRes] = await Promise.all([
-          fetch(`${BROWSER_USE_API_URL}/task/${taskId}/screenshots`, {
+          fetch(`${BROWSER_USE_API_URL}/tasks/${taskId}/screenshots`, {
             method: 'GET',
             headers: { 'Authorization': `Bearer ${BROWSER_USE_API_KEY}` },
           }),
-          fetch(`${BROWSER_USE_API_URL}/task/${taskId}/media`, {
+          fetch(`${BROWSER_USE_API_URL}/tasks/${taskId}/media`, {
             method: 'GET',
             headers: { 'Authorization': `Bearer ${BROWSER_USE_API_KEY}` },
           }),
