@@ -1,13 +1,22 @@
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/hooks/useAuth';
 import { Button } from '@/components/ui/button';
-import { Play, History, TestTube, Settings, ArrowRight, Sparkles, ClipboardList, FileCheck2, FolderKanban } from 'lucide-react';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
+import { Play, History, TestTube, ArrowRight, Sparkles, ClipboardList, FileCheck2, FolderKanban, LucideIcon } from 'lucide-react';
 import pwcLogo from '@/assets/pwc-logo.png';
+
+interface Feature {
+  icon: LucideIcon;
+  title: string;
+  description: string;
+  details: string[];
+}
 
 export default function Index() {
   const { user, loading } = useAuth();
   const navigate = useNavigate();
+  const [selectedFeature, setSelectedFeature] = useState<Feature | null>(null);
 
   useEffect(() => {
     if (!loading && user) {
@@ -23,13 +32,73 @@ export default function Index() {
     );
   }
 
-  const features = [
-    { icon: TestTube, title: 'AI Generátor testů', description: 'Generujte testovací scénáře z popisu aplikace nebo dokumentace pomocí AI' },
-    { icon: ClipboardList, title: 'Import testů', description: 'Importujte testy z Azure DevOps, CSV souborů nebo libovolného textu' },
-    { icon: Play, title: 'Browser Automation', description: 'Spouštějte AI agenty pro automatické testování webových aplikací' },
-    { icon: FileCheck2, title: 'Verifikace dokumentace', description: 'Ověřte, že vaše aplikace odpovídá technické dokumentaci' },
-    { icon: History, title: 'Historie & Reporting', description: 'Kompletní přehled všech testů s detailními výsledky a screenshoty' },
-    { icon: FolderKanban, title: 'Správa projektů', description: 'Organizujte testy do projektů s vlastními credentials a nastavením' },
+  const features: Feature[] = [
+    { 
+      icon: TestTube, 
+      title: 'AI Generátor testů', 
+      description: 'Generujte testovací scénáře z popisu aplikace nebo dokumentace pomocí AI',
+      details: [
+        'Popište svou aplikaci a AI vygeneruje kompletní testovací scénáře',
+        'Nahrajte PDF/TXT dokumentaci a AI z ní extrahuje testy',
+        'Automatické určení priority testů (low/medium/high)',
+        'Podpora pro generování očekávaných výsledků'
+      ]
+    },
+    { 
+      icon: ClipboardList, 
+      title: 'Import testů', 
+      description: 'Importujte testy z Azure DevOps, CSV souborů nebo libovolného textu',
+      details: [
+        'Zkopírujte testy z Azure DevOps a AI je automaticky zparsuje',
+        'Import z CSV s flexibilním mapováním sloupců',
+        'Podpora různých formátů (čárka, středník, tabulátor)',
+        'Náhled importovaných dat před uložením'
+      ]
+    },
+    { 
+      icon: Play, 
+      title: 'Browser Automation', 
+      description: 'Spouštějte AI agenty pro automatické testování webových aplikací',
+      details: [
+        'AI agent ovládá prohlížeč jako skutečný uživatel',
+        'Automatické pořizování screenshotů během testování',
+        'Nahrávání video záznamu průběhu testu',
+        'Detailní logging všech provedených akcí'
+      ]
+    },
+    { 
+      icon: FileCheck2, 
+      title: 'Verifikace dokumentace', 
+      description: 'Ověřte, že vaše aplikace odpovídá technické dokumentaci',
+      details: [
+        'Nahrajte dokumentaci a systém ověří shodu s aplikací',
+        'Automatická extrakce kroků z dokumentace',
+        'Vizuální porovnání očekávaného vs. skutečného stavu',
+        'Report s přehledem splněných a nesplněných požadavků'
+      ]
+    },
+    { 
+      icon: History, 
+      title: 'Historie & Reporting', 
+      description: 'Kompletní přehled všech testů s detailními výsledky a screenshoty',
+      details: [
+        'Přehled všech spuštěných testů s filtry a vyhledáváním',
+        'Detailní výsledky včetně screenshotů a video záznamů',
+        'Statistiky úspěšnosti testů v čase',
+        'Export výsledků pro reporting'
+      ]
+    },
+    { 
+      icon: FolderKanban, 
+      title: 'Správa projektů', 
+      description: 'Organizujte testy do projektů s vlastními credentials a nastavením',
+      details: [
+        'Vytvářejte projekty pro různé aplikace',
+        'Bezpečné uložení přihlašovacích údajů pro testování',
+        'Nastavení base URL pro každý projekt',
+        'Přehled historie testů na úrovni projektu'
+      ]
+    },
   ];
 
   return (
@@ -76,12 +145,17 @@ export default function Index() {
           </div>
           <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
             {features.map((feature) => (
-              <div key={feature.title} className="p-6 rounded-2xl bg-card border border-border hover:border-primary/50 transition-all hover:shadow-lg">
-                <div className="w-12 h-12 rounded-xl gradient-primary flex items-center justify-center mb-4">
+              <div 
+                key={feature.title} 
+                onClick={() => setSelectedFeature(feature)}
+                className="p-6 rounded-2xl bg-card border border-border hover:border-primary/50 transition-all hover:shadow-lg cursor-pointer group"
+              >
+                <div className="w-12 h-12 rounded-xl gradient-primary flex items-center justify-center mb-4 group-hover:scale-110 transition-transform">
                   <feature.icon className="w-6 h-6 text-primary-foreground" />
                 </div>
                 <h3 className="text-lg font-semibold mb-2">{feature.title}</h3>
                 <p className="text-muted-foreground text-sm">{feature.description}</p>
+                <p className="text-primary text-xs mt-3 opacity-0 group-hover:opacity-100 transition-opacity">Klikněte pro více informací →</p>
               </div>
             ))}
           </div>
@@ -98,6 +172,38 @@ export default function Index() {
           </div>
         </div>
       </footer>
+
+      <Dialog open={!!selectedFeature} onOpenChange={() => setSelectedFeature(null)}>
+        <DialogContent className="sm:max-w-md">
+          {selectedFeature && (
+            <>
+              <DialogHeader>
+                <div className="flex items-center gap-3 mb-2">
+                  <div className="w-10 h-10 rounded-xl gradient-primary flex items-center justify-center">
+                    <selectedFeature.icon className="w-5 h-5 text-primary-foreground" />
+                  </div>
+                  <DialogTitle>{selectedFeature.title}</DialogTitle>
+                </div>
+                <DialogDescription>{selectedFeature.description}</DialogDescription>
+              </DialogHeader>
+              <div className="mt-4">
+                <h4 className="text-sm font-medium mb-3">Klíčové funkce:</h4>
+                <ul className="space-y-2">
+                  {selectedFeature.details.map((detail, i) => (
+                    <li key={i} className="flex items-start gap-2 text-sm text-muted-foreground">
+                      <span className="text-primary mt-1">•</span>
+                      {detail}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+              <Button onClick={() => navigate('/auth')} className="mt-4 w-full gradient-primary">
+                Vyzkoušet {selectedFeature.title}
+              </Button>
+            </>
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
