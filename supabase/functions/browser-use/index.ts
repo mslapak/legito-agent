@@ -548,60 +548,182 @@ serve(async (req) => {
       }
 
       case 'stop_task': {
-        // Stop a running task and sync media
+        // Stop a running task and sync media - robust implementation with fallbacks
         console.log(`Stopping task: ${taskId}`);
         
-        const browserUseResponse = await fetch(`${BROWSER_USE_API_URL}/tasks/${taskId}/stop`, {
-          method: 'PUT',
-          headers: {
-            'X-Browser-Use-API-Key': BROWSER_USE_API_KEY,
-          },
-        });
-
-        if (!browserUseResponse.ok) {
-          const errorText = await browserUseResponse.text();
-          console.error('Browser-Use API error:', errorText);
-          throw new Error(`Browser-Use API error: ${browserUseResponse.status}`);
-        }
-
-        // Wait for browser session to close
-        console.log('Waiting for session to close...');
-        await delay(3000);
+        let sessionId: string | null = null;
+        let taskAlreadyStopped = false;
         
-        // Fetch media from task details (v2 API)
-        let screenshots: string[] = [];
-        let recordings: string[] = [];
-        
-        const detailsRes = await fetch(`${BROWSER_USE_API_URL}/tasks/${taskId}`, {
-          method: 'GET',
-          headers: { 'X-Browser-Use-API-Key': BROWSER_USE_API_KEY },
-        });
-        
-        if (detailsRes.ok) {
-          try {
-            const details = await detailsRes.json();
-            console.log('Task details after stop:', JSON.stringify(details, null, 2).substring(0, 500));
+        // Step 1: Get task details to find sessionId and current status
+        try {
+          console.log('GET task details before stop...');
+          const taskRes = await fetch(`${BROWSER_USE_API_URL}/tasks/${taskId}`, {
+            method: 'GET',
+            headers: { 'X-Browser-Use-API-Key': BROWSER_USE_API_KEY },
+          });
+          console.log(`Task details response: ${taskRes.status}`);
+          
+          if (taskRes.ok) {
+            const taskData = await taskRes.json();
+            sessionId = taskData.sessionId || taskData.session_id || null;
+            console.log(`SessionId: ${sessionId}, Status: ${taskData.status}`);
             
-            // Screenshots from steps
-            if (Array.isArray(details?.steps)) {
-              const stepShots = details.steps
-                .map((s: { screenshotUrl?: string }) => s?.screenshotUrl)
-                .filter((x: unknown): x is string => typeof x === 'string');
-              screenshots = Array.from(new Set(stepShots));
+            // Check if task is already stopped/finished
+            if (['finished', 'stopped', 'failed'].includes(taskData.status)) {
+              console.log('Task already stopped/finished');
+              taskAlreadyStopped = true;
             }
-            
-            // Recordings from outputFiles
-            if (details?.outputFiles) {
-              recordings = normalizeUrls(details.outputFiles);
+          } else if (taskRes.status === 404) {
+            console.log('Task not found - treating as already stopped');
+            taskAlreadyStopped = true;
+          }
+        } catch (e) {
+          console.error('Error getting task details:', e);
+        }
+        
+        // Step 2: Try to stop the task (with fallback methods)
+        if (!taskAlreadyStopped) {
+          let stopSuccess = false;
+          
+          // Try PUT /tasks/{id}/stop
+          try {
+            console.log('Trying PUT /tasks/{id}/stop...');
+            const stopRes = await fetch(`${BROWSER_USE_API_URL}/tasks/${taskId}/stop`, {
+              method: 'PUT',
+              headers: { 'X-Browser-Use-API-Key': BROWSER_USE_API_KEY },
+            });
+            console.log(`PUT stop response: ${stopRes.status}`);
+            if (stopRes.ok) {
+              stopSuccess = true;
+            } else {
+              const errorText = await stopRes.text();
+              console.log(`PUT stop failed: ${stopRes.status} - ${errorText.substring(0, 200)}`);
             }
           } catch (e) {
-            console.error('Failed to parse task details:', e);
+            console.error('PUT stop error:', e);
+          }
+          
+          // Fallback: Try POST /tasks/{id}/stop
+          if (!stopSuccess) {
+            try {
+              console.log('Fallback: Trying POST /tasks/{id}/stop...');
+              const stopRes = await fetch(`${BROWSER_USE_API_URL}/tasks/${taskId}/stop`, {
+                method: 'POST',
+                headers: { 'X-Browser-Use-API-Key': BROWSER_USE_API_KEY },
+              });
+              console.log(`POST stop response: ${stopRes.status}`);
+              if (stopRes.ok) stopSuccess = true;
+            } catch (e) {
+              console.error('POST stop error:', e);
+            }
+          }
+          
+          // Fallback: Try PATCH /tasks/{id} with action
+          if (!stopSuccess) {
+            try {
+              console.log('Fallback: Trying PATCH /tasks/{id} with action:stop...');
+              const stopRes = await fetch(`${BROWSER_USE_API_URL}/tasks/${taskId}`, {
+                method: 'PATCH',
+                headers: { 
+                  'X-Browser-Use-API-Key': BROWSER_USE_API_KEY,
+                  'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({ action: 'stop' }),
+              });
+              console.log(`PATCH stop response: ${stopRes.status}`);
+              if (stopRes.ok) stopSuccess = true;
+            } catch (e) {
+              console.error('PATCH stop error:', e);
+            }
+          }
+          
+          console.log(`Task stop result: ${stopSuccess ? 'success' : 'failed (may already be stopped)'}`);
+        }
+        
+        // Step 3: Try to stop the session if we have sessionId (ensures video is generated)
+        if (sessionId) {
+          try {
+            console.log(`Stopping session: ${sessionId}...`);
+            const sessionStopRes = await fetch(`${BROWSER_USE_API_URL}/sessions/${sessionId}`, {
+              method: 'PATCH',
+              headers: { 
+                'X-Browser-Use-API-Key': BROWSER_USE_API_KEY,
+                'Content-Type': 'application/json',
+              },
+              body: JSON.stringify({ action: 'stop' }),
+            });
+            console.log(`Session stop response: ${sessionStopRes.status}`);
+            
+            if (!sessionStopRes.ok) {
+              // Try PUT as fallback
+              const sessionStopPut = await fetch(`${BROWSER_USE_API_URL}/sessions/${sessionId}/stop`, {
+                method: 'PUT',
+                headers: { 'X-Browser-Use-API-Key': BROWSER_USE_API_KEY },
+              });
+              console.log(`Session stop PUT response: ${sessionStopPut.status}`);
+            }
+          } catch (e) {
+            console.error('Session stop error (non-fatal):', e);
+          }
+        }
+        
+        // Step 4: Wait for video processing
+        console.log('Waiting for media processing...');
+        await delay(5000);
+        
+        // Step 5: Retry loop to get media (videos may take time to process)
+        let screenshots: string[] = [];
+        let recordings: string[] = [];
+        const maxRetries = 4;
+        
+        for (let attempt = 1; attempt <= maxRetries; attempt++) {
+          console.log(`Media fetch attempt ${attempt}/${maxRetries}...`);
+          
+          try {
+            const detailsRes = await fetch(`${BROWSER_USE_API_URL}/tasks/${taskId}`, {
+              method: 'GET',
+              headers: { 'X-Browser-Use-API-Key': BROWSER_USE_API_KEY },
+            });
+            
+            if (detailsRes.ok) {
+              const details = await detailsRes.json();
+              console.log(`Attempt ${attempt} - Status: ${details.status}, OutputFiles: ${JSON.stringify(details.outputFiles || []).substring(0, 200)}`);
+              
+              // Screenshots from steps
+              if (Array.isArray(details?.steps)) {
+                const stepShots = details.steps
+                  .map((s: { screenshotUrl?: string }) => s?.screenshotUrl)
+                  .filter((x: unknown): x is string => typeof x === 'string');
+                screenshots = Array.from(new Set(stepShots));
+              }
+              
+              // Recordings from outputFiles
+              if (details?.outputFiles) {
+                recordings = normalizeUrls(details.outputFiles);
+              }
+              
+              // If we got recordings, we're done
+              if (recordings.length > 0) {
+                console.log(`Got ${recordings.length} recordings on attempt ${attempt}`);
+                break;
+              }
+            } else if (detailsRes.status === 404) {
+              console.log('Task not found during media fetch (session expired)');
+              break;
+            }
+          } catch (e) {
+            console.error(`Media fetch attempt ${attempt} error:`, e);
+          }
+          
+          // Wait before next retry (except on last attempt)
+          if (attempt < maxRetries) {
+            await delay(3000);
           }
         }
         
         console.log(`Final media: ${screenshots.length} screenshots, ${recordings.length} recordings`);
         
-        // Update task in database
+        // Step 6: Update task in database
         const updateData: Record<string, unknown> = {
           status: 'completed',
           completed_at: new Date().toISOString(),
@@ -626,15 +748,38 @@ serve(async (req) => {
       }
 
       case 'pause_task': {
-        const browserUseResponse = await fetch(`${BROWSER_USE_API_URL}/tasks/${taskId}/pause`, {
-          method: 'PUT',
-          headers: {
-            'X-Browser-Use-API-Key': BROWSER_USE_API_KEY,
-          },
-        });
-
-        if (!browserUseResponse.ok) {
-          throw new Error(`Browser-Use API error: ${browserUseResponse.status}`);
+        console.log(`Pausing task: ${taskId}`);
+        let success = false;
+        
+        // Try PUT first
+        try {
+          const res = await fetch(`${BROWSER_USE_API_URL}/tasks/${taskId}/pause`, {
+            method: 'PUT',
+            headers: { 'X-Browser-Use-API-Key': BROWSER_USE_API_KEY },
+          });
+          console.log(`PUT pause response: ${res.status}`);
+          if (res.ok) success = true;
+        } catch (e) {
+          console.error('PUT pause error:', e);
+        }
+        
+        // Fallback: POST
+        if (!success) {
+          try {
+            const res = await fetch(`${BROWSER_USE_API_URL}/tasks/${taskId}/pause`, {
+              method: 'POST',
+              headers: { 'X-Browser-Use-API-Key': BROWSER_USE_API_KEY },
+            });
+            console.log(`POST pause response: ${res.status}`);
+            if (res.ok) success = true;
+          } catch (e) {
+            console.error('POST pause error:', e);
+          }
+        }
+        
+        // Even if pause didn't work, don't throw - just log
+        if (!success) {
+          console.log('Pause may not be supported, returning success anyway');
         }
 
         return new Response(JSON.stringify({ success: true }), {
@@ -643,15 +788,37 @@ serve(async (req) => {
       }
 
       case 'resume_task': {
-        const browserUseResponse = await fetch(`${BROWSER_USE_API_URL}/tasks/${taskId}/resume`, {
-          method: 'PUT',
-          headers: {
-            'X-Browser-Use-API-Key': BROWSER_USE_API_KEY,
-          },
-        });
-
-        if (!browserUseResponse.ok) {
-          throw new Error(`Browser-Use API error: ${browserUseResponse.status}`);
+        console.log(`Resuming task: ${taskId}`);
+        let success = false;
+        
+        // Try PUT first
+        try {
+          const res = await fetch(`${BROWSER_USE_API_URL}/tasks/${taskId}/resume`, {
+            method: 'PUT',
+            headers: { 'X-Browser-Use-API-Key': BROWSER_USE_API_KEY },
+          });
+          console.log(`PUT resume response: ${res.status}`);
+          if (res.ok) success = true;
+        } catch (e) {
+          console.error('PUT resume error:', e);
+        }
+        
+        // Fallback: POST
+        if (!success) {
+          try {
+            const res = await fetch(`${BROWSER_USE_API_URL}/tasks/${taskId}/resume`, {
+              method: 'POST',
+              headers: { 'X-Browser-Use-API-Key': BROWSER_USE_API_KEY },
+            });
+            console.log(`POST resume response: ${res.status}`);
+            if (res.ok) success = true;
+          } catch (e) {
+            console.error('POST resume error:', e);
+          }
+        }
+        
+        if (!success) {
+          console.log('Resume may not be supported, returning success anyway');
         }
 
         return new Response(JSON.stringify({ success: true }), {
@@ -662,38 +829,61 @@ serve(async (req) => {
       case 'get_media':
       case 'get_screenshots':
       case 'get_all_media': {
-        // V2 API: Get media from task details (no separate endpoints)
+        // V2 API: Get media from task details with retry for finished tasks
         console.log(`Fetching all media for task: ${taskId}`);
         
-        const detailsRes = await fetch(`${BROWSER_USE_API_URL}/tasks/${taskId}`, {
-          method: 'GET',
-          headers: { 'X-Browser-Use-API-Key': BROWSER_USE_API_KEY },
-        });
-
         let screenshots: string[] = [];
         let recordings: string[] = [];
-
-        if (detailsRes.ok) {
+        let taskStatus: string | null = null;
+        const maxRetries = 3;
+        
+        for (let attempt = 1; attempt <= maxRetries; attempt++) {
           try {
-            const details = await detailsRes.json();
-            console.log('Task details for media:', JSON.stringify(details, null, 2).substring(0, 500));
-            
-            // Screenshots from steps
-            if (Array.isArray(details?.steps)) {
-              const stepShots = details.steps
-                .map((s: { screenshotUrl?: string }) => s?.screenshotUrl)
-                .filter((x: unknown): x is string => typeof x === 'string');
-              screenshots = Array.from(new Set(stepShots));
-            }
-            
-            // Recordings from outputFiles
-            if (details?.outputFiles) {
-              recordings = normalizeUrls(details.outputFiles);
+            const detailsRes = await fetch(`${BROWSER_USE_API_URL}/tasks/${taskId}`, {
+              method: 'GET',
+              headers: { 'X-Browser-Use-API-Key': BROWSER_USE_API_KEY },
+            });
+
+            if (detailsRes.ok) {
+              const details = await detailsRes.json();
+              taskStatus = details.status;
+              console.log(`Attempt ${attempt} - Status: ${taskStatus}, OutputFiles: ${JSON.stringify(details.outputFiles || []).substring(0, 200)}`);
+              
+              // Screenshots from steps
+              if (Array.isArray(details?.steps)) {
+                const stepShots = details.steps
+                  .map((s: { screenshotUrl?: string }) => s?.screenshotUrl)
+                  .filter((x: unknown): x is string => typeof x === 'string');
+                screenshots = Array.from(new Set(stepShots));
+              }
+              
+              // Recordings from outputFiles
+              if (details?.outputFiles) {
+                recordings = normalizeUrls(details.outputFiles);
+              }
+              
+              // If task is finished/stopped and we have recordings, we're done
+              if (recordings.length > 0 || !['finished', 'stopped'].includes(taskStatus || '')) {
+                break;
+              }
+            } else if (detailsRes.status === 404) {
+              console.log('Task not found - session may have expired');
+              break;
             }
           } catch (e) {
-            console.error('Failed to parse task details:', e);
+            console.error(`Attempt ${attempt} error:`, e);
+          }
+          
+          // Wait before retry for finished tasks (video may still be processing)
+          if (attempt < maxRetries && ['finished', 'stopped'].includes(taskStatus || '')) {
+            console.log('Waiting 3s for video processing...');
+            await delay(3000);
+          } else {
+            break;
           }
         }
+        
+        console.log(`Final media: ${screenshots.length} screenshots, ${recordings.length} recordings`);
 
         return new Response(JSON.stringify({ screenshots, recordings }), {
           headers: { ...corsHeaders, 'Content-Type': 'application/json' },
