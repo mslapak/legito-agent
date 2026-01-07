@@ -6,6 +6,78 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
+// Helper to normalize URLs from various response shapes
+const normalizeUrls = (val: unknown): string[] => {
+  if (!val) return [];
+  if (typeof val === 'string') return [val];
+  if (Array.isArray(val)) {
+    return val
+      .map((x) => {
+        if (typeof x === 'string') return x;
+        if (x && typeof x === 'object') {
+          const obj = x as Record<string, unknown>;
+          const candidate =
+            obj.url ??
+            obj.downloadUrl ??
+            obj.download_url ??
+            obj.signedUrl ??
+            obj.signed_url ??
+            obj.recordingUrl ??
+            obj.recording_url ??
+            obj.videoUrl ??
+            obj.video_url ??
+            obj.screenshotUrl ??
+            obj.screenshot_url ??
+            obj.fileUrl ??
+            obj.file_url ??
+            obj.mediaUrl ??
+            obj.media_url ??
+            obj.src ??
+            obj.href;
+          return typeof candidate === 'string' ? candidate : null;
+        }
+        return null;
+      })
+      .filter((x): x is string => !!x);
+  }
+  if (typeof val === 'object') {
+    const obj = val as Record<string, unknown>;
+    return normalizeUrls(
+      obj.screenshots ??
+        obj.recordings ??
+        obj.recording_url ??
+        obj.recordingUrl ??
+        obj.video_url ??
+        obj.videoUrl ??
+        obj.urls ??
+        obj.data ??
+        obj.items ??
+        obj.files ??
+        obj.media ??
+        obj.outputFiles ??
+        obj.output_files ??
+        obj.artifacts
+    );
+  }
+  return [];
+};
+
+// Helper to map Browser-Use v2 status to our internal status
+const mapStatus = (browserStatus: string, hasOutput: boolean): string => {
+  if (browserStatus === 'finished') return 'completed';
+  if (browserStatus === 'failed') return 'failed';
+  if (browserStatus === 'stopped') {
+    return hasOutput ? 'completed' : 'cancelled';
+  }
+  if (['running', 'started', 'created'].includes(browserStatus)) {
+    return 'running';
+  }
+  return 'pending';
+};
+
+// Helper function for delay
+const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
+
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
@@ -40,7 +112,7 @@ serve(async (req) => {
       });
     }
 
-const { action, taskId, prompt, title, projectId, keepBrowserOpen, followUpPrompt, taskType, fileName, fileBase64, contentType, includedFiles } = await req.json();
+    const { action, taskId, prompt, title, projectId, keepBrowserOpen, followUpPrompt, taskType, fileName, fileBase64, contentType, includedFiles, dbTaskId } = await req.json();
     console.log(`Action: ${action}, User: ${user.id}, TaskId: ${taskId || 'N/A'}, TaskType: ${taskType || 'test'}`);
 
     // Browser-Use Cloud API base URL - v2 API
@@ -76,6 +148,182 @@ const { action, taskId, prompt, title, projectId, keepBrowserOpen, followUpPromp
             headers: { ...corsHeaders, 'Content-Type': 'application/json' },
           });
         }
+      }
+
+      case 'probe_live_url': {
+        // Probe various live preview URL formats to find one that works
+        console.log(`Probing live URL for task: ${taskId}`);
+        
+        const candidates: { url: string; source: string; status?: number; ok?: boolean }[] = [];
+        
+        // First get task details to check for live_url from API
+        try {
+          const detailsRes = await fetch(`${BROWSER_USE_API_URL}/tasks/${taskId}`, {
+            method: 'GET',
+            headers: { 'X-Browser-Use-API-Key': BROWSER_USE_API_KEY },
+          });
+          
+          if (detailsRes.ok) {
+            const details = await detailsRes.json();
+            console.log('Task details for probe:', JSON.stringify(details, null, 2));
+            
+            // Add URLs from API response
+            if (details.live_url) candidates.push({ url: details.live_url, source: 'api.live_url' });
+            if (details.liveUrl) candidates.push({ url: details.liveUrl, source: 'api.liveUrl' });
+            if (details.preview_url) candidates.push({ url: details.preview_url, source: 'api.preview_url' });
+            if (details.previewUrl) candidates.push({ url: details.previewUrl, source: 'api.previewUrl' });
+          }
+        } catch (e) {
+          console.error('Error fetching task details for probe:', e);
+        }
+        
+        // Add constructed preview URLs
+        candidates.push({ url: `https://previews.browser-use.com/${taskId}`, source: 'constructed_previews' });
+        candidates.push({ url: `https://preview.browser-use.com/${taskId}`, source: 'constructed_preview' });
+        
+        // Probe each candidate
+        let bestUrl: string | null = null;
+        let bestSource: string | null = null;
+        
+        for (const candidate of candidates) {
+          try {
+            const probeRes = await fetch(candidate.url, { 
+              method: 'HEAD',
+              redirect: 'follow',
+            });
+            candidate.status = probeRes.status;
+            candidate.ok = probeRes.ok;
+            
+            console.log(`Probe ${candidate.source}: ${candidate.url} -> ${probeRes.status}`);
+            
+            if (probeRes.ok && !bestUrl) {
+              bestUrl = candidate.url;
+              bestSource = candidate.source;
+            }
+          } catch (e) {
+            console.log(`Probe ${candidate.source} failed:`, e);
+            candidate.status = 0;
+            candidate.ok = false;
+          }
+        }
+        
+        return new Response(JSON.stringify({
+          candidates,
+          bestUrl,
+          bestSource,
+          taskId,
+        }), {
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+
+      case 'sync_media': {
+        // Robustly fetch and normalize media from all sources
+        console.log(`Syncing media for task: ${taskId}`);
+        
+        const [screenshotsRes, mediaRes, detailsRes] = await Promise.all([
+          fetch(`${BROWSER_USE_API_URL}/tasks/${taskId}/screenshots`, {
+            method: 'GET',
+            headers: { 'X-Browser-Use-API-Key': BROWSER_USE_API_KEY },
+          }),
+          fetch(`${BROWSER_USE_API_URL}/tasks/${taskId}/media`, {
+            method: 'GET',
+            headers: { 'X-Browser-Use-API-Key': BROWSER_USE_API_KEY },
+          }),
+          fetch(`${BROWSER_USE_API_URL}/tasks/${taskId}`, {
+            method: 'GET',
+            headers: { 'X-Browser-Use-API-Key': BROWSER_USE_API_KEY },
+          }),
+        ]);
+        
+        let screenshots: string[] = [];
+        let recordings: string[] = [];
+        const rawShapeHints: Record<string, unknown> = {};
+        
+        // Parse screenshots
+        if (screenshotsRes.ok) {
+          const raw = await screenshotsRes.text();
+          console.log(`Screenshots HTTP ${screenshotsRes.status}:`, raw);
+          try {
+            const json = JSON.parse(raw);
+            rawShapeHints.screenshots = Object.keys(json);
+            screenshots = normalizeUrls(json);
+          } catch (e) {
+            console.error('Failed to parse screenshots:', e);
+          }
+        }
+        
+        // Parse recordings
+        if (mediaRes.ok) {
+          const raw = await mediaRes.text();
+          console.log(`Media HTTP ${mediaRes.status}:`, raw);
+          try {
+            const json = JSON.parse(raw);
+            rawShapeHints.media = Object.keys(json);
+            recordings = normalizeUrls(json);
+          } catch (e) {
+            console.error('Failed to parse media:', e);
+          }
+        }
+        
+        // Fallback: extract screenshots from steps
+        let taskDetails: Record<string, unknown> | null = null;
+        if (detailsRes.ok) {
+          const raw = await detailsRes.text();
+          console.log(`Task details HTTP ${detailsRes.status}:`, raw.substring(0, 500));
+          try {
+            taskDetails = JSON.parse(raw);
+            rawShapeHints.taskDetails = Object.keys(taskDetails || {});
+            
+            if (screenshots.length === 0 && Array.isArray(taskDetails?.steps)) {
+              const stepShots = (taskDetails.steps as Array<{ screenshotUrl?: string }>)
+                .map(s => s?.screenshotUrl)
+                .filter((x): x is string => typeof x === 'string');
+              screenshots = Array.from(new Set(stepShots));
+              console.log(`Fallback screenshots from steps:`, screenshots);
+            }
+            
+            // Check outputFiles for recordings
+            if (recordings.length === 0 && taskDetails?.outputFiles) {
+              const outputRecordings = normalizeUrls(taskDetails.outputFiles);
+              if (outputRecordings.length > 0) {
+                recordings = outputRecordings;
+                console.log(`Fallback recordings from outputFiles:`, recordings);
+              }
+            }
+          } catch (e) {
+            console.error('Failed to parse task details:', e);
+          }
+        }
+        
+        // Optionally persist to DB
+        if (dbTaskId) {
+          const updateData: Record<string, unknown> = {};
+          if (screenshots.length > 0) updateData.screenshots = screenshots;
+          if (recordings.length > 0) updateData.recordings = recordings;
+          
+          if (Object.keys(updateData).length > 0) {
+            await supabase
+              .from('tasks')
+              .update(updateData)
+              .eq('id', dbTaskId)
+              .eq('user_id', user.id);
+            console.log(`Updated DB task ${dbTaskId} with media`);
+          }
+        }
+        
+        return new Response(JSON.stringify({
+          screenshots,
+          recordings,
+          rawShapeHints,
+          taskDetails: taskDetails ? {
+            status: taskDetails.status,
+            hasOutput: !!taskDetails.output,
+            stepsCount: Array.isArray(taskDetails.steps) ? taskDetails.steps.length : 0,
+          } : null,
+        }), {
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
       }
 
       case 'upload_file': {
@@ -130,17 +378,14 @@ const { action, taskId, prompt, title, projectId, keepBrowserOpen, followUpPromp
         // Create task in Browser-Use Cloud
         const requestBody: Record<string, unknown> = {
           task: prompt,
-          // Enable video recording and data saving
           save_browser_data: true,
           record_video: true,
         };
         
-        // Add keep_browser_open if specified
         if (keepBrowserOpen) {
           requestBody.keep_browser_open = true;
         }
 
-        // Add uploaded files if specified
         if (includedFiles && includedFiles.length > 0) {
           requestBody.included_file_names = includedFiles;
           console.log('Including files in task:', includedFiles);
@@ -290,13 +535,19 @@ const { action, taskId, prompt, title, projectId, keepBrowserOpen, followUpPromp
             (taskData.id ? `https://previews.browser-use.com/${taskData.id}` : null);
         }
         
+        // Add mapped status for convenience
+        const hasOutput = !!(taskData.output || taskData.finished_at || taskData.finishedAt);
+        taskData.mapped_status = mapStatus(taskData.status, hasOutput);
+        
         return new Response(JSON.stringify(taskData), {
           headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         });
       }
 
       case 'stop_task': {
-        // Stop a running task
+        // Stop a running task and sync media
+        console.log(`Stopping task: ${taskId}`);
+        
         const browserUseResponse = await fetch(`${BROWSER_USE_API_URL}/tasks/${taskId}/stop`, {
           method: 'PUT',
           headers: {
@@ -310,14 +561,113 @@ const { action, taskId, prompt, title, projectId, keepBrowserOpen, followUpPromp
           throw new Error(`Browser-Use API error: ${browserUseResponse.status}`);
         }
 
+        // Wait for browser session to close
+        console.log('Waiting for session to close...');
+        await delay(5000);
+        
+        // Try to fetch media with retries
+        let screenshots: string[] = [];
+        let recordings: string[] = [];
+        const maxRetries = 3;
+        
+        for (let attempt = 1; attempt <= maxRetries; attempt++) {
+          console.log(`Media fetch attempt ${attempt}/${maxRetries}`);
+          
+          const [screenshotsRes, mediaRes, detailsRes] = await Promise.all([
+            fetch(`${BROWSER_USE_API_URL}/tasks/${taskId}/screenshots`, {
+              method: 'GET',
+              headers: { 'X-Browser-Use-API-Key': BROWSER_USE_API_KEY },
+            }),
+            fetch(`${BROWSER_USE_API_URL}/tasks/${taskId}/media`, {
+              method: 'GET',
+              headers: { 'X-Browser-Use-API-Key': BROWSER_USE_API_KEY },
+            }),
+            fetch(`${BROWSER_USE_API_URL}/tasks/${taskId}`, {
+              method: 'GET',
+              headers: { 'X-Browser-Use-API-Key': BROWSER_USE_API_KEY },
+            }),
+          ]);
+          
+          // Parse screenshots
+          if (screenshotsRes.ok) {
+            try {
+              const json = await screenshotsRes.json();
+              const urls = normalizeUrls(json);
+              if (urls.length > 0) screenshots = urls;
+            } catch (e) {
+              console.error('Failed to parse screenshots:', e);
+            }
+          }
+          
+          // Parse recordings
+          if (mediaRes.ok) {
+            try {
+              const json = await mediaRes.json();
+              const urls = normalizeUrls(json);
+              if (urls.length > 0) recordings = urls;
+            } catch (e) {
+              console.error('Failed to parse media:', e);
+            }
+          }
+          
+          // Fallback from task details
+          if (detailsRes.ok) {
+            try {
+              const details = await detailsRes.json();
+              
+              // Screenshots from steps
+              if (screenshots.length === 0 && Array.isArray(details?.steps)) {
+                const stepShots = details.steps
+                  .map((s: { screenshotUrl?: string }) => s?.screenshotUrl)
+                  .filter((x: unknown): x is string => typeof x === 'string');
+                if (stepShots.length > 0) screenshots = Array.from(new Set(stepShots));
+              }
+              
+              // Recordings from outputFiles
+              if (recordings.length === 0 && details?.outputFiles) {
+                const outputRecs = normalizeUrls(details.outputFiles);
+                if (outputRecs.length > 0) recordings = outputRecs;
+              }
+            } catch (e) {
+              console.error('Failed to parse details for fallback:', e);
+            }
+          }
+          
+          // If we have recordings, stop retrying
+          if (recordings.length > 0) {
+            console.log(`Got recordings on attempt ${attempt}`);
+            break;
+          }
+          
+          // Wait before retry
+          if (attempt < maxRetries) {
+            console.log('No recordings yet, waiting before retry...');
+            await delay(3000);
+          }
+        }
+        
+        console.log(`Final media: ${screenshots.length} screenshots, ${recordings.length} recordings`);
+        
         // Update task in database
+        const updateData: Record<string, unknown> = {
+          status: 'completed',
+          completed_at: new Date().toISOString(),
+        };
+        
+        if (screenshots.length > 0) updateData.screenshots = screenshots;
+        if (recordings.length > 0) updateData.recordings = recordings;
+        
         await supabase
           .from('tasks')
-          .update({ status: 'cancelled' })
+          .update(updateData)
           .eq('browser_use_task_id', taskId)
           .eq('user_id', user.id);
 
-        return new Response(JSON.stringify({ success: true }), {
+        return new Response(JSON.stringify({ 
+          success: true,
+          screenshots,
+          recordings,
+        }), {
           headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         });
       }
@@ -421,59 +771,6 @@ const { action, taskId, prompt, title, projectId, keepBrowserOpen, followUpPromp
           }),
         ]);
 
-        const normalizeUrls = (val: unknown): string[] => {
-          if (!val) return [];
-          if (typeof val === 'string') return [val];
-          if (Array.isArray(val)) {
-            return val
-              .map((x) => {
-                if (typeof x === 'string') return x;
-                if (x && typeof x === 'object') {
-                  const obj = x as Record<string, unknown>;
-                  // Try all possible URL field names
-                  const candidate =
-                    obj.url ??
-                    obj.downloadUrl ??
-                    obj.download_url ??
-                    obj.signedUrl ??
-                    obj.signed_url ??
-                    obj.recordingUrl ??
-                    obj.recording_url ??
-                    obj.videoUrl ??
-                    obj.video_url ??
-                    obj.screenshotUrl ??
-                    obj.screenshot_url ??
-                    obj.fileUrl ??
-                    obj.file_url ??
-                    obj.mediaUrl ??
-                    obj.media_url ??
-                    obj.src ??
-                    obj.href;
-                  return typeof candidate === 'string' ? candidate : null;
-                }
-                return null;
-              })
-              .filter((x): x is string => !!x);
-          }
-          if (typeof val === 'object') {
-            const obj = val as Record<string, unknown>;
-            return normalizeUrls(
-              obj.screenshots ??
-                obj.recordings ??
-                obj.recording_url ??
-                obj.recordingUrl ??
-                obj.video_url ??
-                obj.videoUrl ??
-                obj.urls ??
-                obj.data ??
-                obj.items ??
-                obj.files ??
-                obj.media
-            );
-          }
-          return [];
-        };
-
         let screenshots: string[] = [];
         let recordings: string[] = [];
 
@@ -513,13 +810,13 @@ const { action, taskId, prompt, title, projectId, keepBrowserOpen, followUpPromp
               headers: { 'X-Browser-Use-API-Key': BROWSER_USE_API_KEY },
             });
             const detailsRaw = await detailsRes.text();
-            console.log(`Task details (fallback) HTTP ${detailsRes.status}:`, detailsRaw);
+            console.log(`Task details (fallback) HTTP ${detailsRes.status}:`, detailsRaw.substring(0, 500));
             if (detailsRes.ok) {
               const detailsJson = JSON.parse(detailsRaw);
               const stepShots = Array.isArray(detailsJson?.steps)
                 ? detailsJson.steps
-                    .map((s: any) => (typeof s?.screenshotUrl === 'string' ? s.screenshotUrl : null))
-                    .filter((x: any): x is string => !!x)
+                    .map((s: { screenshotUrl?: string }) => (typeof s?.screenshotUrl === 'string' ? s.screenshotUrl : null))
+                    .filter((x: unknown): x is string => !!x)
                 : [];
               screenshots = Array.from(new Set(stepShots));
             }
