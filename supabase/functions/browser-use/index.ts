@@ -47,6 +47,37 @@ const { action, taskId, prompt, title, projectId, keepBrowserOpen, followUpPromp
     const BROWSER_USE_API_URL = 'https://api.browser-use.com/api/v2';
 
     switch (action) {
+      case 'diagnose': {
+        // Test API connectivity and return info
+        console.log('Running API diagnostics...');
+        try {
+          const testRes = await fetch(`${BROWSER_USE_API_URL}/tasks`, {
+            method: 'GET',
+            headers: { 'X-Browser-Use-API-Key': BROWSER_USE_API_KEY },
+          });
+          const raw = await testRes.text();
+          console.log('Diagnose tasks list:', testRes.status, raw);
+          return new Response(JSON.stringify({ 
+            status: testRes.status, 
+            ok: testRes.ok,
+            response: raw.substring(0, 500),
+            apiUrl: BROWSER_USE_API_URL,
+            timestamp: new Date().toISOString(),
+          }), {
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          });
+        } catch (e) {
+          console.error('Diagnose error:', e);
+          return new Response(JSON.stringify({ 
+            error: String(e),
+            apiUrl: BROWSER_USE_API_URL,
+          }), {
+            status: 500,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          });
+        }
+      }
+
       case 'upload_file': {
         // Upload file using presigned URL
         console.log(`Uploading file: ${fileName}, type: ${contentType}`);
@@ -133,14 +164,17 @@ const { action, taskId, prompt, title, projectId, keepBrowserOpen, followUpPromp
         }
 
         const browserUseData = await browserUseResponse.json();
-        console.log('Browser-Use response:', JSON.stringify(browserUseData));
+        console.log('Browser-Use FULL response:', JSON.stringify(browserUseData, null, 2));
+        console.log('Available fields:', Object.keys(browserUseData));
 
-        // V2 API: Live preview URL is based on taskId (not sessionId)
-        // Docs: https://previews.browser-use.com/{taskId}
-        const liveUrl = browserUseData.live_url
-          ? String(browserUseData.live_url)
-          : `https://previews.browser-use.com/${browserUseData.id}`;
-        console.log('Constructed live_url:', liveUrl);
+        // V2 API: Try multiple URL formats for live preview
+        const liveUrl = 
+          browserUseData.live_url ||
+          browserUseData.liveUrl ||
+          browserUseData.preview_url ||
+          browserUseData.previewUrl ||
+          (browserUseData.id ? `https://previews.browser-use.com/${browserUseData.id}` : null);
+        console.log('Constructed live_url:', liveUrl, 'from id:', browserUseData.id);
 
         // Save task to database with live_url
         const { data: task, error: insertError } = await supabase
@@ -245,11 +279,15 @@ const { action, taskId, prompt, title, projectId, keepBrowserOpen, followUpPromp
         }
 
         const taskData = await browserUseResponse.json();
-        console.log('Task details raw:', JSON.stringify(taskData));
+        console.log('Task details FULL:', JSON.stringify(taskData, null, 2));
+        console.log('Task fields:', Object.keys(taskData));
         
-        // V2 API: Ensure live_url is present (based on taskId)
-        if (!taskData.live_url) {
-          taskData.live_url = `https://previews.browser-use.com/${taskData.id}`;
+        // V2 API: Ensure live_url is present - try multiple formats
+        if (!taskData.live_url && !taskData.liveUrl) {
+          taskData.live_url = 
+            taskData.preview_url ||
+            taskData.previewUrl ||
+            (taskData.id ? `https://previews.browser-use.com/${taskData.id}` : null);
         }
         
         return new Response(JSON.stringify(taskData), {
@@ -392,6 +430,7 @@ const { action, taskId, prompt, title, projectId, keepBrowserOpen, followUpPromp
                 if (typeof x === 'string') return x;
                 if (x && typeof x === 'object') {
                   const obj = x as Record<string, unknown>;
+                  // Try all possible URL field names
                   const candidate =
                     obj.url ??
                     obj.downloadUrl ??
@@ -401,7 +440,15 @@ const { action, taskId, prompt, title, projectId, keepBrowserOpen, followUpPromp
                     obj.recordingUrl ??
                     obj.recording_url ??
                     obj.videoUrl ??
-                    obj.video_url;
+                    obj.video_url ??
+                    obj.screenshotUrl ??
+                    obj.screenshot_url ??
+                    obj.fileUrl ??
+                    obj.file_url ??
+                    obj.mediaUrl ??
+                    obj.media_url ??
+                    obj.src ??
+                    obj.href;
                   return typeof candidate === 'string' ? candidate : null;
                 }
                 return null;
@@ -417,7 +464,11 @@ const { action, taskId, prompt, title, projectId, keepBrowserOpen, followUpPromp
                 obj.recordingUrl ??
                 obj.video_url ??
                 obj.videoUrl ??
-                obj.urls
+                obj.urls ??
+                obj.data ??
+                obj.items ??
+                obj.files ??
+                obj.media
             );
           }
           return [];

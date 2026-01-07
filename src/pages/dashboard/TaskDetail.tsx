@@ -53,6 +53,7 @@ export default function TaskDetail() {
   const [actionLoading, setActionLoading] = useState(false);
   const [followUpPrompt, setFollowUpPrompt] = useState('');
   const [sendingFollowUp, setSendingFollowUp] = useState(false);
+  const [liveViewError, setLiveViewError] = useState(false);
 
   useEffect(() => {
     if (taskId) {
@@ -418,12 +419,21 @@ export default function TaskDetail() {
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="relative w-full aspect-video rounded-lg overflow-hidden border border-border bg-muted">
-              <iframe
-                src={task.live_url}
-                className="absolute inset-0 w-full h-full"
-                allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-                allowFullScreen
-              />
+              {liveViewError ? (
+                <div className="absolute inset-0 flex flex-col items-center justify-center text-muted-foreground">
+                  <Monitor className="h-12 w-12 mb-2 opacity-50" />
+                  <p className="text-sm">Live view není dostupný</p>
+                  <p className="text-xs mt-1">Zkuste otevřít v novém okně</p>
+                </div>
+              ) : (
+                <iframe
+                  src={task.live_url}
+                  className="absolute inset-0 w-full h-full"
+                  allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                  allowFullScreen
+                  onError={() => setLiveViewError(true)}
+                />
+              )}
             </div>
             
             {/* Human-in-the-Loop Input */}
