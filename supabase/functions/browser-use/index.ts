@@ -376,15 +376,17 @@ serve(async (req) => {
         
         if (!liveUrl && browserUseData.sessionId) {
           try {
-            console.log('Fetching browser session for liveUrl:', browserUseData.sessionId);
-            const sessionRes = await fetch(`${BROWSER_USE_API_URL}/browsers/${browserUseData.sessionId}`, {
+            console.log('Fetching session for liveUrl:', browserUseData.sessionId);
+            const sessionRes = await fetch(`${BROWSER_USE_API_URL}/sessions/${browserUseData.sessionId}`, {
               method: 'GET',
               headers: { 'X-Browser-Use-API-Key': BROWSER_USE_API_KEY },
             });
+            console.log('Session endpoint response status:', sessionRes.status);
             if (sessionRes.ok) {
               const sessionData = await sessionRes.json();
-              console.log('Browser session data:', JSON.stringify(sessionData, null, 2));
+              console.log('Session data:', JSON.stringify(sessionData, null, 2));
               liveUrl = sessionData.liveUrl || sessionData.live_url || sessionData.previewUrl || sessionData.preview_url;
+              console.log('Extracted liveUrl from session:', liveUrl);
             } else {
               console.log('Browser session fetch failed:', sessionRes.status);
             }
@@ -512,16 +514,20 @@ serve(async (req) => {
         if (!taskData.live_url && !taskData.liveUrl) {
           if (taskData.sessionId) {
             try {
-              const sessionRes = await fetch(`${BROWSER_USE_API_URL}/browsers/${taskData.sessionId}`, {
+              console.log('Fetching session for liveUrl in get_task_details:', taskData.sessionId);
+              const sessionRes = await fetch(`${BROWSER_USE_API_URL}/sessions/${taskData.sessionId}`, {
                 method: 'GET',
                 headers: { 'X-Browser-Use-API-Key': BROWSER_USE_API_KEY },
               });
+              console.log('Session endpoint response status:', sessionRes.status);
               if (sessionRes.ok) {
                 const sessionData = await sessionRes.json();
+                console.log('Session data for liveUrl:', JSON.stringify(sessionData, null, 2));
                 taskData.live_url = sessionData.liveUrl || sessionData.live_url;
+                console.log('Extracted liveUrl:', taskData.live_url);
               }
             } catch (e) {
-              console.error('Failed to fetch browser session for liveUrl:', e);
+              console.error('Failed to fetch session for liveUrl:', e);
             }
           }
           // Fallback
