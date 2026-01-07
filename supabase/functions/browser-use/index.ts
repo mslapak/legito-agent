@@ -371,15 +371,36 @@ serve(async (req) => {
         console.log('Browser-Use FULL response:', JSON.stringify(browserUseData, null, 2));
         console.log('Available fields:', Object.keys(browserUseData));
 
-        // V2 API: Construct live preview URL using sessionId (preferred) or taskId
-        const liveUrl = 
-          browserUseData.live_url ||
-          browserUseData.liveUrl ||
-          browserUseData.preview_url ||
-          browserUseData.previewUrl ||
-          (browserUseData.sessionId ? `https://live.browser-use.com/?sessionId=${browserUseData.sessionId}` : null) ||
-          (browserUseData.id ? `https://live.browser-use.com/${browserUseData.id}` : null);
-        console.log('Constructed live_url:', liveUrl, 'from sessionId:', browserUseData.sessionId, 'id:', browserUseData.id);
+        // V2 API: Try to get liveUrl from browser session endpoint
+        let liveUrl = browserUseData.live_url || browserUseData.liveUrl || browserUseData.preview_url || browserUseData.previewUrl;
+        
+        if (!liveUrl && browserUseData.sessionId) {
+          try {
+            console.log('Fetching browser session for liveUrl:', browserUseData.sessionId);
+            const sessionRes = await fetch(`${BROWSER_USE_API_URL}/browsers/${browserUseData.sessionId}`, {
+              method: 'GET',
+              headers: { 'X-Browser-Use-API-Key': BROWSER_USE_API_KEY },
+            });
+            if (sessionRes.ok) {
+              const sessionData = await sessionRes.json();
+              console.log('Browser session data:', JSON.stringify(sessionData, null, 2));
+              liveUrl = sessionData.liveUrl || sessionData.live_url || sessionData.previewUrl || sessionData.preview_url;
+            } else {
+              console.log('Browser session fetch failed:', sessionRes.status);
+            }
+          } catch (e) {
+            console.error('Failed to fetch browser session:', e);
+          }
+        }
+        
+        // Fallback to constructed URL if no liveUrl from API
+        if (!liveUrl) {
+          liveUrl = browserUseData.sessionId 
+            ? `https://live.browser-use.com/?sessionId=${browserUseData.sessionId}` 
+            : `https://live.browser-use.com/${browserUseData.id}`;
+        }
+        
+        console.log('Final live_url:', liveUrl);
 
         // Save task to database with live_url
         const { data: task, error: insertError } = await supabase
@@ -487,13 +508,28 @@ serve(async (req) => {
         console.log('Task details FULL:', JSON.stringify(taskData, null, 2));
         console.log('Task fields:', Object.keys(taskData));
         
-        // V2 API: Ensure live_url is present - prefer sessionId format
+        // V2 API: Try to get liveUrl from browser session if not in task data
         if (!taskData.live_url && !taskData.liveUrl) {
-          taskData.live_url = 
-            taskData.preview_url ||
-            taskData.previewUrl ||
-            (taskData.sessionId ? `https://live.browser-use.com/?sessionId=${taskData.sessionId}` : null) ||
-            (taskData.id ? `https://live.browser-use.com/${taskData.id}` : null);
+          if (taskData.sessionId) {
+            try {
+              const sessionRes = await fetch(`${BROWSER_USE_API_URL}/browsers/${taskData.sessionId}`, {
+                method: 'GET',
+                headers: { 'X-Browser-Use-API-Key': BROWSER_USE_API_KEY },
+              });
+              if (sessionRes.ok) {
+                const sessionData = await sessionRes.json();
+                taskData.live_url = sessionData.liveUrl || sessionData.live_url;
+              }
+            } catch (e) {
+              console.error('Failed to fetch browser session for liveUrl:', e);
+            }
+          }
+          // Fallback
+          if (!taskData.live_url) {
+            taskData.live_url = taskData.sessionId 
+              ? `https://live.browser-use.com/?sessionId=${taskData.sessionId}` 
+              : `https://live.browser-use.com/${taskData.id}`;
+          }
         }
         
         // Add mapped status for convenience
