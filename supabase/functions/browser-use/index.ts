@@ -371,14 +371,15 @@ serve(async (req) => {
         console.log('Browser-Use FULL response:', JSON.stringify(browserUseData, null, 2));
         console.log('Available fields:', Object.keys(browserUseData));
 
-        // V2 API: Try multiple URL formats for live preview
+        // V2 API: Construct live preview URL using sessionId (preferred) or taskId
         const liveUrl = 
           browserUseData.live_url ||
           browserUseData.liveUrl ||
           browserUseData.preview_url ||
           browserUseData.previewUrl ||
+          (browserUseData.sessionId ? `https://live.browser-use.com/?sessionId=${browserUseData.sessionId}` : null) ||
           (browserUseData.id ? `https://live.browser-use.com/${browserUseData.id}` : null);
-        console.log('Constructed live_url:', liveUrl, 'from id:', browserUseData.id);
+        console.log('Constructed live_url:', liveUrl, 'from sessionId:', browserUseData.sessionId, 'id:', browserUseData.id);
 
         // Save task to database with live_url
         const { data: task, error: insertError } = await supabase
@@ -486,11 +487,12 @@ serve(async (req) => {
         console.log('Task details FULL:', JSON.stringify(taskData, null, 2));
         console.log('Task fields:', Object.keys(taskData));
         
-        // V2 API: Ensure live_url is present - try multiple formats
+        // V2 API: Ensure live_url is present - prefer sessionId format
         if (!taskData.live_url && !taskData.liveUrl) {
           taskData.live_url = 
             taskData.preview_url ||
             taskData.previewUrl ||
+            (taskData.sessionId ? `https://live.browser-use.com/?sessionId=${taskData.sessionId}` : null) ||
             (taskData.id ? `https://live.browser-use.com/${taskData.id}` : null);
         }
         
