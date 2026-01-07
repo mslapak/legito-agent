@@ -68,6 +68,7 @@ export default function OperationDetail() {
   const [sendingPrompt, setSendingPrompt] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [actionLoading, setActionLoading] = useState<string | null>(null);
+  const [liveViewError, setLiveViewError] = useState(false);
 
   useEffect(() => {
     if (operationId && user) {
@@ -537,13 +538,22 @@ export default function OperationDetail() {
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="relative w-full aspect-video rounded-lg overflow-hidden border border-border bg-muted">
-              <iframe
-                src={operation.live_url}
-                className="absolute inset-0 w-full h-full"
-                title="Live Browser View"
-                allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-                allowFullScreen
-              />
+              {liveViewError ? (
+                <div className="absolute inset-0 flex flex-col items-center justify-center text-muted-foreground">
+                  <Monitor className="h-12 w-12 mb-2 opacity-50" />
+                  <p className="text-sm">Live view není dostupný</p>
+                  <p className="text-xs mt-1">Zkuste otevřít v novém okně</p>
+                </div>
+              ) : (
+                <iframe
+                  src={operation.live_url}
+                  className="absolute inset-0 w-full h-full"
+                  title="Live Browser View"
+                  allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                  allowFullScreen
+                  onError={() => setLiveViewError(true)}
+                />
+              )}
             </div>
             
             {/* Human-in-the-Loop Input */}
