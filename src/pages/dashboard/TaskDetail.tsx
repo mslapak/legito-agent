@@ -251,50 +251,23 @@ export default function TaskDetail() {
     
     setActionLoading(true);
     try {
-      // Stop the task first if running
-      if (task.status === 'running') {
-        toast.info('Ukončuji browser session...');
-        const stopResponse = await supabase.functions.invoke('browser-use', {
-          body: {
-            action: 'stop_task',
-            taskId: task.browser_use_task_id,
-          },
-        });
-        
-        if (stopResponse.error) {
-          console.error('Stop task error:', stopResponse.error);
-        }
-        
-        // Wait a moment for the session to close properly
-        await new Promise(resolve => setTimeout(resolve, 2000));
-      }
+      toast.info('Ukončuji a stahuji média...');
       
-      toast.info('Stahuji média...');
-      
-      // Fetch all media
-      const mediaResponse = await supabase.functions.invoke('browser-use', {
+      // Use the improved stop_task which handles media sync with retries
+      const stopResponse = await supabase.functions.invoke('browser-use', {
         body: {
-          action: 'get_all_media',
+          action: 'stop_task',
           taskId: task.browser_use_task_id,
         },
       });
       
-      const mediaData = mediaResponse.data;
-      console.log('Media data after stop:', mediaData);
+      if (stopResponse.error) {
+        console.error('Stop task error:', stopResponse.error);
+        throw stopResponse.error;
+      }
       
-      const screenshots = mediaData?.screenshots || [];
-      const recordings = mediaData?.recordings || [];
-      
-      // Update task in database
-      await supabase
-        .from('tasks')
-        .update({
-          status: 'completed' as const,
-          screenshots: screenshots.length > 0 ? screenshots : task.screenshots,
-          recordings: recordings.length > 0 ? recordings : task.recordings,
-          completed_at: new Date().toISOString(),
-        })
-        .eq('id', task.id);
+      const { screenshots = [], recordings = [] } = stopResponse.data || {};
+      console.log('Stop response media:', { screenshots, recordings });
       
       const totalMedia = screenshots.length + recordings.length;
       if (totalMedia > 0) {

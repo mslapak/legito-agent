@@ -254,7 +254,7 @@ export default function OperationDetail() {
         body: {
           action: 'continue_task',
           taskId: operation.browser_use_task_id,
-          prompt: followUpPrompt,
+          followUpPrompt: followUpPrompt.trim(),
         },
       });
 
@@ -274,69 +274,23 @@ export default function OperationDetail() {
     setActionLoading('stop_download');
 
     try {
-      // Stop the task first if running
-      if (operation.status === 'running') {
-        toast.info('Ukončuji browser session...');
-        const stopResponse = await supabase.functions.invoke('browser-use', {
-          body: {
-            action: 'stop_task',
-            taskId: operation.browser_use_task_id,
-          },
-        });
+      toast.info('Ukončuji a stahuji média...');
+      
+      // Use the improved stop_task which handles media sync with retries
+      const stopResponse = await supabase.functions.invoke('browser-use', {
+        body: {
+          action: 'stop_task',
+          taskId: operation.browser_use_task_id,
+        },
+      });
 
-        if (stopResponse.error) {
-          console.error('Stop task error:', stopResponse.error);
-        }
-
-        // Wait longer for video processing (5 seconds)
-        await new Promise(resolve => setTimeout(resolve, 5000));
+      if (stopResponse.error) {
+        console.error('Stop task error:', stopResponse.error);
+        throw stopResponse.error;
       }
 
-      toast.info('Stahuji média...');
-
-      // Retry mechanism for fetching recordings
-      let screenshots: string[] = [];
-      let recordings: string[] = [];
-      let attempts = 0;
-      const maxAttempts = 3;
-
-      while (attempts < maxAttempts) {
-        const mediaResponse = await supabase.functions.invoke('browser-use', {
-          body: {
-            action: 'get_all_media',
-            taskId: operation.browser_use_task_id,
-          },
-        });
-
-        const mediaData = mediaResponse.data;
-        console.log(`Media fetch attempt ${attempts + 1}:`, mediaData);
-
-        screenshots = mediaData?.screenshots || [];
-        recordings = mediaData?.recordings || [];
-
-        // If we have recordings, stop retrying
-        if (recordings.length > 0) {
-          break;
-        }
-
-        attempts++;
-        if (attempts < maxAttempts) {
-          toast.info(`Video se zpracovává, zkouším znovu (${attempts}/${maxAttempts})...`);
-          await new Promise(resolve => setTimeout(resolve, 3000));
-        }
-      }
-
-      // Update task in database
-      await supabase
-        .from('tasks')
-        .update({
-          status: 'completed' as const,
-          screenshots: screenshots.length > 0 ? screenshots : operation.screenshots,
-          recordings: recordings.length > 0 ? recordings : operation.recordings,
-          completed_at: new Date().toISOString(),
-        })
-        .eq('id', operation.id)
-        .eq('user_id', user!.id);
+      const { screenshots = [], recordings = [] } = stopResponse.data || {};
+      console.log('Stop response media:', { screenshots, recordings });
 
       const totalMedia = screenshots.length + recordings.length;
       if (totalMedia > 0) {
