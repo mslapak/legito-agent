@@ -177,9 +177,10 @@ serve(async (req) => {
           console.error('Error fetching task details for probe:', e);
         }
         
-        // Add constructed preview URLs
-        candidates.push({ url: `https://previews.browser-use.com/${taskId}`, source: 'constructed_previews' });
-        candidates.push({ url: `https://preview.browser-use.com/${taskId}`, source: 'constructed_preview' });
+        // Add constructed preview URLs - try multiple formats
+        candidates.push({ url: `https://live.browser-use.com/${taskId}`, source: 'constructed_live' });
+        candidates.push({ url: `https://live.browser-use.com/?taskId=${taskId}`, source: 'constructed_live_query' });
+        candidates.push({ url: `https://cloud.browser-use.com/live/${taskId}`, source: 'constructed_cloud_live' });
         
         // Probe each candidate
         let bestUrl: string | null = null;
@@ -218,78 +219,37 @@ serve(async (req) => {
       }
 
       case 'sync_media': {
-        // Robustly fetch and normalize media from all sources
+        // Fetch media from task details only (v2 API doesn't have separate media endpoints)
         console.log(`Syncing media for task: ${taskId}`);
         
-        const [screenshotsRes, mediaRes, detailsRes] = await Promise.all([
-          fetch(`${BROWSER_USE_API_URL}/tasks/${taskId}/screenshots`, {
-            method: 'GET',
-            headers: { 'X-Browser-Use-API-Key': BROWSER_USE_API_KEY },
-          }),
-          fetch(`${BROWSER_USE_API_URL}/tasks/${taskId}/media`, {
-            method: 'GET',
-            headers: { 'X-Browser-Use-API-Key': BROWSER_USE_API_KEY },
-          }),
-          fetch(`${BROWSER_USE_API_URL}/tasks/${taskId}`, {
-            method: 'GET',
-            headers: { 'X-Browser-Use-API-Key': BROWSER_USE_API_KEY },
-          }),
-        ]);
+        const detailsRes = await fetch(`${BROWSER_USE_API_URL}/tasks/${taskId}`, {
+          method: 'GET',
+          headers: { 'X-Browser-Use-API-Key': BROWSER_USE_API_KEY },
+        });
         
         let screenshots: string[] = [];
         let recordings: string[] = [];
-        const rawShapeHints: Record<string, unknown> = {};
-        
-        // Parse screenshots
-        if (screenshotsRes.ok) {
-          const raw = await screenshotsRes.text();
-          console.log(`Screenshots HTTP ${screenshotsRes.status}:`, raw);
-          try {
-            const json = JSON.parse(raw);
-            rawShapeHints.screenshots = Object.keys(json);
-            screenshots = normalizeUrls(json);
-          } catch (e) {
-            console.error('Failed to parse screenshots:', e);
-          }
-        }
-        
-        // Parse recordings
-        if (mediaRes.ok) {
-          const raw = await mediaRes.text();
-          console.log(`Media HTTP ${mediaRes.status}:`, raw);
-          try {
-            const json = JSON.parse(raw);
-            rawShapeHints.media = Object.keys(json);
-            recordings = normalizeUrls(json);
-          } catch (e) {
-            console.error('Failed to parse media:', e);
-          }
-        }
-        
-        // Fallback: extract screenshots from steps
         let taskDetails: Record<string, unknown> | null = null;
+        
         if (detailsRes.ok) {
           const raw = await detailsRes.text();
           console.log(`Task details HTTP ${detailsRes.status}:`, raw.substring(0, 500));
           try {
             taskDetails = JSON.parse(raw);
-            rawShapeHints.taskDetails = Object.keys(taskDetails || {});
             
-            if (screenshots.length === 0 && Array.isArray(taskDetails?.steps)) {
+            // Extract screenshots from steps
+            if (Array.isArray(taskDetails?.steps)) {
               const stepShots = (taskDetails.steps as Array<{ screenshotUrl?: string }>)
                 .map(s => s?.screenshotUrl)
                 .filter((x): x is string => typeof x === 'string');
               screenshots = Array.from(new Set(stepShots));
-              console.log(`Fallback screenshots from steps:`, screenshots);
+              console.log(`Screenshots from steps:`, screenshots.length);
             }
             
             // Check outputFiles for recordings
-            if (recordings.length === 0 && taskDetails?.outputFiles) {
-              const outputRecordings = normalizeUrls(taskDetails.outputFiles);
-              if (outputRecordings.length > 0) {
-                recordings = outputRecordings;
-                console.log(`Fallback recordings from outputFiles:`, recordings);
-              }
+            if (taskDetails?.outputFiles) {
+              recordings = normalizeUrls(taskDetails.outputFiles);
+              console.log(`Recordings from outputFiles:`, recordings.length);
             }
           } catch (e) {
             console.error('Failed to parse task details:', e);
@@ -315,7 +275,6 @@ serve(async (req) => {
         return new Response(JSON.stringify({
           screenshots,
           recordings,
-          rawShapeHints,
           taskDetails: taskDetails ? {
             status: taskDetails.status,
             hasOutput: !!taskDetails.output,
@@ -418,7 +377,7 @@ serve(async (req) => {
           browserUseData.liveUrl ||
           browserUseData.preview_url ||
           browserUseData.previewUrl ||
-          (browserUseData.id ? `https://previews.browser-use.com/${browserUseData.id}` : null);
+          (browserUseData.id ? `https://live.browser-use.com/${browserUseData.id}` : null);
         console.log('Constructed live_url:', liveUrl, 'from id:', browserUseData.id);
 
         // Save task to database with live_url
@@ -532,7 +491,7 @@ serve(async (req) => {
           taskData.live_url = 
             taskData.preview_url ||
             taskData.previewUrl ||
-            (taskData.id ? `https://previews.browser-use.com/${taskData.id}` : null);
+            (taskData.id ? `https://live.browser-use.com/${taskData.id}` : null);
         }
         
         // Add mapped status for convenience
@@ -563,86 +522,36 @@ serve(async (req) => {
 
         // Wait for browser session to close
         console.log('Waiting for session to close...');
-        await delay(5000);
+        await delay(3000);
         
-        // Try to fetch media with retries
+        // Fetch media from task details (v2 API)
         let screenshots: string[] = [];
         let recordings: string[] = [];
-        const maxRetries = 3;
         
-        for (let attempt = 1; attempt <= maxRetries; attempt++) {
-          console.log(`Media fetch attempt ${attempt}/${maxRetries}`);
-          
-          const [screenshotsRes, mediaRes, detailsRes] = await Promise.all([
-            fetch(`${BROWSER_USE_API_URL}/tasks/${taskId}/screenshots`, {
-              method: 'GET',
-              headers: { 'X-Browser-Use-API-Key': BROWSER_USE_API_KEY },
-            }),
-            fetch(`${BROWSER_USE_API_URL}/tasks/${taskId}/media`, {
-              method: 'GET',
-              headers: { 'X-Browser-Use-API-Key': BROWSER_USE_API_KEY },
-            }),
-            fetch(`${BROWSER_USE_API_URL}/tasks/${taskId}`, {
-              method: 'GET',
-              headers: { 'X-Browser-Use-API-Key': BROWSER_USE_API_KEY },
-            }),
-          ]);
-          
-          // Parse screenshots
-          if (screenshotsRes.ok) {
-            try {
-              const json = await screenshotsRes.json();
-              const urls = normalizeUrls(json);
-              if (urls.length > 0) screenshots = urls;
-            } catch (e) {
-              console.error('Failed to parse screenshots:', e);
+        const detailsRes = await fetch(`${BROWSER_USE_API_URL}/tasks/${taskId}`, {
+          method: 'GET',
+          headers: { 'X-Browser-Use-API-Key': BROWSER_USE_API_KEY },
+        });
+        
+        if (detailsRes.ok) {
+          try {
+            const details = await detailsRes.json();
+            console.log('Task details after stop:', JSON.stringify(details, null, 2).substring(0, 500));
+            
+            // Screenshots from steps
+            if (Array.isArray(details?.steps)) {
+              const stepShots = details.steps
+                .map((s: { screenshotUrl?: string }) => s?.screenshotUrl)
+                .filter((x: unknown): x is string => typeof x === 'string');
+              screenshots = Array.from(new Set(stepShots));
             }
-          }
-          
-          // Parse recordings
-          if (mediaRes.ok) {
-            try {
-              const json = await mediaRes.json();
-              const urls = normalizeUrls(json);
-              if (urls.length > 0) recordings = urls;
-            } catch (e) {
-              console.error('Failed to parse media:', e);
+            
+            // Recordings from outputFiles
+            if (details?.outputFiles) {
+              recordings = normalizeUrls(details.outputFiles);
             }
-          }
-          
-          // Fallback from task details
-          if (detailsRes.ok) {
-            try {
-              const details = await detailsRes.json();
-              
-              // Screenshots from steps
-              if (screenshots.length === 0 && Array.isArray(details?.steps)) {
-                const stepShots = details.steps
-                  .map((s: { screenshotUrl?: string }) => s?.screenshotUrl)
-                  .filter((x: unknown): x is string => typeof x === 'string');
-                if (stepShots.length > 0) screenshots = Array.from(new Set(stepShots));
-              }
-              
-              // Recordings from outputFiles
-              if (recordings.length === 0 && details?.outputFiles) {
-                const outputRecs = normalizeUrls(details.outputFiles);
-                if (outputRecs.length > 0) recordings = outputRecs;
-              }
-            } catch (e) {
-              console.error('Failed to parse details for fallback:', e);
-            }
-          }
-          
-          // If we have recordings, stop retrying
-          if (recordings.length > 0) {
-            console.log(`Got recordings on attempt ${attempt}`);
-            break;
-          }
-          
-          // Wait before retry
-          if (attempt < maxRetries) {
-            console.log('No recordings yet, waiting before retry...');
-            await delay(3000);
+          } catch (e) {
+            console.error('Failed to parse task details:', e);
           }
         }
         
@@ -706,122 +615,39 @@ serve(async (req) => {
         });
       }
 
-      case 'get_media': {
-        // Get recordings/videos
-        console.log(`Fetching media for task: ${taskId}`);
-        const browserUseResponse = await fetch(`${BROWSER_USE_API_URL}/tasks/${taskId}/media`, {
-          method: 'GET',
-          headers: {
-            'X-Browser-Use-API-Key': BROWSER_USE_API_KEY,
-          },
-        });
-
-        if (!browserUseResponse.ok) {
-          const errorText = await browserUseResponse.text();
-          console.error(`Media fetch error: ${browserUseResponse.status}, ${errorText}`);
-          return new Response(JSON.stringify({ recordings: [] }), {
-            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-          });
-        }
-
-        const mediaData = await browserUseResponse.json();
-        console.log(`Media fetched:`, JSON.stringify(mediaData));
-        return new Response(JSON.stringify(mediaData), {
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        });
-      }
-
-      case 'get_screenshots': {
-        // Get screenshots - separate endpoint
-        console.log(`Fetching screenshots for task: ${taskId}`);
-        const browserUseResponse = await fetch(`${BROWSER_USE_API_URL}/tasks/${taskId}/screenshots`, {
-          method: 'GET',
-          headers: {
-            'X-Browser-Use-API-Key': BROWSER_USE_API_KEY,
-          },
-        });
-
-        if (!browserUseResponse.ok) {
-          const errorText = await browserUseResponse.text();
-          console.error(`Screenshots fetch error: ${browserUseResponse.status}, ${errorText}`);
-          return new Response(JSON.stringify({ screenshots: [] }), {
-            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-          });
-        }
-
-        const screenshotData = await browserUseResponse.json();
-        console.log(`Screenshots fetched:`, JSON.stringify(screenshotData));
-        return new Response(JSON.stringify(screenshotData), {
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        });
-      }
-
+      case 'get_media':
+      case 'get_screenshots':
       case 'get_all_media': {
-        // Get both screenshots and recordings
+        // V2 API: Get media from task details (no separate endpoints)
         console.log(`Fetching all media for task: ${taskId}`);
-
-        const [screenshotsRes, mediaRes] = await Promise.all([
-          fetch(`${BROWSER_USE_API_URL}/tasks/${taskId}/screenshots`, {
-            method: 'GET',
-            headers: { 'X-Browser-Use-API-Key': BROWSER_USE_API_KEY },
-          }),
-          fetch(`${BROWSER_USE_API_URL}/tasks/${taskId}/media`, {
-            method: 'GET',
-            headers: { 'X-Browser-Use-API-Key': BROWSER_USE_API_KEY },
-          }),
-        ]);
+        
+        const detailsRes = await fetch(`${BROWSER_USE_API_URL}/tasks/${taskId}`, {
+          method: 'GET',
+          headers: { 'X-Browser-Use-API-Key': BROWSER_USE_API_KEY },
+        });
 
         let screenshots: string[] = [];
         let recordings: string[] = [];
 
-        // Screenshots
-        {
-          const raw = await screenshotsRes.text();
-          console.log(`Screenshots HTTP ${screenshotsRes.status}:`, raw);
-          if (screenshotsRes.ok) {
-            try {
-              const json = JSON.parse(raw);
-              screenshots = normalizeUrls(json);
-            } catch (e) {
-              console.error('Failed to parse screenshots JSON:', e);
-            }
-          }
-        }
-
-        // Recordings
-        {
-          const raw = await mediaRes.text();
-          console.log(`Media HTTP ${mediaRes.status}:`, raw);
-          if (mediaRes.ok) {
-            try {
-              const json = JSON.parse(raw);
-              recordings = normalizeUrls(json);
-            } catch (e) {
-              console.error('Failed to parse media JSON:', e);
-            }
-          }
-        }
-
-        // Fallback: v2 already provides screenshotUrl per step in task details
-        if (screenshots.length === 0) {
+        if (detailsRes.ok) {
           try {
-            const detailsRes = await fetch(`${BROWSER_USE_API_URL}/tasks/${taskId}`, {
-              method: 'GET',
-              headers: { 'X-Browser-Use-API-Key': BROWSER_USE_API_KEY },
-            });
-            const detailsRaw = await detailsRes.text();
-            console.log(`Task details (fallback) HTTP ${detailsRes.status}:`, detailsRaw.substring(0, 500));
-            if (detailsRes.ok) {
-              const detailsJson = JSON.parse(detailsRaw);
-              const stepShots = Array.isArray(detailsJson?.steps)
-                ? detailsJson.steps
-                    .map((s: { screenshotUrl?: string }) => (typeof s?.screenshotUrl === 'string' ? s.screenshotUrl : null))
-                    .filter((x: unknown): x is string => !!x)
-                : [];
+            const details = await detailsRes.json();
+            console.log('Task details for media:', JSON.stringify(details, null, 2).substring(0, 500));
+            
+            // Screenshots from steps
+            if (Array.isArray(details?.steps)) {
+              const stepShots = details.steps
+                .map((s: { screenshotUrl?: string }) => s?.screenshotUrl)
+                .filter((x: unknown): x is string => typeof x === 'string');
               screenshots = Array.from(new Set(stepShots));
             }
+            
+            // Recordings from outputFiles
+            if (details?.outputFiles) {
+              recordings = normalizeUrls(details.outputFiles);
+            }
           } catch (e) {
-            console.error('Fallback screenshots from task details failed:', e);
+            console.error('Failed to parse task details:', e);
           }
         }
 
