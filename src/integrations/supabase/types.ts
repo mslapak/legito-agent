@@ -71,11 +71,15 @@ export type Database = {
         Row: {
           azure_devops_id: string | null
           created_at: string
+          execution_time_ms: number | null
           expected_result: string | null
           id: string
+          last_run_at: string | null
           priority: string
           project_id: string | null
           prompt: string
+          result_reasoning: string | null
+          result_summary: string | null
           source_type: string | null
           status: string
           task_id: string | null
@@ -86,11 +90,15 @@ export type Database = {
         Insert: {
           azure_devops_id?: string | null
           created_at?: string
+          execution_time_ms?: number | null
           expected_result?: string | null
           id?: string
+          last_run_at?: string | null
           priority?: string
           project_id?: string | null
           prompt: string
+          result_reasoning?: string | null
+          result_summary?: string | null
           source_type?: string | null
           status?: string
           task_id?: string | null
@@ -101,11 +109,15 @@ export type Database = {
         Update: {
           azure_devops_id?: string | null
           created_at?: string
+          execution_time_ms?: number | null
           expected_result?: string | null
           id?: string
+          last_run_at?: string | null
           priority?: string
           project_id?: string | null
           prompt?: string
+          result_reasoning?: string | null
+          result_summary?: string | null
           source_type?: string | null
           status?: string
           task_id?: string | null

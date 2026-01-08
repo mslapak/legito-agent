@@ -36,6 +36,7 @@ import {
   FileCheck,
   FileText,
   GraduationCap,
+  ClipboardList,
 } from 'lucide-react';
 import pwcLogo from '@/assets/pwc-logo.png';
 
@@ -43,6 +44,7 @@ const testingItems = [
   { title: 'Dashboard', url: '/dashboard', icon: LayoutDashboard },
   { title: 'Nový úkol', url: '/dashboard/new-task', icon: Play },
   { title: 'Historie testů', url: '/dashboard/history', icon: History },
+  { title: 'Přehled testů', url: '/dashboard/tests', icon: ClipboardList },
   { title: 'Generátor testů', url: '/dashboard/test-generator', icon: TestTube },
   { title: 'Ověření dokumentace', url: '/dashboard/doc-verify', icon: FileCheck },
   { title: 'Projekty', url: '/dashboard/projects', icon: FolderOpen },

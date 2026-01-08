@@ -13,6 +13,7 @@ import TaskDetail from "./pages/dashboard/TaskDetail";
 import TestGenerator from "./pages/dashboard/TestGenerator";
 import Projects from "./pages/dashboard/Projects";
 import DocumentationVerify from "./pages/dashboard/DocumentationVerify";
+import TestsDashboard from "./pages/dashboard/TestsDashboard";
 import NewOperation from "./pages/dashboard/NewOperation";
 import OperationHistory from "./pages/dashboard/OperationHistory";
 import OperationDetail from "./pages/dashboard/OperationDetail";
@@ -38,6 +39,7 @@ const App = () => (
               <Route path="history" element={<TaskHistory />} />
               <Route path="task/:taskId" element={<TaskDetail />} />
               <Route path="test-generator" element={<TestGenerator />} />
+              <Route path="tests" element={<TestsDashboard />} />
               <Route path="doc-verify" element={<DocumentationVerify />} />
               <Route path="projects" element={<Projects />} />
               <Route path="operations" element={<OperationsDashboard />} />
