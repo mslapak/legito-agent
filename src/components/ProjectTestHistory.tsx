@@ -80,7 +80,10 @@ export default function ProjectTestHistory({ projectId, projectName, setupPrompt
           if (response.data?.expired || response.data?.status === 'not_found') {
             await supabase
               .from('generated_tests')
-              .update({ status: 'passed' })
+              .update({ 
+                status: 'passed',
+                last_run_at: new Date().toISOString(),
+              })
               .eq('id', test.id);
             continue;
           }
@@ -107,9 +110,29 @@ export default function ProjectTestHistory({ projectId, projectName, setupPrompt
             }
 
             if (newStatus !== 'running') {
+              // Calculate execution time from response data
+              const startedAt = response.data?.started_at || response.data?.startedAt || response.data?.created_at;
+              const finishedAt = response.data?.finished_at || response.data?.finishedAt || new Date().toISOString();
+              let executionTimeMs: number | null = null;
+              
+              if (startedAt) {
+                executionTimeMs = new Date(finishedAt).getTime() - new Date(startedAt).getTime();
+              }
+
+              // Extract result summary from output
+              const output = response.data?.output || response.data?.result || '';
+              const resultSummary = typeof output === 'string' 
+                ? output.substring(0, 500) 
+                : JSON.stringify(output).substring(0, 500);
+
               await supabase
                 .from('generated_tests')
-                .update({ status: newStatus })
+                .update({ 
+                  status: newStatus,
+                  last_run_at: new Date().toISOString(),
+                  execution_time_ms: executionTimeMs,
+                  result_summary: resultSummary || null,
+                })
                 .eq('id', test.id);
             }
           }
@@ -118,7 +141,10 @@ export default function ProjectTestHistory({ projectId, projectName, setupPrompt
           // If error persists, mark test as completed to stop polling
           await supabase
             .from('generated_tests')
-            .update({ status: 'passed' })
+            .update({ 
+              status: 'passed',
+              last_run_at: new Date().toISOString(),
+            })
             .eq('id', test.id);
         }
       }
