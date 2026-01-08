@@ -44,6 +44,9 @@ import {
   Calendar,
   ChevronDown,
   TestTube,
+  Settings2,
+  Save,
+  Info,
 } from 'lucide-react';
 import ProjectTestHistory from '@/components/ProjectTestHistory';
 import ProjectCredentials from '@/components/ProjectCredentials';
@@ -54,6 +57,7 @@ interface Project {
   name: string;
   description: string | null;
   base_url: string | null;
+  setup_prompt: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -75,6 +79,8 @@ export default function Projects() {
     base_url: '',
   });
   const [isSaving, setIsSaving] = useState(false);
+  const [setupPrompts, setSetupPrompts] = useState<Record<string, string>>({});
+  const [savingSetupPrompt, setSavingSetupPrompt] = useState<string | null>(null);
 
   useEffect(() => {
     if (user) {
@@ -199,6 +205,30 @@ export default function Projects() {
 
   const toggleProjectExpand = (projectId: string) => {
     setExpandedProjectId(prev => prev === projectId ? null : projectId);
+  };
+
+  const handleSetupPromptChange = (projectId: string, value: string) => {
+    setSetupPrompts(prev => ({ ...prev, [projectId]: value }));
+  };
+
+  const saveSetupPrompt = async (project: Project) => {
+    setSavingSetupPrompt(project.id);
+    try {
+      const newValue = setupPrompts[project.id] ?? project.setup_prompt ?? '';
+      const { error } = await supabase
+        .from('projects')
+        .update({ setup_prompt: newValue || null })
+        .eq('id', project.id);
+
+      if (error) throw error;
+      toast.success('Setup prompt uložen');
+      fetchProjects();
+    } catch (error) {
+      console.error('Error saving setup prompt:', error);
+      toast.error('Nepodařilo se uložit setup prompt');
+    } finally {
+      setSavingSetupPrompt(null);
+    }
   };
 
   if (loading) {
@@ -421,6 +451,46 @@ export default function Projects() {
                       {/* Credentials Section */}
                       <ProjectCredentials projectId={project.id} />
                       
+                      {/* Setup Prompt Section */}
+                      <div className="space-y-3">
+                        <div className="flex items-center justify-between">
+                          <h4 className="font-medium flex items-center gap-2">
+                            <Settings2 className="w-4 h-4 text-primary" />
+                            Setup pro testy
+                          </h4>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => saveSetupPrompt(project)}
+                            disabled={savingSetupPrompt === project.id}
+                          >
+                            {savingSetupPrompt === project.id ? (
+                              <Loader2 className="h-4 w-4 animate-spin" />
+                            ) : (
+                              <>
+                                <Save className="h-4 w-4 mr-1" />
+                                Uložit
+                              </>
+                            )}
+                          </Button>
+                        </div>
+                        <div className="rounded-lg border border-border p-3 bg-muted/30">
+                          <div className="flex items-start gap-2 text-sm text-muted-foreground mb-3">
+                            <Info className="w-4 h-4 mt-0.5 flex-shrink-0" />
+                            <p>
+                              Tento prompt se automaticky spustí před každým testem (např. otevření URL, přihlášení, navigace na výchozí stránku).
+                            </p>
+                          </div>
+                          <Textarea
+                            placeholder={`Příklad:\n1. Klikni na tlačítko "Login" v horním menu\n2. Vyplň přihlašovací údaje (budou dodány automaticky)\n3. Klikni na "Sign In"\n4. Počkej na načtení dashboardu`}
+                            value={setupPrompts[project.id] ?? project.setup_prompt ?? ''}
+                            onChange={(e) => handleSetupPromptChange(project.id, e.target.value)}
+                            rows={5}
+                            className="font-mono text-sm"
+                          />
+                        </div>
+                      </div>
+                      
                       {/* Documentation Verification Section */}
                       <DocumentationVerification
                         projectId={project.id}
@@ -436,7 +506,9 @@ export default function Projects() {
                         </h4>
                         <ProjectTestHistory 
                           projectId={project.id} 
-                          projectName={project.name} 
+                          projectName={project.name}
+                          setupPrompt={project.setup_prompt}
+                          baseUrl={project.base_url}
                         />
                       </div>
                     </div>

@@ -20,9 +20,11 @@ interface GeneratedTest {
 interface ProjectTestHistoryProps {
   projectId: string;
   projectName: string;
+  setupPrompt?: string | null;
+  baseUrl?: string | null;
 }
 
-export default function ProjectTestHistory({ projectId, projectName }: ProjectTestHistoryProps) {
+export default function ProjectTestHistory({ projectId, projectName, setupPrompt, baseUrl }: ProjectTestHistoryProps) {
   const [tests, setTests] = useState<GeneratedTest[]>([]);
   const [loading, setLoading] = useState(true);
   const [runningTestId, setRunningTestId] = useState<string | null>(null);
@@ -153,11 +155,28 @@ export default function ProjectTestHistory({ projectId, projectName }: ProjectTe
         .limit(1)
         .single();
 
-      // Build prompt with credentials if available
-      let fullPrompt = test.prompt;
-      if (credentials) {
-        fullPrompt = `${test.prompt}\n\nPokud bude potřeba přihlášení, použij tyto údaje:\n- Uživatelské jméno/Email: ${credentials.username}\n- Heslo: ${credentials.password}`;
+      // Build full prompt with setup, test, and credentials
+      let promptParts: string[] = [];
+
+      // 1. Add base URL if available
+      if (baseUrl) {
+        promptParts.push(`Otevři stránku: ${baseUrl}`);
       }
+
+      // 2. Add setup prompt if available
+      if (setupPrompt) {
+        promptParts.push(`Proveď tyto přípravné kroky:\n${setupPrompt}`);
+      }
+
+      // 3. Add the actual test
+      promptParts.push(`Nyní proveď test:\n${test.prompt}`);
+
+      // 4. Add credentials at the end if available
+      if (credentials) {
+        promptParts.push(`Přihlašovací údaje (použij když je potřeba):\n- Email/Username: ${credentials.username}\n- Heslo: ${credentials.password}`);
+      }
+
+      const fullPrompt = promptParts.join('\n\n');
 
       const response = await supabase.functions.invoke('browser-use', {
         body: {
