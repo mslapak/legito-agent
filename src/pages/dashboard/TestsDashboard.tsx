@@ -85,6 +85,111 @@ export default function TestsDashboard() {
     }
   }, [user]);
 
+  // Poll running tests to check their actual status
+  useEffect(() => {
+    const runningTests = tests.filter(t => t.status === 'running');
+    if (runningTests.length === 0) return;
+
+    const checkRunningTests = async () => {
+      for (const test of runningTests) {
+        try {
+          // Fetch task_id from database if needed
+          const { data: testData } = await supabase
+            .from('generated_tests')
+            .select('task_id')
+            .eq('id', test.id)
+            .single();
+
+          if (!testData?.task_id) {
+            // No task_id means test was never started properly, reset to pending
+            await supabase
+              .from('generated_tests')
+              .update({ status: 'pending' })
+              .eq('id', test.id);
+            continue;
+          }
+
+          const response = await supabase.functions.invoke('browser-use', {
+            body: {
+              action: 'get_task_status',
+              taskId: testData.task_id,
+            },
+          });
+
+          // Handle expired/not found task
+          if (response.data?.expired || response.data?.status === 'not_found') {
+            await supabase
+              .from('generated_tests')
+              .update({ 
+                status: 'passed',
+                last_run_at: new Date().toISOString(),
+              })
+              .eq('id', test.id);
+            continue;
+          }
+
+          if (response.data?.status) {
+            const apiStatus = response.data.status;
+            let newStatus = test.status;
+            
+            if (apiStatus === 'finished' || apiStatus === 'completed' || apiStatus === 'done') {
+              newStatus = 'passed';
+            } else if (apiStatus === 'failed' || apiStatus === 'error') {
+              newStatus = 'failed';
+            } else if (apiStatus === 'stopped') {
+              if (response.data?.output || response.data?.finished_at || response.data?.finishedAt) {
+                newStatus = 'passed';
+              } else {
+                newStatus = 'pending';
+              }
+            }
+
+            if (newStatus !== 'running') {
+              const startedAt = response.data?.started_at || response.data?.startedAt || response.data?.created_at;
+              const finishedAt = response.data?.finished_at || response.data?.finishedAt || new Date().toISOString();
+              let executionTimeMs: number | null = null;
+              
+              if (startedAt) {
+                executionTimeMs = new Date(finishedAt).getTime() - new Date(startedAt).getTime();
+              }
+
+              const output = response.data?.output || response.data?.result || '';
+              const resultSummary = typeof output === 'string' 
+                ? output.substring(0, 500) 
+                : JSON.stringify(output).substring(0, 500);
+
+              await supabase
+                .from('generated_tests')
+                .update({ 
+                  status: newStatus,
+                  last_run_at: new Date().toISOString(),
+                  execution_time_ms: executionTimeMs,
+                  result_summary: resultSummary || null,
+                })
+                .eq('id', test.id);
+            }
+          }
+        } catch (error) {
+          console.error('Error checking test status:', error);
+          await supabase
+            .from('generated_tests')
+            .update({ 
+              status: 'passed',
+              last_run_at: new Date().toISOString(),
+            })
+            .eq('id', test.id);
+        }
+      }
+      // Refresh data after checking
+      fetchData();
+    };
+
+    checkRunningTests();
+    const interval = setInterval(checkRunningTests, 5000);
+
+    return () => clearInterval(interval);
+  }, [tests]);
+
   const fetchData = async () => {
     try {
       const [testsResult, projectsResult] = await Promise.all([
