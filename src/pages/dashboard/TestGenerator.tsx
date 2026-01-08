@@ -16,7 +16,7 @@ import {
 } from '@/components/ui/select';
 import { Badge } from '@/components/ui/badge';
 import { toast } from 'sonner';
-import { TestTube, Sparkles, Loader2, Play, Save, Trash2, FileText, Upload, X, ClipboardPaste, Table2, FileSpreadsheet } from 'lucide-react';
+import { TestTube, Sparkles, Loader2, Play, Save, Trash2, FileText, Upload, X, ClipboardPaste, Table2, FileSpreadsheet, AlertCircle } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import { getDocument, GlobalWorkerOptions } from 'pdfjs-dist';
 
@@ -998,6 +998,18 @@ Nebo:
             </TabsContent>
 
             <TabsContent value="import_azure" className="space-y-4 mt-4">
+              {!projectId && (
+                <div className="rounded-lg border border-warning bg-warning/10 p-4 flex items-start gap-3">
+                  <AlertCircle className="w-5 h-5 text-warning mt-0.5 flex-shrink-0" />
+                  <div>
+                    <p className="font-medium text-warning">Nejprve vyberte projekt</p>
+                    <p className="text-sm text-muted-foreground mt-1">
+                      Pro import testů z Azure DevOps musíte nejprve vybrat projekt v sekci "Přiřadit k projektu" výše.
+                    </p>
+                  </div>
+                </div>
+              )}
+              
               <div className="space-y-2">
                 <Label>Nahrát export z Azure DevOps</Label>
                 <div className="flex items-center gap-3">
@@ -1008,12 +1020,20 @@ Nebo:
                     onChange={handleXlsxUpload}
                     className="hidden"
                     id="xlsx-upload"
+                    disabled={!projectId}
                   />
                   <Button
                     type="button"
                     variant="outline"
-                    onClick={() => xlsxInputRef.current?.click()}
+                    onClick={() => {
+                      if (!projectId) {
+                        toast.error("Nejprve vyberte projekt");
+                        return;
+                      }
+                      xlsxInputRef.current?.click();
+                    }}
                     className="flex items-center gap-2"
+                    disabled={!projectId}
                   >
                     <Upload className="w-4 h-4" />
                     Nahrát XLSX
