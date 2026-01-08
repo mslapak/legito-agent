@@ -47,6 +47,7 @@ import {
   Settings2,
   Save,
   Info,
+  Play,
 } from 'lucide-react';
 import ProjectTestHistory from '@/components/ProjectTestHistory';
 import ProjectCredentials from '@/components/ProjectCredentials';
@@ -81,6 +82,7 @@ export default function Projects() {
   const [isSaving, setIsSaving] = useState(false);
   const [setupPrompts, setSetupPrompts] = useState<Record<string, string>>({});
   const [savingSetupPrompt, setSavingSetupPrompt] = useState<string | null>(null);
+  const [testingSetup, setTestingSetup] = useState<string | null>(null);
 
   useEffect(() => {
     if (user) {
@@ -228,6 +230,63 @@ export default function Projects() {
       toast.error('Nepodařilo se uložit setup prompt');
     } finally {
       setSavingSetupPrompt(null);
+    }
+  };
+
+  const testSetupPrompt = async (project: Project) => {
+    const currentSetupPrompt = setupPrompts[project.id] ?? project.setup_prompt;
+    
+    if (!currentSetupPrompt?.trim()) {
+      toast.error('Nejprve vyplňte setup prompt');
+      return;
+    }
+
+    if (!project.base_url) {
+      toast.error('Projekt nemá nastavenou URL aplikace');
+      return;
+    }
+
+    setTestingSetup(project.id);
+    try {
+      // Fetch credentials for this project
+      const { data: credentials } = await supabase
+        .from('project_credentials')
+        .select('username, password')
+        .eq('project_id', project.id)
+        .limit(1)
+        .single();
+
+      // Build setup-only prompt
+      let promptParts: string[] = [];
+      promptParts.push(`Otevři stránku: ${project.base_url}`);
+      promptParts.push(`Proveď tyto přípravné kroky:\n${currentSetupPrompt}`);
+      promptParts.push(`Po dokončení přípravných kroků potvrď, že setup proběhl úspěšně.`);
+
+      if (credentials) {
+        promptParts.push(`Přihlašovací údaje (použij když je potřeba):\n- Email/Username: ${credentials.username}\n- Heslo: ${credentials.password}`);
+      }
+
+      const fullPrompt = promptParts.join('\n\n');
+
+      const response = await supabase.functions.invoke('browser-use', {
+        body: {
+          action: 'create_task',
+          prompt: fullPrompt,
+          title: `[Setup Test] ${project.name}`,
+          projectId: project.id,
+        },
+      });
+
+      if (response.error) {
+        throw new Error(response.error.message);
+      }
+
+      toast.success('Setup test byl spuštěn - sledujte v historii úloh');
+    } catch (error) {
+      console.error('Error testing setup:', error);
+      toast.error('Nepodařilo se spustit test setupu');
+    } finally {
+      setTestingSetup(null);
     }
   };
 
@@ -458,21 +517,39 @@ export default function Projects() {
                             <Settings2 className="w-4 h-4 text-primary" />
                             Setup pro testy
                           </h4>
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={() => saveSetupPrompt(project)}
-                            disabled={savingSetupPrompt === project.id}
-                          >
-                            {savingSetupPrompt === project.id ? (
-                              <Loader2 className="h-4 w-4 animate-spin" />
-                            ) : (
-                              <>
-                                <Save className="h-4 w-4 mr-1" />
-                                Uložit
-                              </>
-                            )}
-                          </Button>
+                          <div className="flex items-center gap-2">
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => testSetupPrompt(project)}
+                              disabled={testingSetup === project.id || !project.base_url}
+                              title={!project.base_url ? 'Projekt nemá nastavenou URL' : 'Spustit pouze setup bez testu'}
+                            >
+                              {testingSetup === project.id ? (
+                                <Loader2 className="h-4 w-4 animate-spin" />
+                              ) : (
+                                <>
+                                  <Play className="h-4 w-4 mr-1" />
+                                  Otestovat setup
+                                </>
+                              )}
+                            </Button>
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => saveSetupPrompt(project)}
+                              disabled={savingSetupPrompt === project.id}
+                            >
+                              {savingSetupPrompt === project.id ? (
+                                <Loader2 className="h-4 w-4 animate-spin" />
+                              ) : (
+                                <>
+                                  <Save className="h-4 w-4 mr-1" />
+                                  Uložit
+                                </>
+                              )}
+                            </Button>
+                          </div>
                         </div>
                         <div className="rounded-lg border border-border p-3 bg-muted/30">
                           <div className="flex items-start gap-2 text-sm text-muted-foreground mb-3">
