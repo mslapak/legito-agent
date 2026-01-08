@@ -3,8 +3,26 @@ import { supabase } from '@/integrations/supabase/client';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Textarea } from '@/components/ui/textarea';
+import { Label } from '@/components/ui/label';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 import { toast } from 'sonner';
-import { Play, Trash2, Loader2, CheckCircle2, XCircle, Clock, RotateCcw } from 'lucide-react';
+import { Play, Trash2, Loader2, CheckCircle2, XCircle, Clock, RotateCcw, Pencil } from 'lucide-react';
 
 interface GeneratedTest {
   id: string;
@@ -28,6 +46,14 @@ export default function ProjectTestHistory({ projectId, projectName, setupPrompt
   const [tests, setTests] = useState<GeneratedTest[]>([]);
   const [loading, setLoading] = useState(true);
   const [runningTestId, setRunningTestId] = useState<string | null>(null);
+  const [editingTest, setEditingTest] = useState<GeneratedTest | null>(null);
+  const [editForm, setEditForm] = useState({
+    title: '',
+    prompt: '',
+    expected_result: '',
+    priority: 'medium',
+  });
+  const [isSaving, setIsSaving] = useState(false);
 
   useEffect(() => {
     fetchTests();
@@ -239,6 +265,53 @@ export default function ProjectTestHistory({ projectId, projectName, setupPrompt
     }
   };
 
+  const openEditDialog = (test: GeneratedTest) => {
+    setEditingTest(test);
+    setEditForm({
+      title: test.title,
+      prompt: test.prompt,
+      expected_result: test.expected_result || '',
+      priority: test.priority,
+    });
+  };
+
+  const closeEditDialog = () => {
+    setEditingTest(null);
+    setEditForm({ title: '', prompt: '', expected_result: '', priority: 'medium' });
+  };
+
+  const saveTestEdit = async () => {
+    if (!editingTest) return;
+    
+    if (!editForm.title.trim() || !editForm.prompt.trim()) {
+      toast.error('Název a prompt jsou povinné');
+      return;
+    }
+
+    setIsSaving(true);
+    try {
+      const { error } = await supabase
+        .from('generated_tests')
+        .update({
+          title: editForm.title.trim(),
+          prompt: editForm.prompt.trim(),
+          expected_result: editForm.expected_result.trim() || null,
+          priority: editForm.priority,
+        })
+        .eq('id', editingTest.id);
+
+      if (error) throw error;
+      toast.success('Test upraven');
+      closeEditDialog();
+      fetchTests();
+    } catch (error) {
+      console.error('Error updating test:', error);
+      toast.error('Nepodařilo se upravit test');
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
   const getStatusBadge = (status: string) => {
     switch (status) {
       case 'pending':
@@ -347,6 +420,7 @@ export default function ProjectTestHistory({ projectId, projectName, setupPrompt
                     size="sm"
                     onClick={() => runTest(test)}
                     disabled={runningTestId === test.id}
+                    title="Spustit test"
                   >
                     {runningTestId === test.id ? (
                       <Loader2 className="h-4 w-4 animate-spin" />
@@ -355,6 +429,14 @@ export default function ProjectTestHistory({ projectId, projectName, setupPrompt
                     )}
                   </Button>
                 )}
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => openEditDialog(test)}
+                  title="Upravit test"
+                >
+                  <Pencil className="h-4 w-4" />
+                </Button>
                 {(test.status === 'passed' || test.status === 'failed') && (
                   <Button
                     variant="ghost"
@@ -370,6 +452,7 @@ export default function ProjectTestHistory({ projectId, projectName, setupPrompt
                   size="sm"
                   onClick={() => deleteTest(test.id)}
                   className="text-muted-foreground hover:text-destructive"
+                  title="Smazat test"
                 >
                   <Trash2 className="h-4 w-4" />
                 </Button>
@@ -388,6 +471,86 @@ export default function ProjectTestHistory({ projectId, projectName, setupPrompt
           </div>
         ))}
       </div>
+
+      {/* Edit Dialog */}
+      <Dialog open={!!editingTest} onOpenChange={(open) => !open && closeEditDialog()}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>Upravit test</DialogTitle>
+            <DialogDescription>
+              Upravte název, prompt, očekávaný výsledek nebo prioritu testu.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4 py-4">
+            <div className="space-y-2">
+              <Label htmlFor="edit-title">Název testu *</Label>
+              <Input
+                id="edit-title"
+                value={editForm.title}
+                onChange={(e) => setEditForm(prev => ({ ...prev, title: e.target.value }))}
+                placeholder="Název testu"
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="edit-prompt">Prompt (kroky testu) *</Label>
+              <Textarea
+                id="edit-prompt"
+                value={editForm.prompt}
+                onChange={(e) => setEditForm(prev => ({ ...prev, prompt: e.target.value }))}
+                placeholder="Kroky, které má test provést..."
+                rows={6}
+                className="font-mono text-sm"
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="edit-expected">Očekávaný výsledek</Label>
+              <Textarea
+                id="edit-expected"
+                value={editForm.expected_result}
+                onChange={(e) => setEditForm(prev => ({ ...prev, expected_result: e.target.value }))}
+                placeholder="Co by měl test ověřit..."
+                rows={3}
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="edit-priority">Priorita</Label>
+              <Select
+                value={editForm.priority}
+                onValueChange={(value) => setEditForm(prev => ({ ...prev, priority: value }))}
+              >
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="high">Vysoká</SelectItem>
+                  <SelectItem value="medium">Střední</SelectItem>
+                  <SelectItem value="low">Nízká</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={closeEditDialog}>
+              Zrušit
+            </Button>
+            <Button onClick={saveTestEdit} disabled={isSaving}>
+              {isSaving ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Ukládám...
+                </>
+              ) : (
+                'Uložit změny'
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
