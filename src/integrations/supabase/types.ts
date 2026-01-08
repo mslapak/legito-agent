@@ -69,6 +69,7 @@ export type Database = {
       }
       generated_tests: {
         Row: {
+          azure_devops_id: string | null
           created_at: string
           expected_result: string | null
           id: string
@@ -83,6 +84,7 @@ export type Database = {
           user_id: string
         }
         Insert: {
+          azure_devops_id?: string | null
           created_at?: string
           expected_result?: string | null
           id?: string
@@ -97,6 +99,7 @@ export type Database = {
           user_id: string
         }
         Update: {
+          azure_devops_id?: string | null
           created_at?: string
           expected_result?: string | null
           id?: string

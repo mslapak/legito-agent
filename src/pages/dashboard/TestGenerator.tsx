@@ -16,7 +16,8 @@ import {
 } from '@/components/ui/select';
 import { Badge } from '@/components/ui/badge';
 import { toast } from 'sonner';
-import { TestTube, Sparkles, Loader2, Play, Save, Trash2, FileText, Upload, X, ClipboardPaste, Table2 } from 'lucide-react';
+import { TestTube, Sparkles, Loader2, Play, Save, Trash2, FileText, Upload, X, ClipboardPaste, Table2, FileSpreadsheet } from 'lucide-react';
+import * as XLSX from 'xlsx';
 import { getDocument, GlobalWorkerOptions } from 'pdfjs-dist';
 
 interface CsvPreviewRow {
@@ -24,6 +25,16 @@ interface CsvPreviewRow {
   prompt: string;
   expectedResult: string;
   priority: string;
+}
+
+interface AzureDevOpsTestCase {
+  id: string;
+  title: string;
+  steps: Array<{
+    stepNumber: number;
+    action: string;
+    expected: string;
+  }>;
 }
 
 // Set up PDF.js worker
@@ -53,7 +64,7 @@ export default function TestGenerator() {
   const [isLoading, setIsLoading] = useState(false);
   const [generatedTests, setGeneratedTests] = useState<GeneratedTestCase[]>([]);
   const [savingIndex, setSavingIndex] = useState<number | null>(null);
-  const [sourceTab, setSourceTab] = useState<'description' | 'documentation' | 'import_text' | 'import_csv'>('description');
+  const [sourceTab, setSourceTab] = useState<'description' | 'documentation' | 'import_text' | 'import_csv' | 'import_azure'>('description');
   const [uploadedFileName, setUploadedFileName] = useState<string>('');
   const [isExtractingPdf, setIsExtractingPdf] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -67,6 +78,13 @@ export default function TestGenerator() {
   const [csvPreview, setCsvPreview] = useState<CsvPreviewRow[]>([]);
   const [parsedCsvTests, setParsedCsvTests] = useState<GeneratedTestCase[]>([]);
   const csvInputRef = useRef<HTMLInputElement>(null);
+  
+  // Azure DevOps XLSX import state
+  const [xlsxFile, setXlsxFile] = useState<File | null>(null);
+  const [xlsxPreview, setXlsxPreview] = useState<AzureDevOpsTestCase[]>([]);
+  const [parsedAzureTests, setParsedAzureTests] = useState<GeneratedTestCase[]>([]);
+  const xlsxInputRef = useRef<HTMLInputElement>(null);
+  const [isImportingAzure, setIsImportingAzure] = useState(false);
 
   useEffect(() => {
     fetchProjects();
@@ -378,6 +396,158 @@ export default function TestGenerator() {
     toast.success(`Importováno ${parsedCsvTests.length} testů`);
   };
 
+  // Azure DevOps XLSX parsing
+  const parseAzureDevOpsExport = (workbook: XLSX.WorkBook): AzureDevOpsTestCase[] => {
+    const sheet = workbook.Sheets[workbook.SheetNames[0]];
+    const rows = XLSX.utils.sheet_to_json(sheet, { defval: '' }) as Record<string, string | number>[];
+    
+    const tests: AzureDevOpsTestCase[] = [];
+    let currentTest: AzureDevOpsTestCase | null = null;
+    
+    for (const row of rows) {
+      const id = row['ID']?.toString() || '';
+      const title = row['Title']?.toString() || '';
+      const stepNum = row['Test Step']?.toString() || '';
+      const stepAction = row['Step Action']?.toString() || '';
+      const stepExpected = row['Step Expected']?.toString() || '';
+      
+      // New test case row (has ID and Title)
+      if (id && title && !stepNum) {
+        if (currentTest) tests.push(currentTest);
+        currentTest = { id, title, steps: [] };
+      }
+      
+      // Step row
+      if (currentTest && stepNum && stepAction) {
+        currentTest.steps.push({
+          stepNumber: parseInt(stepNum) || currentTest.steps.length + 1,
+          action: stepAction,
+          expected: stepExpected,
+        });
+      }
+    }
+    
+    if (currentTest) tests.push(currentTest);
+    return tests.filter(t => t.steps.length > 0);
+  };
+
+  const convertAzureTestToGenerated = (azureTest: AzureDevOpsTestCase): GeneratedTestCase => {
+    // Filter out "Objective:" steps
+    const actionSteps = azureTest.steps.filter(s => 
+      !s.action.toLowerCase().startsWith('objective:')
+    );
+    
+    const prompt = `Proveď následující kroky:\n${
+      actionSteps.map(s => `${s.stepNumber}. ${s.action}`).join('\n')
+    }`;
+    
+    const expectedResults = actionSteps
+      .filter(s => s.expected)
+      .map(s => s.expected);
+    
+    const expectedResult = expectedResults.length > 0 
+      ? `Očekávaný výsledek:\n${expectedResults.map((e, i) => `${i + 1}. ${e}`).join('\n')}`
+      : '';
+    
+    return {
+      title: azureTest.title,
+      prompt,
+      expectedResult,
+      priority: 'medium',
+    };
+  };
+
+  const handleXlsxUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    const isXlsx = file.name.toLowerCase().endsWith('.xlsx') || file.name.toLowerCase().endsWith('.xls');
+    if (!isXlsx) {
+      toast.error('Nahrajte soubor ve formátu XLSX nebo XLS');
+      return;
+    }
+
+    if (file.size > 10 * 1024 * 1024) {
+      toast.error('Soubor je příliš velký (max 10MB)');
+      return;
+    }
+
+    try {
+      const arrayBuffer = await file.arrayBuffer();
+      const workbook = XLSX.read(arrayBuffer, { type: 'array' });
+      const parsed = parseAzureDevOpsExport(workbook);
+      
+      if (parsed.length === 0) {
+        toast.error('Soubor neobsahuje žádné validní testy z Azure DevOps');
+        return;
+      }
+      
+      setXlsxFile(file);
+      setXlsxPreview(parsed.slice(0, 5));
+      setParsedAzureTests(parsed.map(convertAzureTestToGenerated));
+      
+      toast.success(`Načteno ${parsed.length} testů z Azure DevOps`);
+    } catch (error) {
+      console.error('Error parsing XLSX:', error);
+      toast.error('Chyba při čtení XLSX souboru');
+    }
+  };
+
+  const clearXlsxFile = () => {
+    setXlsxFile(null);
+    setXlsxPreview([]);
+    setParsedAzureTests([]);
+    if (xlsxInputRef.current) {
+      xlsxInputRef.current.value = '';
+    }
+  };
+
+  const handleImportAzure = async () => {
+    if (parsedAzureTests.length === 0) {
+      toast.error('Nejsou načteny žádné testy');
+      return;
+    }
+
+    setIsImportingAzure(true);
+    setGeneratedTests(parsedAzureTests);
+
+    if (projectId) {
+      try {
+        const { data: { user } } = await supabase.auth.getUser();
+        if (user) {
+          const testsToInsert = parsedAzureTests.map((tc, idx) => ({
+            user_id: user.id,
+            project_id: projectId,
+            title: tc.title,
+            prompt: tc.prompt,
+            expected_result: tc.expectedResult,
+            priority: tc.priority,
+            status: 'pending',
+            source_type: 'import_azure_devops',
+            azure_devops_id: xlsxPreview[idx]?.id || null,
+          }));
+
+          const { error: insertError } = await supabase
+            .from('generated_tests')
+            .insert(testsToInsert);
+
+          if (insertError) {
+            console.error('Error saving tests to DB:', insertError);
+          } else {
+            toast.success(`Importováno a uloženo ${parsedAzureTests.length} testů do projektu`);
+            setIsImportingAzure(false);
+            return;
+          }
+        }
+      } catch (error) {
+        console.error('Error saving Azure tests:', error);
+      }
+    }
+    
+    setIsImportingAzure(false);
+    toast.success(`Importováno ${parsedAzureTests.length} testů`);
+  };
+
   const handleGenerate = async () => {
     const contentToAnalyze = sourceTab === 'documentation' ? documentation : description;
     
@@ -578,27 +748,27 @@ export default function TestGenerator() {
           </div>
 
           {/* Source Tabs */}
-          <Tabs value={sourceTab} onValueChange={(v) => setSourceTab(v as 'description' | 'documentation' | 'import_text' | 'import_csv')}>
-            <TabsList className="grid w-full grid-cols-4">
+          <Tabs value={sourceTab} onValueChange={(v) => setSourceTab(v as 'description' | 'documentation' | 'import_text' | 'import_csv' | 'import_azure')}>
+            <TabsList className="grid w-full grid-cols-5">
               <TabsTrigger value="description" className="flex items-center gap-2">
                 <Sparkles className="w-4 h-4" />
-                <span className="hidden sm:inline">Popis aplikace</span>
-                <span className="sm:hidden">Popis</span>
+                <span className="hidden lg:inline">Popis</span>
               </TabsTrigger>
               <TabsTrigger value="documentation" className="flex items-center gap-2">
                 <FileText className="w-4 h-4" />
-                <span className="hidden sm:inline">Dokumentace</span>
-                <span className="sm:hidden">Docs</span>
+                <span className="hidden lg:inline">Docs</span>
               </TabsTrigger>
               <TabsTrigger value="import_text" className="flex items-center gap-2">
                 <ClipboardPaste className="w-4 h-4" />
-                <span className="hidden sm:inline">Import z textu</span>
-                <span className="sm:hidden">Text</span>
+                <span className="hidden lg:inline">Text</span>
               </TabsTrigger>
               <TabsTrigger value="import_csv" className="flex items-center gap-2">
                 <Table2 className="w-4 h-4" />
-                <span className="hidden sm:inline">Import CSV</span>
-                <span className="sm:hidden">CSV</span>
+                <span className="hidden lg:inline">CSV</span>
+              </TabsTrigger>
+              <TabsTrigger value="import_azure" className="flex items-center gap-2">
+                <FileSpreadsheet className="w-4 h-4" />
+                <span className="hidden lg:inline">Azure DevOps</span>
               </TabsTrigger>
             </TabsList>
 
@@ -826,6 +996,88 @@ Nebo:
                 </div>
               )}
             </TabsContent>
+
+            <TabsContent value="import_azure" className="space-y-4 mt-4">
+              <div className="space-y-2">
+                <Label>Nahrát export z Azure DevOps</Label>
+                <div className="flex items-center gap-3">
+                  <input
+                    ref={xlsxInputRef}
+                    type="file"
+                    accept=".xlsx,.xls"
+                    onChange={handleXlsxUpload}
+                    className="hidden"
+                    id="xlsx-upload"
+                  />
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => xlsxInputRef.current?.click()}
+                    className="flex items-center gap-2"
+                  >
+                    <Upload className="w-4 h-4" />
+                    Nahrát XLSX
+                  </Button>
+                  {xlsxFile && (
+                    <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                      <FileSpreadsheet className="w-4 h-4" />
+                      <span>{xlsxFile.name}</span>
+                      <Badge variant="secondary">{parsedAzureTests.length} testů</Badge>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        onClick={clearXlsxFile}
+                        className="h-6 w-6 p-0"
+                      >
+                        <X className="w-4 h-4" />
+                      </Button>
+                    </div>
+                  )}
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  Exportujte testy z Azure DevOps jako Excel a nahrajte sem. Systém automaticky extrahuje test cases a kroky.
+                </p>
+              </div>
+
+              {/* Azure DevOps Preview */}
+              {xlsxPreview.length > 0 && (
+                <div className="space-y-2">
+                  <Label className="flex items-center gap-2">
+                    <FileSpreadsheet className="w-4 h-4 text-primary" />
+                    Náhled (prvních {Math.min(5, parsedAzureTests.length)} z {parsedAzureTests.length} testů)
+                  </Label>
+                  <div className="rounded-lg border border-border overflow-hidden">
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-sm">
+                        <thead className="bg-muted/50">
+                          <tr>
+                            <th className="px-3 py-2 text-left font-medium">ID</th>
+                            <th className="px-3 py-2 text-left font-medium">Název</th>
+                            <th className="px-3 py-2 text-left font-medium">Kroky</th>
+                            <th className="px-3 py-2 text-left font-medium">První krok</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {xlsxPreview.map((test, idx) => (
+                            <tr key={idx} className="border-t border-border">
+                              <td className="px-3 py-2 text-muted-foreground">{test.id}</td>
+                              <td className="px-3 py-2 font-medium max-w-[200px] truncate">{test.title}</td>
+                              <td className="px-3 py-2">
+                                <Badge variant="outline">{test.steps.length} kroků</Badge>
+                              </td>
+                              <td className="px-3 py-2 max-w-[300px] truncate text-muted-foreground">
+                                {test.steps[0]?.action || '-'}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </TabsContent>
           </Tabs>
 
           {/* Action buttons based on selected tab */}
@@ -877,6 +1129,26 @@ Nebo:
             >
               <Table2 className="mr-2 h-4 w-4" />
               Importovat {parsedCsvTests.length} testů z CSV
+            </Button>
+          )}
+
+          {sourceTab === 'import_azure' && (
+            <Button 
+              onClick={handleImportAzure} 
+              disabled={parsedAzureTests.length === 0 || isImportingAzure} 
+              className="w-full gradient-primary"
+            >
+              {isImportingAzure ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Importuji testy...
+                </>
+              ) : (
+                <>
+                  <FileSpreadsheet className="mr-2 h-4 w-4" />
+                  Importovat {parsedAzureTests.length} testů z Azure DevOps
+                </>
+              )}
             </Button>
           )}
         </CardContent>
