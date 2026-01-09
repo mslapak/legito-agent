@@ -667,14 +667,14 @@ serve(async (req) => {
           }
         }
         
-        // Step 4: Wait for video processing
-        console.log('Waiting for media processing...');
-        await delay(5000);
+        // Step 4: Wait for video processing (increased initial delay)
+        console.log('Waiting for media processing (8s initial delay)...');
+        await delay(8000);
         
         // Step 5: Retry loop to get media (videos may take time to process)
         let screenshots: string[] = [];
         let recordings: string[] = [];
-        const maxRetries = 4;
+        const maxRetries = 6;
         
         for (let attempt = 1; attempt <= maxRetries; attempt++) {
           console.log(`Media fetch attempt ${attempt}/${maxRetries}...`);
@@ -687,7 +687,7 @@ serve(async (req) => {
             
             if (detailsRes.ok) {
               const details = await detailsRes.json();
-              console.log(`Attempt ${attempt} - Status: ${details.status}, OutputFiles: ${JSON.stringify(details.outputFiles || []).substring(0, 200)}`);
+              console.log(`Attempt ${attempt} - Status: ${details.status}, OutputFiles: ${JSON.stringify(details.outputFiles || []).substring(0, 300)}`);
               
               // Screenshots from steps
               if (Array.isArray(details?.steps)) {
@@ -715,9 +715,9 @@ serve(async (req) => {
             console.error(`Media fetch attempt ${attempt} error:`, e);
           }
           
-          // Wait before next retry (except on last attempt)
+          // Wait before next retry (except on last attempt) - increased delay
           if (attempt < maxRetries) {
-            await delay(3000);
+            await delay(5000);
           }
         }
         
@@ -835,7 +835,7 @@ serve(async (req) => {
         let screenshots: string[] = [];
         let recordings: string[] = [];
         let taskStatus: string | null = null;
-        const maxRetries = 3;
+        const maxRetries = 6;
         
         for (let attempt = 1; attempt <= maxRetries; attempt++) {
           try {
@@ -847,7 +847,7 @@ serve(async (req) => {
             if (detailsRes.ok) {
               const details = await detailsRes.json();
               taskStatus = details.status;
-              console.log(`Attempt ${attempt} - Status: ${taskStatus}, OutputFiles: ${JSON.stringify(details.outputFiles || []).substring(0, 200)}`);
+              console.log(`Attempt ${attempt} - Status: ${taskStatus}, OutputFiles: ${JSON.stringify(details.outputFiles || []).substring(0, 300)}`);
               
               // Screenshots from steps
               if (Array.isArray(details?.steps)) {
@@ -862,8 +862,14 @@ serve(async (req) => {
                 recordings = normalizeUrls(details.outputFiles);
               }
               
-              // If task is finished/stopped and we have recordings, we're done
-              if (recordings.length > 0 || !['finished', 'stopped'].includes(taskStatus || '')) {
+              // If we got recordings, we're done
+              if (recordings.length > 0) {
+                console.log(`Got ${recordings.length} recordings on attempt ${attempt}`);
+                break;
+              }
+              
+              // If task is not finished yet, don't retry
+              if (!['finished', 'stopped'].includes(taskStatus || '')) {
                 break;
               }
             } else if (detailsRes.status === 404) {
@@ -875,11 +881,9 @@ serve(async (req) => {
           }
           
           // Wait before retry for finished tasks (video may still be processing)
-          if (attempt < maxRetries && ['finished', 'stopped'].includes(taskStatus || '')) {
-            console.log('Waiting 3s for video processing...');
-            await delay(3000);
-          } else {
-            break;
+          if (attempt < maxRetries) {
+            console.log('Waiting 5s for video processing...');
+            await delay(5000);
           }
         }
         
