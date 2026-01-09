@@ -392,6 +392,54 @@ export type Database = {
           },
         ]
       }
+      test_batch_runs: {
+        Row: {
+          completed_at: string | null
+          completed_tests: number | null
+          created_at: string | null
+          current_test_id: string | null
+          failed_tests: number | null
+          id: string
+          passed_tests: number | null
+          started_at: string | null
+          status: string | null
+          test_ids: string[]
+          total_tests: number
+          updated_at: string | null
+          user_id: string
+        }
+        Insert: {
+          completed_at?: string | null
+          completed_tests?: number | null
+          created_at?: string | null
+          current_test_id?: string | null
+          failed_tests?: number | null
+          id?: string
+          passed_tests?: number | null
+          started_at?: string | null
+          status?: string | null
+          test_ids: string[]
+          total_tests: number
+          updated_at?: string | null
+          user_id: string
+        }
+        Update: {
+          completed_at?: string | null
+          completed_tests?: number | null
+          created_at?: string | null
+          current_test_id?: string | null
+          failed_tests?: number | null
+          id?: string
+          passed_tests?: number | null
+          started_at?: string | null
+          status?: string | null
+          test_ids?: string[]
+          total_tests?: number
+          updated_at?: string | null
+          user_id?: string
+        }
+        Relationships: []
+      }
       test_cases: {
         Row: {
           created_at: string
