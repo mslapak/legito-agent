@@ -129,7 +129,7 @@ async function runBatchInBackground(batchId: string, testIds: string[], userId: 
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          "X-API-Key": BROWSER_USE_API_KEY!,
+          "X-Browser-Use-API-Key": BROWSER_USE_API_KEY!,
         },
         body: JSON.stringify({
           task: fullPrompt,
@@ -175,7 +175,7 @@ async function runBatchInBackground(batchId: string, testIds: string[], userId: 
             `https://api.browser-use.com/api/v2/tasks/${browserTaskId}`,
             {
               headers: {
-                "X-API-Key": BROWSER_USE_API_KEY!,
+                "X-Browser-Use-API-Key": BROWSER_USE_API_KEY!,
               },
             }
           );
