@@ -127,7 +127,8 @@ async function runBatchInBackground(batchId: string, testIds: string[], userId: 
         },
         body: JSON.stringify({
           task: fullPrompt,
-          save_browser_data: false,
+          save_browser_data: true,
+          record_video: true,
         }),
       });
 
@@ -240,42 +241,65 @@ async function runBatchInBackground(batchId: string, testIds: string[], userId: 
         resultSummary = "Timeout - test nedoběhl do 5 minut";
       }
 
-      // Fetch detailed task data to get screenshots and recordings
+      // Fetch detailed task data to get screenshots and recordings with retry
       let screenshots: string[] = [];
       let recordings: string[] = [];
       
-      try {
-        const detailsResponse = await fetch(
-          `https://api.browser-use.com/api/v2/tasks/${browserTaskId}`,
-          {
-            headers: {
-              "X-Browser-Use-API-Key": BROWSER_USE_API_KEY!,
-            },
-          }
-        );
+      // Wait for video processing before fetching media
+      console.log(`[Batch ${batchId}] Waiting for video processing...`);
+      await delay(5000);
+      
+      const maxMediaRetries = 6;
+      for (let mediaAttempt = 1; mediaAttempt <= maxMediaRetries; mediaAttempt++) {
+        try {
+          console.log(`[Batch ${batchId}] Media fetch attempt ${mediaAttempt}/${maxMediaRetries}...`);
+          
+          const detailsResponse = await fetch(
+            `https://api.browser-use.com/api/v2/tasks/${browserTaskId}`,
+            {
+              headers: {
+                "X-Browser-Use-API-Key": BROWSER_USE_API_KEY!,
+              },
+            }
+          );
 
-        if (detailsResponse.ok) {
-          const details = await detailsResponse.json();
-          
-          // Extract screenshots from steps
-          if (details.steps && Array.isArray(details.steps)) {
-            screenshots = details.steps
-              .filter((step: any) => step.screenshotUrl)
-              .map((step: any) => step.screenshotUrl);
+          if (detailsResponse.ok) {
+            const details = await detailsResponse.json();
+            console.log(`[Batch ${batchId}] Attempt ${mediaAttempt} - OutputFiles: ${JSON.stringify(details.outputFiles || []).substring(0, 300)}`);
+            
+            // Extract screenshots from steps
+            if (details.steps && Array.isArray(details.steps)) {
+              screenshots = details.steps
+                .filter((step: any) => step.screenshotUrl)
+                .map((step: any) => step.screenshotUrl);
+            }
+            
+            // Extract recordings from outputFiles
+            if (details.outputFiles && Array.isArray(details.outputFiles)) {
+              recordings = details.outputFiles.filter((f: string) => 
+                typeof f === 'string' && (f.endsWith('.webm') || f.endsWith('.mp4'))
+              );
+            }
+            
+            console.log(`[Batch ${batchId}] Attempt ${mediaAttempt}: ${screenshots.length} screenshots, ${recordings.length} recordings`);
+            
+            // If we got recordings, we're done
+            if (recordings.length > 0) {
+              console.log(`[Batch ${batchId}] Got recordings on attempt ${mediaAttempt}`);
+              break;
+            }
           }
-          
-          // Extract recordings from outputFiles
-          if (details.outputFiles && Array.isArray(details.outputFiles)) {
-            recordings = details.outputFiles.filter((f: string) => 
-              f.endsWith('.webm') || f.endsWith('.mp4')
-            );
-          }
-          
-          console.log(`[Batch ${batchId}] Media extracted: ${screenshots.length} screenshots, ${recordings.length} recordings`);
+        } catch (mediaError) {
+          console.error(`[Batch ${batchId}] Media fetch attempt ${mediaAttempt} error:`, mediaError);
         }
-      } catch (mediaError) {
-        console.error(`[Batch ${batchId}] Error fetching media:`, mediaError);
+        
+        // Wait before next retry (except on last attempt)
+        if (mediaAttempt < maxMediaRetries) {
+          await delay(5000);
+        }
       }
+      
+      console.log(`[Batch ${batchId}] Final media: ${screenshots.length} screenshots, ${recordings.length} recordings`);
 
       // Update tasks table with final status and media
       await supabase
