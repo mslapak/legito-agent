@@ -28,3 +28,6 @@ verify_jwt = true
 
 [functions.fetch-documentation]
 verify_jwt = true
+
+[functions.run-tests-batch]
+verify_jwt = false

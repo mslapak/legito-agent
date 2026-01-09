@@ -7,6 +7,8 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Progress } from '@/components/ui/progress';
+import { Switch } from '@/components/ui/switch';
+import { Label } from '@/components/ui/label';
 import { useNavigate } from 'react-router-dom';
 import {
   CheckCircle2,
@@ -21,6 +23,8 @@ import {
   TrendingUp,
   ArrowUpDown,
   Play,
+  CloudOff,
+  Cloud,
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import { toast } from 'sonner';
@@ -56,6 +60,18 @@ interface Stats {
   successRate: number;
 }
 
+interface BatchRun {
+  id: string;
+  status: string;
+  total_tests: number;
+  completed_tests: number;
+  passed_tests: number;
+  failed_tests: number;
+  current_test_id: string | null;
+  started_at: string | null;
+  created_at: string;
+}
+
 type SortField = 'title' | 'status' | 'priority' | 'last_run_at' | 'created_at';
 type SortOrder = 'asc' | 'desc';
 
@@ -71,6 +87,10 @@ export default function TestsDashboard() {
   const [selectedTests, setSelectedTests] = useState<Set<string>>(new Set());
   const [bulkRunning, setBulkRunning] = useState(false);
   const [currentBulkIndex, setCurrentBulkIndex] = useState<number | null>(null);
+  
+  // Background mode
+  const [backgroundMode, setBackgroundMode] = useState(false);
+  const [activeBatches, setActiveBatches] = useState<BatchRun[]>([]);
 
   // Filters
   const [search, setSearch] = useState('');
@@ -89,8 +109,21 @@ export default function TestsDashboard() {
   useEffect(() => {
     if (user) {
       fetchData();
+      fetchActiveBatches();
     }
   }, [user]);
+
+  // Poll active batches for progress
+  useEffect(() => {
+    if (activeBatches.length === 0) return;
+
+    const interval = setInterval(() => {
+      fetchActiveBatches();
+      fetchData();
+    }, 3000);
+
+    return () => clearInterval(interval);
+  }, [activeBatches.length]);
 
   // Poll running tests to check their actual status
   useEffect(() => {
@@ -196,6 +229,21 @@ export default function TestsDashboard() {
 
     return () => clearInterval(interval);
   }, [tests]);
+
+  const fetchActiveBatches = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('test_batch_runs')
+        .select('*')
+        .in('status', ['pending', 'running'])
+        .order('created_at', { ascending: false });
+
+      if (error) throw error;
+      setActiveBatches((data || []) as BatchRun[]);
+    } catch (error) {
+      console.error('Error fetching active batches:', error);
+    }
+  };
 
   const fetchData = async () => {
     try {
@@ -372,6 +420,50 @@ export default function TestsDashboard() {
       return;
     }
 
+    // Background mode - create batch and let edge function handle it
+    if (backgroundMode) {
+      try {
+        // Create batch record
+        const { data: batch, error: batchError } = await supabase
+          .from('test_batch_runs')
+          .insert({
+            user_id: user?.id,
+            test_ids: testIds,
+            total_tests: testIds.length,
+            status: 'pending',
+          })
+          .select()
+          .single();
+
+        if (batchError || !batch) {
+          throw new Error(batchError?.message || 'Failed to create batch');
+        }
+
+        // Call edge function (fire-and-forget)
+        const response = await supabase.functions.invoke('run-tests-batch', {
+          body: {
+            batchId: batch.id,
+            testIds: testIds,
+            userId: user?.id,
+          },
+        });
+
+        if (response.error) {
+          throw new Error(response.error.message);
+        }
+
+        setSelectedTests(new Set());
+        toast.success(`${testIds.length} testů spuštěno na pozadí. Můžete zavřít prohlížeč.`);
+        fetchActiveBatches();
+        
+      } catch (error) {
+        console.error('Error starting background batch:', error);
+        toast.error(`Chyba: ${error instanceof Error ? error.message : 'Neznámá chyba'}`);
+      }
+      return;
+    }
+
+    // Foreground mode - run tests sequentially in browser
     setBulkRunning(true);
     toast.info(`Spouštím ${testIds.length} testů sekvenčně...`);
 
@@ -535,6 +627,12 @@ export default function TestsDashboard() {
     toast.success(`Dokončeno ${testIds.length} testů`);
   };
 
+  const getTestTitle = (testId: string | null) => {
+    if (!testId) return 'N/A';
+    const test = tests.find(t => t.id === testId);
+    return test?.title || testId.substring(0, 8);
+  };
+
   const exportToExcel = async () => {
     setExporting(true);
     try {
@@ -584,6 +682,42 @@ export default function TestsDashboard() {
 
   return (
     <div className="space-y-6 animate-fade-in">
+      {/* Active Background Batches */}
+      {activeBatches.length > 0 && (
+        <Card className="border-primary/50 bg-primary/5">
+          <CardHeader className="pb-3">
+            <div className="flex items-center gap-2">
+              <Cloud className="h-5 w-5 text-primary animate-pulse" />
+              <CardTitle className="text-base">Běží na pozadí</CardTitle>
+            </div>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            {activeBatches.map((batch) => (
+              <div key={batch.id} className="space-y-2">
+                <div className="flex items-center justify-between text-sm">
+                  <span>
+                    {batch.completed_tests}/{batch.total_tests} testů dokončeno
+                    {batch.passed_tests > 0 && (
+                      <span className="text-success ml-2">✓ {batch.passed_tests}</span>
+                    )}
+                    {batch.failed_tests > 0 && (
+                      <span className="text-destructive ml-2">✗ {batch.failed_tests}</span>
+                    )}
+                  </span>
+                  <span className="text-muted-foreground">
+                    {batch.current_test_id && `Aktuální: ${getTestTitle(batch.current_test_id)}`}
+                  </span>
+                </div>
+                <Progress 
+                  value={(batch.completed_tests / batch.total_tests) * 100} 
+                  className="h-2"
+                />
+              </div>
+            ))}
+          </CardContent>
+        </Card>
+      )}
+
       {/* Stats Cards */}
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-5">
         <Card>
@@ -708,30 +842,59 @@ export default function TestsDashboard() {
       {/* Results Table */}
       <Card>
         <CardHeader>
-          <div className="flex items-center justify-between">
+          <div className="flex items-center justify-between flex-wrap gap-4">
             <div className="flex items-center gap-3">
               <CardTitle>Výsledky testů ({sortedTests.length})</CardTitle>
               {selectedTests.size > 0 && (
                 <Badge variant="secondary">{selectedTests.size} vybráno</Badge>
               )}
             </div>
-            <Button 
-              onClick={runSelectedTests} 
-              disabled={bulkRunning || selectedTests.size === 0}
-              className="gap-2"
-            >
-              {bulkRunning ? (
-                <>
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                  Běží {currentBulkIndex !== null ? `(${currentBulkIndex + 1}/${selectedTests.size})` : '...'}
-                </>
-              ) : (
-                <>
-                  <Play className="h-4 w-4" />
-                  Spustit vybrané ({selectedTests.size})
-                </>
-              )}
-            </Button>
+            <div className="flex items-center gap-4">
+              {/* Background mode toggle */}
+              <div className="flex items-center gap-2">
+                <Switch
+                  id="background-mode"
+                  checked={backgroundMode}
+                  onCheckedChange={setBackgroundMode}
+                  disabled={bulkRunning}
+                />
+                <Label 
+                  htmlFor="background-mode" 
+                  className="flex items-center gap-1.5 cursor-pointer text-sm"
+                >
+                  {backgroundMode ? (
+                    <Cloud className="h-4 w-4 text-primary" />
+                  ) : (
+                    <CloudOff className="h-4 w-4 text-muted-foreground" />
+                  )}
+                  Na pozadí
+                </Label>
+              </div>
+              
+              <Button 
+                onClick={runSelectedTests} 
+                disabled={bulkRunning || selectedTests.size === 0}
+                className="gap-2"
+                variant={backgroundMode ? "default" : "default"}
+              >
+                {bulkRunning ? (
+                  <>
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                    Běží {currentBulkIndex !== null ? `(${currentBulkIndex + 1}/${selectedTests.size})` : '...'}
+                  </>
+                ) : backgroundMode ? (
+                  <>
+                    <Cloud className="h-4 w-4" />
+                    Spustit na pozadí ({selectedTests.size})
+                  </>
+                ) : (
+                  <>
+                    <Play className="h-4 w-4" />
+                    Spustit vybrané ({selectedTests.size})
+                  </>
+                )}
+              </Button>
+            </div>
           </div>
         </CardHeader>
         <CardContent>
