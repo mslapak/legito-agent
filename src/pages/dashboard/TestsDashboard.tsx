@@ -20,9 +20,11 @@ import {
   TestTube,
   TrendingUp,
   ArrowUpDown,
+  Play,
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import { toast } from 'sonner';
+import { Checkbox } from '@/components/ui/checkbox';
 
 interface GeneratedTest {
   id: string;
@@ -64,6 +66,11 @@ export default function TestsDashboard() {
   const [projects, setProjects] = useState<Project[]>([]);
   const [loading, setLoading] = useState(true);
   const [exporting, setExporting] = useState(false);
+
+  // Bulk selection
+  const [selectedTests, setSelectedTests] = useState<Set<string>>(new Set());
+  const [bulkRunning, setBulkRunning] = useState(false);
+  const [currentBulkIndex, setCurrentBulkIndex] = useState<number | null>(null);
 
   // Filters
   const [search, setSearch] = useState('');
@@ -339,6 +346,195 @@ export default function TestsDashboard() {
 
   const hasActiveFilters = search || projectFilter !== 'all' || statusFilter !== 'all' || priorityFilter !== 'all';
 
+  // Bulk selection handlers
+  const toggleSelectAll = () => {
+    if (selectedTests.size === paginatedTests.length) {
+      setSelectedTests(new Set());
+    } else {
+      setSelectedTests(new Set(paginatedTests.map(t => t.id)));
+    }
+  };
+
+  const toggleSelectTest = (testId: string) => {
+    const newSelected = new Set(selectedTests);
+    if (newSelected.has(testId)) {
+      newSelected.delete(testId);
+    } else {
+      newSelected.add(testId);
+    }
+    setSelectedTests(newSelected);
+  };
+
+  const runSelectedTests = async () => {
+    const testIds = Array.from(selectedTests);
+    if (testIds.length === 0) {
+      toast.error('Vyberte alespoň jeden test');
+      return;
+    }
+
+    setBulkRunning(true);
+    toast.info(`Spouštím ${testIds.length} testů sekvenčně...`);
+
+    for (let i = 0; i < testIds.length; i++) {
+      setCurrentBulkIndex(i);
+      const testId = testIds[i];
+      const test = tests.find(t => t.id === testId);
+      
+      if (!test || test.status === 'running') continue;
+
+      try {
+        // Get project info for setup_prompt and credentials
+        let setupPrompt = '';
+        let credentials = '';
+        
+        if (test.project_id) {
+          const { data: project } = await supabase
+            .from('projects')
+            .select('setup_prompt, base_url')
+            .eq('id', test.project_id)
+            .single();
+          
+          if (project?.setup_prompt) {
+            setupPrompt = project.setup_prompt;
+          }
+
+          // Get credentials
+          const { data: creds } = await supabase
+            .from('project_credentials')
+            .select('username, password, description')
+            .eq('project_id', test.project_id);
+
+          if (creds && creds.length > 0) {
+            credentials = creds.map(c => 
+              `Credentials${c.description ? ` (${c.description})` : ''}: username="${c.username}", password="${c.password}"`
+            ).join('\n');
+          }
+        }
+
+        // Build full prompt
+        let fullPrompt = test.prompt;
+        if (setupPrompt) {
+          fullPrompt = `${setupPrompt}\n\nNásledně proveď test:\n${test.prompt}`;
+        }
+        if (credentials) {
+          fullPrompt = `${fullPrompt}\n\n${credentials}`;
+        }
+        if (test.expected_result) {
+          fullPrompt = `${fullPrompt}\n\nOčekávaný výsledek: ${test.expected_result}`;
+        }
+
+        // Update test status to running
+        await supabase
+          .from('generated_tests')
+          .update({ status: 'running' })
+          .eq('id', testId);
+
+        // Create browser-use task
+        const response = await supabase.functions.invoke('browser-use', {
+          body: {
+            action: 'create_task',
+            prompt: fullPrompt,
+            keepBrowserOpen: false,
+          },
+        });
+
+        if (response.error || !response.data?.task?.id) {
+          throw new Error(response.error?.message || 'Failed to create task');
+        }
+
+        const browserTaskId = response.data.task.id;
+
+        // Save task_id to generated_tests
+        await supabase
+          .from('generated_tests')
+          .update({ task_id: browserTaskId })
+          .eq('id', testId);
+
+        // Wait for task to complete (poll every 3 seconds, max 5 minutes)
+        let taskCompleted = false;
+        let attempts = 0;
+        const maxAttempts = 100;
+
+        while (!taskCompleted && attempts < maxAttempts) {
+          await new Promise(resolve => setTimeout(resolve, 3000));
+          attempts++;
+
+          const statusResponse = await supabase.functions.invoke('browser-use', {
+            body: {
+              action: 'get_task_status',
+              taskId: browserTaskId,
+            },
+          });
+
+          const apiStatus = statusResponse.data?.status;
+          if (['finished', 'completed', 'done', 'failed', 'error', 'stopped'].includes(apiStatus)) {
+            taskCompleted = true;
+            
+            let newStatus = 'passed';
+            if (apiStatus === 'failed' || apiStatus === 'error') {
+              newStatus = 'failed';
+            }
+
+            const startedAt = statusResponse.data?.started_at || statusResponse.data?.startedAt;
+            const finishedAt = statusResponse.data?.finished_at || statusResponse.data?.finishedAt || new Date().toISOString();
+            let executionTimeMs: number | null = null;
+            
+            if (startedAt) {
+              executionTimeMs = new Date(finishedAt).getTime() - new Date(startedAt).getTime();
+            }
+
+            const output = statusResponse.data?.output || statusResponse.data?.result || '';
+            const resultSummary = typeof output === 'string' 
+              ? output.substring(0, 500) 
+              : JSON.stringify(output).substring(0, 500);
+
+            await supabase
+              .from('generated_tests')
+              .update({ 
+                status: newStatus,
+                last_run_at: new Date().toISOString(),
+                execution_time_ms: executionTimeMs,
+                result_summary: resultSummary || null,
+              })
+              .eq('id', testId);
+          }
+        }
+
+        if (!taskCompleted) {
+          // Timeout - mark as failed
+          await supabase
+            .from('generated_tests')
+            .update({ 
+              status: 'failed',
+              last_run_at: new Date().toISOString(),
+              result_summary: 'Timeout - test nedoběhl do 5 minut',
+            })
+            .eq('id', testId);
+        }
+
+        // Refresh data after each test
+        await fetchData();
+
+      } catch (error) {
+        console.error('Error running test:', error);
+        await supabase
+          .from('generated_tests')
+          .update({ 
+            status: 'failed',
+            last_run_at: new Date().toISOString(),
+            result_summary: `Chyba: ${error instanceof Error ? error.message : 'Neznámá chyba'}`,
+          })
+          .eq('id', testId);
+        await fetchData();
+      }
+    }
+
+    setBulkRunning(false);
+    setCurrentBulkIndex(null);
+    setSelectedTests(new Set());
+    toast.success(`Dokončeno ${testIds.length} testů`);
+  };
+
   const exportToExcel = async () => {
     setExporting(true);
     try {
@@ -513,7 +709,29 @@ export default function TestsDashboard() {
       <Card>
         <CardHeader>
           <div className="flex items-center justify-between">
-            <CardTitle>Výsledky testů ({sortedTests.length})</CardTitle>
+            <div className="flex items-center gap-3">
+              <CardTitle>Výsledky testů ({sortedTests.length})</CardTitle>
+              {selectedTests.size > 0 && (
+                <Badge variant="secondary">{selectedTests.size} vybráno</Badge>
+              )}
+            </div>
+            <Button 
+              onClick={runSelectedTests} 
+              disabled={bulkRunning || selectedTests.size === 0}
+              className="gap-2"
+            >
+              {bulkRunning ? (
+                <>
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  Běží {currentBulkIndex !== null ? `(${currentBulkIndex + 1}/${selectedTests.size})` : '...'}
+                </>
+              ) : (
+                <>
+                  <Play className="h-4 w-4" />
+                  Spustit vybrané ({selectedTests.size})
+                </>
+              )}
+            </Button>
           </div>
         </CardHeader>
         <CardContent>
@@ -528,6 +746,13 @@ export default function TestsDashboard() {
                 <table className="w-full">
                   <thead>
                     <tr className="border-b">
+                      <th className="p-3 w-10">
+                        <Checkbox 
+                          checked={paginatedTests.length > 0 && selectedTests.size === paginatedTests.length}
+                          onCheckedChange={toggleSelectAll}
+                          disabled={bulkRunning}
+                        />
+                      </th>
                       <th className="text-left p-3 font-medium text-muted-foreground">ID</th>
                       <th 
                         className="text-left p-3 font-medium text-muted-foreground cursor-pointer hover:text-foreground"
@@ -571,16 +796,26 @@ export default function TestsDashboard() {
                     </tr>
                   </thead>
                   <tbody>
-                    {paginatedTests.map(test => (
+                    {paginatedTests.map((test, index) => (
                       <tr 
                         key={test.id} 
-                        className="border-b hover:bg-muted/50 cursor-pointer transition-colors"
-                        onClick={() => navigate(`/dashboard/projects`)}
+                        className={`border-b hover:bg-muted/50 transition-colors ${
+                          bulkRunning && currentBulkIndex === Array.from(selectedTests).indexOf(test.id) 
+                            ? 'bg-primary/10' 
+                            : ''
+                        }`}
                       >
-                        <td className="p-3 font-mono text-sm">
+                        <td className="p-3" onClick={(e) => e.stopPropagation()}>
+                          <Checkbox 
+                            checked={selectedTests.has(test.id)}
+                            onCheckedChange={() => toggleSelectTest(test.id)}
+                            disabled={bulkRunning}
+                          />
+                        </td>
+                        <td className="p-3 font-mono text-sm cursor-pointer" onClick={() => navigate(`/dashboard/projects`)}>
                           {test.azure_devops_id || test.id.substring(0, 8)}
                         </td>
-                        <td className="p-3">
+                        <td className="p-3 cursor-pointer" onClick={() => navigate(`/dashboard/projects`)}>
                           <div className="max-w-xs truncate font-medium">{test.title}</div>
                         </td>
                         <td className="p-3 text-muted-foreground text-sm">
