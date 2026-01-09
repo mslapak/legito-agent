@@ -25,6 +25,9 @@ import {
   Play,
   CloudOff,
   Cloud,
+  Camera,
+  Film,
+  ExternalLink,
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import { toast } from 'sonner';
@@ -39,6 +42,7 @@ interface GeneratedTest {
   status: string;
   azure_devops_id: string | null;
   project_id: string | null;
+  task_id: string | null;
   created_at: string;
   last_run_at: string | null;
   execution_time_ms: number | null;
@@ -393,6 +397,15 @@ export default function TestsDashboard() {
   };
 
   const hasActiveFilters = search || projectFilter !== 'all' || statusFilter !== 'all' || priorityFilter !== 'all';
+
+  // Navigate to task detail
+  const handleTestClick = (test: GeneratedTest) => {
+    if (test.task_id) {
+      navigate(`/dashboard/tasks/${test.task_id}`);
+    } else {
+      toast.info('Test zatím nebyl spuštěn - nejsou dostupná žádná média');
+    }
+  };
 
   // Bulk selection handlers
   const toggleSelectAll = () => {
@@ -956,6 +969,7 @@ export default function TestsDashboard() {
                       </th>
                       <th className="text-left p-3 font-medium text-muted-foreground">Čas běhu</th>
                       <th className="text-left p-3 font-medium text-muted-foreground">Výsledek</th>
+                      <th className="text-left p-3 font-medium text-muted-foreground w-20">Detail</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -1004,6 +1018,24 @@ export default function TestsDashboard() {
                           <div className="max-w-xs truncate text-sm text-muted-foreground">
                             {test.result_summary || '-'}
                           </div>
+                        </td>
+                        <td className="p-3">
+                          {test.task_id ? (
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleTestClick(test);
+                              }}
+                              className="gap-1.5 text-primary hover:text-primary"
+                            >
+                              <ExternalLink className="h-4 w-4" />
+                              Detail
+                            </Button>
+                          ) : (
+                            <span className="text-muted-foreground text-sm">-</span>
+                          )}
                         </td>
                       </tr>
                     ))}

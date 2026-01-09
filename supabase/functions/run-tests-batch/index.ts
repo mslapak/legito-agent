@@ -117,13 +117,7 @@ async function runBatchInBackground(batchId: string, testIds: string[], userId: 
         fullPrompt = `${fullPrompt}\n\nOčekávaný výsledek: ${test.expected_result}`;
       }
 
-      // Update test status to running
-      await supabase
-        .from("generated_tests")
-        .update({ status: "running" })
-        .eq("id", testId);
-
-      // Create browser-use task
+      // Create browser-use task first
       console.log(`[Batch ${batchId}] Creating browser-use task for test ${testId}`);
       const createResponse = await fetch("https://api.browser-use.com/api/v2/tasks", {
         method: "POST",
@@ -152,10 +146,36 @@ async function runBatchInBackground(batchId: string, testIds: string[], userId: 
 
       console.log(`[Batch ${batchId}] Browser-use task created: ${browserTaskId}`);
 
-      // Save task_id to generated_tests
+      // Create record in tasks table BEFORE updating generated_tests
+      const { data: taskRecord, error: taskError } = await supabase
+        .from("tasks")
+        .insert({
+          user_id: userId,
+          project_id: test.project_id,
+          title: test.title,
+          prompt: fullPrompt,
+          status: "running",
+          browser_use_task_id: browserTaskId,
+          started_at: new Date().toISOString(),
+          task_type: "test",
+        })
+        .select()
+        .single();
+
+      if (taskError || !taskRecord) {
+        console.error(`[Batch ${batchId}] Failed to create task record:`, taskError);
+        throw new Error(`Failed to create task record: ${taskError?.message}`);
+      }
+
+      console.log(`[Batch ${batchId}] Task record created: ${taskRecord.id}`);
+
+      // Update generated_tests with the correct task_id (UUID from tasks table)
       await supabase
         .from("generated_tests")
-        .update({ task_id: browserTaskId })
+        .update({ 
+          status: "running",
+          task_id: taskRecord.id, // This is the UUID from tasks table!
+        })
         .eq("id", testId);
 
       // Poll for task completion (max 5 minutes)
@@ -220,7 +240,56 @@ async function runBatchInBackground(batchId: string, testIds: string[], userId: 
         resultSummary = "Timeout - test nedoběhl do 5 minut";
       }
 
-      // Update test result
+      // Fetch detailed task data to get screenshots and recordings
+      let screenshots: string[] = [];
+      let recordings: string[] = [];
+      
+      try {
+        const detailsResponse = await fetch(
+          `https://api.browser-use.com/api/v2/tasks/${browserTaskId}`,
+          {
+            headers: {
+              "X-Browser-Use-API-Key": BROWSER_USE_API_KEY!,
+            },
+          }
+        );
+
+        if (detailsResponse.ok) {
+          const details = await detailsResponse.json();
+          
+          // Extract screenshots from steps
+          if (details.steps && Array.isArray(details.steps)) {
+            screenshots = details.steps
+              .filter((step: any) => step.screenshotUrl)
+              .map((step: any) => step.screenshotUrl);
+          }
+          
+          // Extract recordings from outputFiles
+          if (details.outputFiles && Array.isArray(details.outputFiles)) {
+            recordings = details.outputFiles.filter((f: string) => 
+              f.endsWith('.webm') || f.endsWith('.mp4')
+            );
+          }
+          
+          console.log(`[Batch ${batchId}] Media extracted: ${screenshots.length} screenshots, ${recordings.length} recordings`);
+        }
+      } catch (mediaError) {
+        console.error(`[Batch ${batchId}] Error fetching media:`, mediaError);
+      }
+
+      // Update tasks table with final status and media
+      await supabase
+        .from("tasks")
+        .update({
+          status: finalStatus === "passed" ? "completed" : "failed",
+          completed_at: new Date().toISOString(),
+          screenshots: screenshots.length > 0 ? screenshots : null,
+          recordings: recordings.length > 0 ? recordings : null,
+          result: { output: resultSummary },
+        })
+        .eq("id", taskRecord.id);
+
+      // Update test result in generated_tests
       await supabase
         .from("generated_tests")
         .update({
