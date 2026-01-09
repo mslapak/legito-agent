@@ -274,11 +274,42 @@ async function runBatchInBackground(batchId: string, testIds: string[], userId: 
                 .map((step: any) => step.screenshotUrl);
             }
             
-            // Extract recordings from outputFiles
+            // Extract recordings from outputFiles - v2 API returns {id, fileName} objects
             if (details.outputFiles && Array.isArray(details.outputFiles)) {
-              recordings = details.outputFiles.filter((f: string) => 
-                typeof f === 'string' && (f.endsWith('.webm') || f.endsWith('.mp4'))
-              );
+              console.log(`[Batch ${batchId}] OutputFiles raw:`, JSON.stringify(details.outputFiles));
+              
+              // Filter for video files
+              const videoFiles = details.outputFiles.filter((f: any) => {
+                const fileName = f?.fileName || '';
+                return fileName.endsWith('.webm') || fileName.endsWith('.mp4');
+              });
+              
+              console.log(`[Batch ${batchId}] Video files found: ${videoFiles.length}`);
+              
+              // Fetch download URLs for each video file
+              for (const file of videoFiles) {
+                if (!file.id) continue;
+                try {
+                  console.log(`[Batch ${batchId}] Fetching download URL for file: ${file.id} (${file.fileName})`);
+                  const downloadRes = await fetch(`https://api.browser-use.com/api/v2/files/${file.id}/download`, {
+                    headers: { "X-Browser-Use-API-Key": BROWSER_USE_API_KEY! },
+                  });
+                  
+                  if (downloadRes.ok) {
+                    const downloadData = await downloadRes.json();
+                    console.log(`[Batch ${batchId}] Download response for ${file.id}:`, JSON.stringify(downloadData));
+                    const url = downloadData.url || downloadData.downloadUrl || downloadData.download_url || downloadData.signedUrl;
+                    if (url) {
+                      recordings.push(url);
+                      console.log(`[Batch ${batchId}] Got download URL: ${url.substring(0, 100)}...`);
+                    }
+                  } else {
+                    console.log(`[Batch ${batchId}] Download endpoint failed for ${file.id}: ${downloadRes.status}`);
+                  }
+                } catch (e) {
+                  console.error(`[Batch ${batchId}] Error fetching download URL for ${file.id}:`, e);
+                }
+              }
             }
             
             console.log(`[Batch ${batchId}] Attempt ${mediaAttempt}: ${screenshots.length} screenshots, ${recordings.length} recordings`);

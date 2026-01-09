@@ -246,10 +246,46 @@ serve(async (req) => {
               console.log(`Screenshots from steps:`, screenshots.length);
             }
             
-            // Check outputFiles for recordings
-            if (taskDetails?.outputFiles) {
-              recordings = normalizeUrls(taskDetails.outputFiles);
-              console.log(`Recordings from outputFiles:`, recordings.length);
+            // Check outputFiles for recordings - v2 API returns {id, fileName} objects
+            if (taskDetails?.outputFiles && Array.isArray(taskDetails.outputFiles)) {
+              console.log(`OutputFiles raw:`, JSON.stringify(taskDetails.outputFiles));
+              
+              // Filter for video files
+              const videoFiles = (taskDetails.outputFiles as Array<{id?: string; fileName?: string}>)
+                .filter(f => {
+                  const fileName = f?.fileName || '';
+                  return fileName.endsWith('.webm') || fileName.endsWith('.mp4');
+                });
+              
+              console.log(`Video files found:`, videoFiles.length);
+              
+              // Fetch download URLs for each video file
+              for (const file of videoFiles) {
+                if (!file.id) continue;
+                try {
+                  console.log(`Fetching download URL for file: ${file.id} (${file.fileName})`);
+                  const downloadRes = await fetch(`${BROWSER_USE_API_URL}/files/${file.id}/download`, {
+                    method: 'GET',
+                    headers: { 'X-Browser-Use-API-Key': BROWSER_USE_API_KEY },
+                  });
+                  
+                  if (downloadRes.ok) {
+                    const downloadData = await downloadRes.json();
+                    console.log(`Download response for ${file.id}:`, JSON.stringify(downloadData));
+                    const url = downloadData.url || downloadData.downloadUrl || downloadData.download_url || downloadData.signedUrl;
+                    if (url) {
+                      recordings.push(url);
+                      console.log(`Got download URL: ${url.substring(0, 100)}...`);
+                    }
+                  } else {
+                    console.log(`Download endpoint failed for ${file.id}: ${downloadRes.status}`);
+                  }
+                } catch (e) {
+                  console.error(`Error fetching download URL for ${file.id}:`, e);
+                }
+              }
+              
+              console.log(`Recordings resolved:`, recordings.length);
             }
           } catch (e) {
             console.error('Failed to parse task details:', e);
@@ -697,9 +733,43 @@ serve(async (req) => {
                 screenshots = Array.from(new Set(stepShots));
               }
               
-              // Recordings from outputFiles
-              if (details?.outputFiles) {
-                recordings = normalizeUrls(details.outputFiles);
+              // Recordings from outputFiles - v2 API returns {id, fileName} objects
+              if (details?.outputFiles && Array.isArray(details.outputFiles)) {
+                console.log(`Attempt ${attempt} - OutputFiles raw:`, JSON.stringify(details.outputFiles));
+                
+                // Filter for video files
+                const videoFiles = details.outputFiles.filter((f: {id?: string; fileName?: string}) => {
+                  const fileName = f?.fileName || '';
+                  return fileName.endsWith('.webm') || fileName.endsWith('.mp4');
+                });
+                
+                console.log(`Video files found:`, videoFiles.length);
+                
+                // Fetch download URLs for each video file
+                for (const file of videoFiles) {
+                  if (!file.id) continue;
+                  try {
+                    console.log(`Fetching download URL for file: ${file.id} (${file.fileName})`);
+                    const downloadRes = await fetch(`${BROWSER_USE_API_URL}/files/${file.id}/download`, {
+                      method: 'GET',
+                      headers: { 'X-Browser-Use-API-Key': BROWSER_USE_API_KEY },
+                    });
+                    
+                    if (downloadRes.ok) {
+                      const downloadData = await downloadRes.json();
+                      console.log(`Download response for ${file.id}:`, JSON.stringify(downloadData));
+                      const url = downloadData.url || downloadData.downloadUrl || downloadData.download_url || downloadData.signedUrl;
+                      if (url) {
+                        recordings.push(url);
+                        console.log(`Got download URL: ${url.substring(0, 100)}...`);
+                      }
+                    } else {
+                      console.log(`Download endpoint failed for ${file.id}: ${downloadRes.status}`);
+                    }
+                  } catch (e) {
+                    console.error(`Error fetching download URL for ${file.id}:`, e);
+                  }
+                }
               }
               
               // If we got recordings, we're done
@@ -857,9 +927,43 @@ serve(async (req) => {
                 screenshots = Array.from(new Set(stepShots));
               }
               
-              // Recordings from outputFiles
-              if (details?.outputFiles) {
-                recordings = normalizeUrls(details.outputFiles);
+              // Recordings from outputFiles - v2 API returns {id, fileName} objects
+              if (details?.outputFiles && Array.isArray(details.outputFiles)) {
+                console.log(`Attempt ${attempt} - OutputFiles raw:`, JSON.stringify(details.outputFiles));
+                
+                // Filter for video files
+                const videoFiles = details.outputFiles.filter((f: {id?: string; fileName?: string}) => {
+                  const fileName = f?.fileName || '';
+                  return fileName.endsWith('.webm') || fileName.endsWith('.mp4');
+                });
+                
+                console.log(`Video files found:`, videoFiles.length);
+                
+                // Fetch download URLs for each video file
+                for (const file of videoFiles) {
+                  if (!file.id) continue;
+                  try {
+                    console.log(`Fetching download URL for file: ${file.id} (${file.fileName})`);
+                    const downloadRes = await fetch(`${BROWSER_USE_API_URL}/files/${file.id}/download`, {
+                      method: 'GET',
+                      headers: { 'X-Browser-Use-API-Key': BROWSER_USE_API_KEY },
+                    });
+                    
+                    if (downloadRes.ok) {
+                      const downloadData = await downloadRes.json();
+                      console.log(`Download response for ${file.id}:`, JSON.stringify(downloadData));
+                      const url = downloadData.url || downloadData.downloadUrl || downloadData.download_url || downloadData.signedUrl;
+                      if (url) {
+                        recordings.push(url);
+                        console.log(`Got download URL: ${url.substring(0, 100)}...`);
+                      }
+                    } else {
+                      console.log(`Download endpoint failed for ${file.id}: ${downloadRes.status}`);
+                    }
+                  } catch (e) {
+                    console.error(`Error fetching download URL for ${file.id}:`, e);
+                  }
+                }
               }
               
               // If we got recordings, we're done
