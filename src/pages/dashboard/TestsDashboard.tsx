@@ -32,6 +32,7 @@ import {
 import * as XLSX from 'xlsx';
 import { toast } from 'sonner';
 import { Checkbox } from '@/components/ui/checkbox';
+import { useTranslation } from 'react-i18next';
 
 interface GeneratedTest {
   id: string;
@@ -80,6 +81,7 @@ type SortField = 'title' | 'status' | 'priority' | 'last_run_at' | 'created_at';
 type SortOrder = 'asc' | 'desc';
 
 export default function TestsDashboard() {
+  const { t, i18n } = useTranslation();
   const { user } = useAuth();
   const navigate = useNavigate();
   const [tests, setTests] = useState<GeneratedTest[]>([]);
@@ -109,6 +111,8 @@ export default function TestsDashboard() {
   // Pagination
   const [page, setPage] = useState(1);
   const pageSize = 25;
+
+  const dateLocale = i18n.language === 'cs' ? 'cs-CZ' : 'en-US';
 
   useEffect(() => {
     if (user) {
@@ -269,7 +273,7 @@ export default function TestsDashboard() {
       setProjects(projectsResult.data || []);
     } catch (error) {
       console.error('Error fetching data:', error);
-      toast.error('Nepodařilo se načíst data');
+      toast.error(t('tests.loadFailed'));
     } finally {
       setLoading(false);
     }
@@ -340,20 +344,20 @@ export default function TestsDashboard() {
   const totalPages = Math.ceil(sortedTests.length / pageSize);
 
   const getProjectName = (projectId: string | null) => {
-    if (!projectId) return 'Bez projektu';
-    return projects.find(p => p.id === projectId)?.name || 'Neznámý projekt';
+    if (!projectId) return t('tests.noProject');
+    return projects.find(p => p.id === projectId)?.name || t('tests.unknownProject');
   };
 
   const getStatusBadge = (status: string) => {
     switch (status) {
       case 'pending':
-        return <Badge variant="secondary"><Clock className="w-3 h-3 mr-1" />Čeká</Badge>;
+        return <Badge variant="secondary"><Clock className="w-3 h-3 mr-1" />{t('tests.pending')}</Badge>;
       case 'running':
-        return <Badge className="bg-warning text-warning-foreground"><Loader2 className="w-3 h-3 mr-1 animate-spin" />Běží</Badge>;
+        return <Badge className="bg-warning text-warning-foreground"><Loader2 className="w-3 h-3 mr-1 animate-spin" />{t('tests.running')}</Badge>;
       case 'passed':
-        return <Badge className="bg-success text-success-foreground"><CheckCircle2 className="w-3 h-3 mr-1" />Prošel</Badge>;
+        return <Badge className="bg-success text-success-foreground"><CheckCircle2 className="w-3 h-3 mr-1" />{t('tests.passed')}</Badge>;
       case 'failed':
-        return <Badge variant="destructive"><XCircle className="w-3 h-3 mr-1" />Selhal</Badge>;
+        return <Badge variant="destructive"><XCircle className="w-3 h-3 mr-1" />{t('tests.failed')}</Badge>;
       default:
         return <Badge variant="outline">{status}</Badge>;
     }
@@ -362,11 +366,11 @@ export default function TestsDashboard() {
   const getPriorityBadge = (priority: string) => {
     switch (priority) {
       case 'high':
-        return <Badge variant="destructive">Vysoká</Badge>;
+        return <Badge variant="destructive">{t('priority.high')}</Badge>;
       case 'medium':
-        return <Badge variant="secondary">Střední</Badge>;
+        return <Badge variant="secondary">{t('priority.medium')}</Badge>;
       case 'low':
-        return <Badge variant="outline">Nízká</Badge>;
+        return <Badge variant="outline">{t('priority.low')}</Badge>;
       default:
         return <Badge variant="outline">{priority}</Badge>;
     }
@@ -403,7 +407,7 @@ export default function TestsDashboard() {
     if (test.task_id) {
       navigate(`/dashboard/tasks/${test.task_id}`);
     } else {
-      toast.info('Test zatím nebyl spuštěn - nejsou dostupná žádná média');
+      toast.info(t('tests.notYetRun'));
     }
   };
 
@@ -429,7 +433,7 @@ export default function TestsDashboard() {
   const runSelectedTests = async () => {
     const testIds = Array.from(selectedTests);
     if (testIds.length === 0) {
-      toast.error('Vyberte alespoň jeden test');
+      toast.error(t('tests.selectAtLeastOne'));
       return;
     }
 
@@ -466,19 +470,19 @@ export default function TestsDashboard() {
         }
 
         setSelectedTests(new Set());
-        toast.success(`${testIds.length} testů spuštěno na pozadí. Můžete zavřít prohlížeč.`);
+        toast.success(t('tests.testsStartedBackground', { count: testIds.length }));
         fetchActiveBatches();
         
       } catch (error) {
         console.error('Error starting background batch:', error);
-        toast.error(`Chyba: ${error instanceof Error ? error.message : 'Neznámá chyba'}`);
+        toast.error(`${t('common.error')}: ${error instanceof Error ? error.message : t('toast.unknownError')}`);
       }
       return;
     }
 
     // Foreground mode - run tests sequentially in browser
     setBulkRunning(true);
-    toast.info(`Spouštím ${testIds.length} testů sekvenčně...`);
+    toast.info(t('tests.runningSequentially', { count: testIds.length }));
 
     for (let i = 0; i < testIds.length; i++) {
       setCurrentBulkIndex(i);
@@ -519,13 +523,13 @@ export default function TestsDashboard() {
         // Build full prompt
         let fullPrompt = test.prompt;
         if (setupPrompt) {
-          fullPrompt = `${setupPrompt}\n\nNásledně proveď test:\n${test.prompt}`;
+          fullPrompt = `${setupPrompt}\n\n${i18n.language === 'cs' ? 'Následně proveď test' : 'Then perform the test'}:\n${test.prompt}`;
         }
         if (credentials) {
           fullPrompt = `${fullPrompt}\n\n${credentials}`;
         }
         if (test.expected_result) {
-          fullPrompt = `${fullPrompt}\n\nOčekávaný výsledek: ${test.expected_result}`;
+          fullPrompt = `${fullPrompt}\n\n${i18n.language === 'cs' ? 'Očekávaný výsledek' : 'Expected result'}: ${test.expected_result}`;
         }
 
         // Update test status to running
@@ -612,7 +616,7 @@ export default function TestsDashboard() {
             .update({ 
               status: 'failed',
               last_run_at: new Date().toISOString(),
-              result_summary: 'Timeout - test nedoběhl do 5 minut',
+              result_summary: i18n.language === 'cs' ? 'Timeout - test nedoběhl do 5 minut' : 'Timeout - test did not complete within 5 minutes',
             })
             .eq('id', testId);
         }
@@ -627,7 +631,7 @@ export default function TestsDashboard() {
           .update({ 
             status: 'failed',
             last_run_at: new Date().toISOString(),
-            result_summary: `Chyba: ${error instanceof Error ? error.message : 'Neznámá chyba'}`,
+            result_summary: `${t('common.error')}: ${error instanceof Error ? error.message : t('toast.unknownError')}`,
           })
           .eq('id', testId);
         await fetchData();
@@ -637,7 +641,7 @@ export default function TestsDashboard() {
     setBulkRunning(false);
     setCurrentBulkIndex(null);
     setSelectedTests(new Set());
-    toast.success(`Dokončeno ${testIds.length} testů`);
+    toast.success(`${i18n.language === 'cs' ? 'Dokončeno' : 'Completed'} ${testIds.length} ${i18n.language === 'cs' ? 'testů' : 'tests'}`);
   };
 
   const getTestTitle = (testId: string | null) => {
@@ -655,14 +659,14 @@ export default function TestsDashboard() {
         'Test Step': '1',
         'Step Action': test.prompt,
         'Step Expected': test.expected_result || '',
-        'Priority': test.priority === 'high' ? 'Vysoká' : test.priority === 'medium' ? 'Střední' : 'Nízká',
-        'Status': test.status === 'passed' ? 'Prošel' : test.status === 'failed' ? 'Selhal' : test.status === 'running' ? 'Běží' : 'Čeká',
-        'Last Run': test.last_run_at ? new Date(test.last_run_at).toLocaleString('cs-CZ') : 'N/A',
+        'Priority': test.priority === 'high' ? t('priority.high') : test.priority === 'medium' ? t('priority.medium') : t('priority.low'),
+        'Status': test.status === 'passed' ? t('tests.passed') : test.status === 'failed' ? t('tests.failed') : test.status === 'running' ? t('tests.running') : t('tests.pending'),
+        'Last Run': test.last_run_at ? new Date(test.last_run_at).toLocaleString(dateLocale) : 'N/A',
         'Duration': formatDuration(test.execution_time_ms),
         'Result': test.result_summary || '',
         'Reasoning': test.result_reasoning || '',
         'Project': getProjectName(test.project_id),
-        'Created': new Date(test.created_at).toLocaleString('cs-CZ'),
+        'Created': new Date(test.created_at).toLocaleString(dateLocale),
       }));
 
       const ws = XLSX.utils.json_to_sheet(data);
@@ -676,10 +680,10 @@ export default function TestsDashboard() {
       ws['!cols'] = colWidths;
 
       XLSX.writeFile(wb, `test-results-${new Date().toISOString().split('T')[0]}.xlsx`);
-      toast.success('Export dokončen');
+      toast.success(i18n.language === 'cs' ? 'Export dokončen' : 'Export completed');
     } catch (error) {
       console.error('Export error:', error);
-      toast.error('Export se nezdařil');
+      toast.error(i18n.language === 'cs' ? 'Export se nezdařil' : 'Export failed');
     } finally {
       setExporting(false);
     }
@@ -701,7 +705,7 @@ export default function TestsDashboard() {
           <CardHeader className="pb-3">
             <div className="flex items-center gap-2">
               <Cloud className="h-5 w-5 text-primary animate-pulse" />
-              <CardTitle className="text-base">Běží na pozadí</CardTitle>
+              <CardTitle className="text-base">{t('tests.activeBatches')}</CardTitle>
             </div>
           </CardHeader>
           <CardContent className="space-y-3">
@@ -709,7 +713,7 @@ export default function TestsDashboard() {
               <div key={batch.id} className="space-y-2">
                 <div className="flex items-center justify-between text-sm">
                   <span>
-                    {batch.completed_tests}/{batch.total_tests} testů dokončeno
+                    {batch.completed_tests}/{batch.total_tests} {i18n.language === 'cs' ? 'testů dokončeno' : 'tests completed'}
                     {batch.passed_tests > 0 && (
                       <span className="text-success ml-2">✓ {batch.passed_tests}</span>
                     )}
@@ -718,7 +722,7 @@ export default function TestsDashboard() {
                     )}
                   </span>
                   <span className="text-muted-foreground">
-                    {batch.current_test_id && `Aktuální: ${getTestTitle(batch.current_test_id)}`}
+                    {batch.current_test_id && `${i18n.language === 'cs' ? 'Aktuální' : 'Current'}: ${getTestTitle(batch.current_test_id)}`}
                   </span>
                 </div>
                 <Progress 
@@ -735,7 +739,7 @@ export default function TestsDashboard() {
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-5">
         <Card>
           <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">Celkem testů</CardTitle>
+            <CardTitle className="text-sm font-medium text-muted-foreground">{t('tests.total')}</CardTitle>
             <TestTube className="h-5 w-5 text-primary" />
           </CardHeader>
           <CardContent>
@@ -744,7 +748,7 @@ export default function TestsDashboard() {
         </Card>
         <Card>
           <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">Čeká na spuštění</CardTitle>
+            <CardTitle className="text-sm font-medium text-muted-foreground">{t('tests.pending')}</CardTitle>
             <Clock className="h-5 w-5 text-muted-foreground" />
           </CardHeader>
           <CardContent>
@@ -753,7 +757,7 @@ export default function TestsDashboard() {
         </Card>
         <Card>
           <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">Prošlo</CardTitle>
+            <CardTitle className="text-sm font-medium text-muted-foreground">{t('tests.passed')}</CardTitle>
             <CheckCircle2 className="h-5 w-5 text-success" />
           </CardHeader>
           <CardContent>
@@ -762,7 +766,7 @@ export default function TestsDashboard() {
         </Card>
         <Card>
           <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">Selhalo</CardTitle>
+            <CardTitle className="text-sm font-medium text-muted-foreground">{t('tests.failed')}</CardTitle>
             <XCircle className="h-5 w-5 text-destructive" />
           </CardHeader>
           <CardContent>
@@ -771,7 +775,7 @@ export default function TestsDashboard() {
         </Card>
         <Card>
           <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">Úspěšnost</CardTitle>
+            <CardTitle className="text-sm font-medium text-muted-foreground">{t('tests.successRate')}</CardTitle>
             <TrendingUp className="h-5 w-5 text-primary" />
           </CardHeader>
           <CardContent>
@@ -787,18 +791,18 @@ export default function TestsDashboard() {
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
               <Filter className="h-5 w-5 text-muted-foreground" />
-              <CardTitle className="text-base">Filtry</CardTitle>
+              <CardTitle className="text-base">{t('common.filter')}</CardTitle>
             </div>
             <div className="flex items-center gap-2">
               {hasActiveFilters && (
                 <Button variant="ghost" size="sm" onClick={resetFilters}>
                   <X className="h-4 w-4 mr-1" />
-                  Resetovat
+                  {t('tests.resetFilters')}
                 </Button>
               )}
               <Button onClick={exportToExcel} disabled={exporting || sortedTests.length === 0}>
                 {exporting ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Download className="h-4 w-4 mr-2" />}
-                Exportovat do Excel
+                {t('tests.exportExcel')}
               </Button>
             </div>
           </div>
@@ -808,7 +812,7 @@ export default function TestsDashboard() {
             <div className="relative">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
               <Input
-                placeholder="Hledat test..."
+                placeholder={t('tests.searchPlaceholder')}
                 value={search}
                 onChange={(e) => { setSearch(e.target.value); setPage(1); }}
                 className="pl-9"
@@ -816,10 +820,10 @@ export default function TestsDashboard() {
             </div>
             <Select value={projectFilter} onValueChange={(v) => { setProjectFilter(v); setPage(1); }}>
               <SelectTrigger>
-                <SelectValue placeholder="Všechny projekty" />
+                <SelectValue placeholder={t('tests.allProjects')} />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="all">Všechny projekty</SelectItem>
+                <SelectItem value="all">{t('tests.allProjects')}</SelectItem>
                 {projects.map(project => (
                   <SelectItem key={project.id} value={project.id}>{project.name}</SelectItem>
                 ))}
@@ -827,25 +831,25 @@ export default function TestsDashboard() {
             </Select>
             <Select value={statusFilter} onValueChange={(v) => { setStatusFilter(v); setPage(1); }}>
               <SelectTrigger>
-                <SelectValue placeholder="Všechny stavy" />
+                <SelectValue placeholder={t('tests.allStatuses')} />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="all">Všechny stavy</SelectItem>
-                <SelectItem value="pending">Čeká</SelectItem>
-                <SelectItem value="running">Běží</SelectItem>
-                <SelectItem value="passed">Prošel</SelectItem>
-                <SelectItem value="failed">Selhal</SelectItem>
+                <SelectItem value="all">{t('tests.allStatuses')}</SelectItem>
+                <SelectItem value="pending">{t('tests.pending')}</SelectItem>
+                <SelectItem value="running">{t('tests.running')}</SelectItem>
+                <SelectItem value="passed">{t('tests.passed')}</SelectItem>
+                <SelectItem value="failed">{t('tests.failed')}</SelectItem>
               </SelectContent>
             </Select>
             <Select value={priorityFilter} onValueChange={(v) => { setPriorityFilter(v); setPage(1); }}>
               <SelectTrigger>
-                <SelectValue placeholder="Všechny priority" />
+                <SelectValue placeholder={t('tests.allPriorities')} />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="all">Všechny priority</SelectItem>
-                <SelectItem value="high">Vysoká</SelectItem>
-                <SelectItem value="medium">Střední</SelectItem>
-                <SelectItem value="low">Nízká</SelectItem>
+                <SelectItem value="all">{t('tests.allPriorities')}</SelectItem>
+                <SelectItem value="high">{t('priority.high')}</SelectItem>
+                <SelectItem value="medium">{t('priority.medium')}</SelectItem>
+                <SelectItem value="low">{t('priority.low')}</SelectItem>
               </SelectContent>
             </Select>
           </div>
@@ -857,9 +861,9 @@ export default function TestsDashboard() {
         <CardHeader>
           <div className="flex items-center justify-between flex-wrap gap-4">
             <div className="flex items-center gap-3">
-              <CardTitle>Výsledky testů ({sortedTests.length})</CardTitle>
+              <CardTitle>{t('tests.result')} ({sortedTests.length})</CardTitle>
               {selectedTests.size > 0 && (
-                <Badge variant="secondary">{selectedTests.size} vybráno</Badge>
+                <Badge variant="secondary">{selectedTests.size} {t('tests.selected')}</Badge>
               )}
             </div>
             <div className="flex items-center gap-4">
@@ -880,7 +884,7 @@ export default function TestsDashboard() {
                   ) : (
                     <CloudOff className="h-4 w-4 text-muted-foreground" />
                   )}
-                  Na pozadí
+                  {backgroundMode ? t('tests.backgroundMode') : t('tests.foregroundMode')}
                 </Label>
               </div>
               
@@ -893,17 +897,17 @@ export default function TestsDashboard() {
                 {bulkRunning ? (
                   <>
                     <Loader2 className="h-4 w-4 animate-spin" />
-                    Běží {currentBulkIndex !== null ? `(${currentBulkIndex + 1}/${selectedTests.size})` : '...'}
+                    {t('tests.runningTests')} {currentBulkIndex !== null ? `(${currentBulkIndex + 1}/${selectedTests.size})` : '...'}
                   </>
                 ) : backgroundMode ? (
                   <>
                     <Cloud className="h-4 w-4" />
-                    Spustit na pozadí ({selectedTests.size})
+                    {t('tests.runSelected')} ({selectedTests.size})
                   </>
                 ) : (
                   <>
                     <Play className="h-4 w-4" />
-                    Spustit vybrané ({selectedTests.size})
+                    {t('tests.runSelected')} ({selectedTests.size})
                   </>
                 )}
               </Button>
@@ -914,7 +918,7 @@ export default function TestsDashboard() {
           {sortedTests.length === 0 ? (
             <div className="text-center py-12 text-muted-foreground">
               <TestTube className="w-12 h-12 mx-auto mb-4 opacity-50" />
-              <p>Žádné testy nebyly nalezeny</p>
+              <p>{t('tests.noTests')}</p>
             </div>
           ) : (
             <>
@@ -935,17 +939,17 @@ export default function TestsDashboard() {
                         onClick={() => handleSort('title')}
                       >
                         <div className="flex items-center gap-1">
-                          Název testu
+                          {t('tests.testName')}
                           <ArrowUpDown className="h-4 w-4" />
                         </div>
                       </th>
-                      <th className="text-left p-3 font-medium text-muted-foreground">Projekt</th>
+                      <th className="text-left p-3 font-medium text-muted-foreground">{t('tests.project')}</th>
                       <th 
                         className="text-left p-3 font-medium text-muted-foreground cursor-pointer hover:text-foreground"
                         onClick={() => handleSort('priority')}
                       >
                         <div className="flex items-center gap-1">
-                          Priorita
+                          {t('tests.priority')}
                           <ArrowUpDown className="h-4 w-4" />
                         </div>
                       </th>
@@ -954,7 +958,7 @@ export default function TestsDashboard() {
                         onClick={() => handleSort('status')}
                       >
                         <div className="flex items-center gap-1">
-                          Status
+                          {t('tests.status')}
                           <ArrowUpDown className="h-4 w-4" />
                         </div>
                       </th>
@@ -963,12 +967,12 @@ export default function TestsDashboard() {
                         onClick={() => handleSort('last_run_at')}
                       >
                         <div className="flex items-center gap-1">
-                          Poslední běh
+                          {t('tests.lastRun')}
                           <ArrowUpDown className="h-4 w-4" />
                         </div>
                       </th>
-                      <th className="text-left p-3 font-medium text-muted-foreground">Čas běhu</th>
-                      <th className="text-left p-3 font-medium text-muted-foreground">Výsledek</th>
+                      <th className="text-left p-3 font-medium text-muted-foreground">{t('tests.runTime')}</th>
+                      <th className="text-left p-3 font-medium text-muted-foreground">{t('tests.result')}</th>
                       <th className="text-left p-3 font-medium text-muted-foreground w-20">Detail</th>
                     </tr>
                   </thead>
@@ -1002,7 +1006,7 @@ export default function TestsDashboard() {
                         <td className="p-3">{getStatusBadge(test.status)}</td>
                         <td className="p-3 text-sm text-muted-foreground">
                           {test.last_run_at 
-                            ? new Date(test.last_run_at).toLocaleString('cs-CZ', { 
+                            ? new Date(test.last_run_at).toLocaleString(dateLocale, { 
                                 day: '2-digit', 
                                 month: '2-digit', 
                                 hour: '2-digit', 
@@ -1047,7 +1051,7 @@ export default function TestsDashboard() {
               {totalPages > 1 && (
                 <div className="flex items-center justify-between mt-4 pt-4 border-t">
                   <p className="text-sm text-muted-foreground">
-                    Zobrazeno {((page - 1) * pageSize) + 1} - {Math.min(page * pageSize, sortedTests.length)} z {sortedTests.length}
+                    {i18n.language === 'cs' ? 'Zobrazeno' : 'Showing'} {((page - 1) * pageSize) + 1} - {Math.min(page * pageSize, sortedTests.length)} {i18n.language === 'cs' ? 'z' : 'of'} {sortedTests.length}
                   </p>
                   <div className="flex items-center gap-2">
                     <Button 
@@ -1056,10 +1060,10 @@ export default function TestsDashboard() {
                       onClick={() => setPage(p => Math.max(1, p - 1))}
                       disabled={page === 1}
                     >
-                      Předchozí
+                      {t('common.previous')}
                     </Button>
                     <span className="text-sm text-muted-foreground">
-                      Stránka {page} z {totalPages}
+                      {i18n.language === 'cs' ? 'Stránka' : 'Page'} {page} {i18n.language === 'cs' ? 'z' : 'of'} {totalPages}
                     </span>
                     <Button 
                       variant="outline" 
@@ -1067,7 +1071,7 @@ export default function TestsDashboard() {
                       onClick={() => setPage(p => Math.min(totalPages, p + 1))}
                       disabled={page === totalPages}
                     >
-                      Další
+                      {t('common.next')}
                     </Button>
                   </div>
                 </div>

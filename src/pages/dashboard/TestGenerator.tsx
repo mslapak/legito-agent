@@ -19,6 +19,7 @@ import { toast } from 'sonner';
 import { TestTube, Sparkles, Loader2, Play, Save, Trash2, FileText, Upload, X, ClipboardPaste, Table2, FileSpreadsheet, AlertCircle } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import { getDocument, GlobalWorkerOptions } from 'pdfjs-dist';
+import { useTranslation } from 'react-i18next';
 
 interface CsvPreviewRow {
   title: string;
@@ -54,6 +55,7 @@ interface GeneratedTestCase {
 }
 
 export default function TestGenerator() {
+  const { t, i18n } = useTranslation();
   const { session } = useAuth();
   const [description, setDescription] = useState('');
   const [documentation, setDocumentation] = useState('');
@@ -134,7 +136,9 @@ export default function TestGenerator() {
     // Check file size (max 10MB for PDFs, 1MB for text)
     const maxSize = file.name.toLowerCase().endsWith('.pdf') ? 10 * 1024 * 1024 : 1024 * 1024;
     if (file.size > maxSize) {
-      toast.error(`Soubor je příliš velký (max ${file.name.toLowerCase().endsWith('.pdf') ? '10MB' : '1MB'})`);
+      toast.error(i18n.language === 'cs' 
+        ? `Soubor je příliš velký (max ${file.name.toLowerCase().endsWith('.pdf') ? '10MB' : '1MB'})`
+        : `File is too large (max ${file.name.toLowerCase().endsWith('.pdf') ? '10MB' : '1MB'})`);
       return;
     }
 
@@ -145,7 +149,9 @@ export default function TestGenerator() {
     const hasAllowedTextExtension = allowedTextExtensions.some(ext => file.name.toLowerCase().endsWith(ext));
     
     if (!isPdf && !allowedTextTypes.includes(file.type) && !hasAllowedTextExtension) {
-      toast.error('Nepodporovaný formát. Použijte .pdf, .txt, .md nebo .json');
+      toast.error(i18n.language === 'cs' 
+        ? 'Nepodporovaný formát. Použijte .pdf, .txt, .md nebo .json'
+        : 'Unsupported format. Use .pdf, .txt, .md or .json');
       return;
     }
 
@@ -154,16 +160,20 @@ export default function TestGenerator() {
       
       if (isPdf) {
         setIsExtractingPdf(true);
-        toast.info('Extrahuji text z PDF...');
+        toast.info(t('testGenerator.extractingPdf'));
         text = await extractTextFromPdf(file);
         
         if (!text.trim()) {
-          toast.error('PDF neobsahuje čitelný text (možná obsahuje pouze obrázky)');
+          toast.error(i18n.language === 'cs' 
+            ? 'PDF neobsahuje čitelný text (možná obsahuje pouze obrázky)'
+            : 'PDF does not contain readable text (may contain only images)');
           setIsExtractingPdf(false);
           return;
         }
         
-        toast.success(`Text extrahován z PDF (${text.length} znaků)`);
+        toast.success(i18n.language === 'cs' 
+          ? `Text extrahován z PDF (${text.length} znaků)`
+          : `Text extracted from PDF (${text.length} characters)`);
       } else {
         text = await file.text();
       }
@@ -171,11 +181,13 @@ export default function TestGenerator() {
       setDocumentation(text);
       setUploadedFileName(file.name);
       if (!isPdf) {
-        toast.success(`Soubor "${file.name}" načten`);
+        toast.success(i18n.language === 'cs' 
+          ? `Soubor "${file.name}" načten`
+          : `File "${file.name}" loaded`);
       }
     } catch (error) {
       console.error('Error reading file:', error);
-      toast.error('Nepodařilo se přečíst soubor');
+      toast.error(i18n.language === 'cs' ? 'Nepodařilo se přečíst soubor' : 'Failed to read file');
     } finally {
       setIsExtractingPdf(false);
     }
@@ -192,7 +204,7 @@ export default function TestGenerator() {
   // Parse tests from raw text using AI
   const handleParseFromText = async () => {
     if (!rawTestsInput.trim()) {
-      toast.error('Vložte text s testy');
+      toast.error(i18n.language === 'cs' ? 'Vložte text s testy' : 'Paste text with tests');
       return;
     }
 
@@ -237,19 +249,19 @@ export default function TestGenerator() {
             if (insertError) {
               console.error('Error saving tests to DB:', insertError);
             } else {
-              toast.success(`Importováno a uloženo ${response.data.testCases.length} testů do projektu`);
+              toast.success(t('testGenerator.testsImportedAndSaved', { count: response.data.testCases.length }));
               return;
             }
           }
         }
         
-        toast.success(`Importováno ${response.data.testCases.length} testů`);
+        toast.success(t('testGenerator.testsImported', { count: response.data.testCases.length }));
       } else {
-        toast.error('Nepodařilo se parsovat testy');
+        toast.error(i18n.language === 'cs' ? 'Nepodařilo se parsovat testy' : 'Failed to parse tests');
       }
     } catch (error) {
       console.error('Error parsing tests:', error);
-      toast.error(error instanceof Error ? error.message : 'Chyba při parsování testů');
+      toast.error(error instanceof Error ? error.message : t('toast.unknownError'));
     } finally {
       setIsParsingText(false);
     }
@@ -271,7 +283,9 @@ export default function TestGenerator() {
     const priorityIdx = headers.findIndex(h => ['priority', 'priorita', 'severity', 'importance'].includes(h));
     
     if (titleIdx === -1 || promptIdx === -1) {
-      throw new Error('CSV musí obsahovat sloupce "title" a "prompt" (nebo jejich varianty)');
+      throw new Error(i18n.language === 'cs' 
+        ? 'CSV musí obsahovat sloupce "title" a "prompt" (nebo jejich varianty)'
+        : 'CSV must contain "title" and "prompt" columns (or their variants)');
     }
     
     return lines.slice(1).map(line => {
@@ -311,12 +325,12 @@ export default function TestGenerator() {
     if (!file) return;
 
     if (!file.name.toLowerCase().endsWith('.csv')) {
-      toast.error('Nahrajte soubor ve formátu CSV');
+      toast.error(i18n.language === 'cs' ? 'Nahrajte soubor ve formátu CSV' : 'Upload a CSV file');
       return;
     }
 
     if (file.size > 5 * 1024 * 1024) {
-      toast.error('Soubor je příliš velký (max 5MB)');
+      toast.error(i18n.language === 'cs' ? 'Soubor je příliš velký (max 5MB)' : 'File is too large (max 5MB)');
       return;
     }
 
@@ -325,7 +339,7 @@ export default function TestGenerator() {
       const parsed = parseCSV(text);
       
       if (parsed.length === 0) {
-        toast.error('CSV neobsahuje žádné validní testy');
+        toast.error(i18n.language === 'cs' ? 'CSV neobsahuje žádné validní testy' : 'CSV does not contain any valid tests');
         return;
       }
       
@@ -338,10 +352,12 @@ export default function TestGenerator() {
         priority: row.priority as 'low' | 'medium' | 'high',
       })));
       
-      toast.success(`Načteno ${parsed.length} testů z CSV`);
+      toast.success(i18n.language === 'cs' 
+        ? `Načteno ${parsed.length} testů z CSV`
+        : `Loaded ${parsed.length} tests from CSV`);
     } catch (error) {
       console.error('Error parsing CSV:', error);
-      toast.error(error instanceof Error ? error.message : 'Chyba při čtení CSV');
+      toast.error(error instanceof Error ? error.message : t('toast.unknownError'));
     }
   };
 
@@ -356,7 +372,7 @@ export default function TestGenerator() {
 
   const handleImportCsv = async () => {
     if (parsedCsvTests.length === 0) {
-      toast.error('Nejsou načteny žádné testy');
+      toast.error(i18n.language === 'cs' ? 'Nejsou načteny žádné testy' : 'No tests loaded');
       return;
     }
 
@@ -384,7 +400,7 @@ export default function TestGenerator() {
           if (insertError) {
             console.error('Error saving tests to DB:', insertError);
           } else {
-            toast.success(`Importováno a uloženo ${parsedCsvTests.length} testů do projektu`);
+            toast.success(t('testGenerator.testsImportedAndSaved', { count: parsedCsvTests.length }));
             return;
           }
         }
@@ -393,7 +409,7 @@ export default function TestGenerator() {
       }
     }
     
-    toast.success(`Importováno ${parsedCsvTests.length} testů`);
+    toast.success(t('testGenerator.testsImported', { count: parsedCsvTests.length }));
   };
 
   // Azure DevOps XLSX parsing
@@ -437,16 +453,18 @@ export default function TestGenerator() {
       !s.action.toLowerCase().startsWith('objective:')
     );
     
-    const prompt = `Proveď následující kroky:\n${
-      actionSteps.map(s => `${s.stepNumber}. ${s.action}`).join('\n')
-    }`;
+    const prompt = i18n.language === 'cs' 
+      ? `Proveď následující kroky:\n${actionSteps.map(s => `${s.stepNumber}. ${s.action}`).join('\n')}`
+      : `Perform the following steps:\n${actionSteps.map(s => `${s.stepNumber}. ${s.action}`).join('\n')}`;
     
     const expectedResults = actionSteps
       .filter(s => s.expected)
       .map(s => s.expected);
     
     const expectedResult = expectedResults.length > 0 
-      ? `Očekávaný výsledek:\n${expectedResults.map((e, i) => `${i + 1}. ${e}`).join('\n')}`
+      ? (i18n.language === 'cs' 
+          ? `Očekávaný výsledek:\n${expectedResults.map((e, i) => `${i + 1}. ${e}`).join('\n')}`
+          : `Expected result:\n${expectedResults.map((e, i) => `${i + 1}. ${e}`).join('\n')}`)
       : '';
     
     return {
@@ -463,12 +481,12 @@ export default function TestGenerator() {
 
     const isXlsx = file.name.toLowerCase().endsWith('.xlsx') || file.name.toLowerCase().endsWith('.xls');
     if (!isXlsx) {
-      toast.error('Nahrajte soubor ve formátu XLSX nebo XLS');
+      toast.error(i18n.language === 'cs' ? 'Nahrajte soubor ve formátu XLSX nebo XLS' : 'Upload an XLSX or XLS file');
       return;
     }
 
     if (file.size > 10 * 1024 * 1024) {
-      toast.error('Soubor je příliš velký (max 10MB)');
+      toast.error(i18n.language === 'cs' ? 'Soubor je příliš velký (max 10MB)' : 'File is too large (max 10MB)');
       return;
     }
 
@@ -478,7 +496,9 @@ export default function TestGenerator() {
       const parsed = parseAzureDevOpsExport(workbook);
       
       if (parsed.length === 0) {
-        toast.error('Soubor neobsahuje žádné validní testy z Azure DevOps');
+        toast.error(i18n.language === 'cs' 
+          ? 'Soubor neobsahuje žádné validní testy z Azure DevOps'
+          : 'File does not contain any valid Azure DevOps tests');
         return;
       }
       
@@ -486,10 +506,12 @@ export default function TestGenerator() {
       setXlsxPreview(parsed.slice(0, 5));
       setParsedAzureTests(parsed.map(convertAzureTestToGenerated));
       
-      toast.success(`Načteno ${parsed.length} testů z Azure DevOps`);
+      toast.success(i18n.language === 'cs' 
+        ? `Načteno ${parsed.length} testů z Azure DevOps`
+        : `Loaded ${parsed.length} tests from Azure DevOps`);
     } catch (error) {
       console.error('Error parsing XLSX:', error);
-      toast.error('Chyba při čtení XLSX souboru');
+      toast.error(i18n.language === 'cs' ? 'Chyba při čtení XLSX souboru' : 'Error reading XLSX file');
     }
   };
 
@@ -504,7 +526,7 @@ export default function TestGenerator() {
 
   const handleImportAzure = async () => {
     if (parsedAzureTests.length === 0) {
-      toast.error('Nejsou načteny žádné testy');
+      toast.error(i18n.language === 'cs' ? 'Nejsou načteny žádné testy' : 'No tests loaded');
       return;
     }
 
@@ -534,7 +556,7 @@ export default function TestGenerator() {
           if (insertError) {
             console.error('Error saving tests to DB:', insertError);
           } else {
-            toast.success(`Importováno a uloženo ${parsedAzureTests.length} testů do projektu`);
+            toast.success(t('testGenerator.testsImportedAndSaved', { count: parsedAzureTests.length }));
             setIsImportingAzure(false);
             return;
           }
@@ -545,7 +567,7 @@ export default function TestGenerator() {
     }
     
     setIsImportingAzure(false);
-    toast.success(`Importováno ${parsedAzureTests.length} testů`);
+    toast.success(t('testGenerator.testsImported', { count: parsedAzureTests.length }));
   };
 
   const handleGenerate = async () => {
@@ -553,8 +575,8 @@ export default function TestGenerator() {
     
     if (!contentToAnalyze.trim()) {
       toast.error(sourceTab === 'documentation' 
-        ? 'Vložte nebo nahrajte dokumentaci' 
-        : 'Zadejte popis aplikace nebo funkce');
+        ? (i18n.language === 'cs' ? 'Vložte nebo nahrajte dokumentaci' : 'Paste or upload documentation')
+        : (i18n.language === 'cs' ? 'Zadejte popis aplikace nebo funkce' : 'Enter application or feature description'));
       return;
     }
 
@@ -601,19 +623,19 @@ export default function TestGenerator() {
             if (insertError) {
               console.error('Error saving tests to DB:', insertError);
             } else {
-              toast.success(`Vygenerováno a uloženo ${response.data.testCases.length} testů do projektu`);
+              toast.success(t('testGenerator.testsImportedAndSaved', { count: response.data.testCases.length }));
               return;
             }
           }
         }
         
-        toast.success(`Vygenerováno ${response.data.testCases.length} testů`);
+        toast.success(t('testGenerator.testsImported', { count: response.data.testCases.length }));
       } else {
-        toast.error('Nepodařilo se vygenerovat testy');
+        toast.error(i18n.language === 'cs' ? 'Nepodařilo se vygenerovat testy' : 'Failed to generate tests');
       }
     } catch (error) {
       console.error('Error generating tests:', error);
-      toast.error(error instanceof Error ? error.message : 'Chyba při generování testů');
+      toast.error(error instanceof Error ? error.message : t('toast.unknownError'));
     } finally {
       setIsLoading(false);
     }
@@ -634,10 +656,10 @@ export default function TestGenerator() {
         throw new Error(response.error.message);
       }
 
-      toast.success('Test byl spuštěn');
+      toast.success(i18n.language === 'cs' ? 'Test byl spuštěn' : 'Test started');
     } catch (error) {
       console.error('Error running test:', error);
-      toast.error('Nepodařilo se spustit test');
+      toast.error(i18n.language === 'cs' ? 'Nepodařilo se spustit test' : 'Failed to start test');
     }
   };
 
@@ -645,7 +667,7 @@ export default function TestGenerator() {
     setSavingIndex(index);
     try {
       const { data: { user } } = await supabase.auth.getUser();
-      if (!user) throw new Error('Uživatel není přihlášen');
+      if (!user) throw new Error(i18n.language === 'cs' ? 'Uživatel není přihlášen' : 'User not logged in');
 
       const { error } = await supabase
         .from('test_cases')
@@ -659,10 +681,10 @@ export default function TestGenerator() {
         });
 
       if (error) throw error;
-      toast.success('Test uložen');
+      toast.success(t('testGenerator.testSaved'));
     } catch (error) {
       console.error('Error saving test:', error);
-      toast.error('Nepodařilo se uložit test');
+      toast.error(t('testGenerator.saveFailed'));
     } finally {
       setSavingIndex(null);
     }
@@ -675,11 +697,11 @@ export default function TestGenerator() {
   const getPriorityBadge = (priority: string) => {
     switch (priority) {
       case 'high':
-        return <Badge variant="destructive">Vysoká</Badge>;
+        return <Badge variant="destructive">{t('priority.high')}</Badge>;
       case 'medium':
-        return <Badge className="bg-warning text-warning-foreground">Střední</Badge>;
+        return <Badge className="bg-warning text-warning-foreground">{t('priority.medium')}</Badge>;
       case 'low':
-        return <Badge variant="secondary">Nízká</Badge>;
+        return <Badge variant="secondary">{t('priority.low')}</Badge>;
       default:
         return <Badge variant="outline">{priority}</Badge>;
     }
@@ -695,9 +717,9 @@ export default function TestGenerator() {
               <TestTube className="w-6 h-6 text-accent-foreground" />
             </div>
             <div>
-              <CardTitle>AI Generátor testů</CardTitle>
+              <CardTitle>{t('testGenerator.title')}</CardTitle>
               <CardDescription>
-                Vygenerujte testy z popisu aplikace nebo z dokumentace
+                {t('testGenerator.subtitle')}
               </CardDescription>
             </div>
           </div>
@@ -705,13 +727,13 @@ export default function TestGenerator() {
         <CardContent className="space-y-6">
           <div className="grid gap-4 md:grid-cols-2">
             <div className="space-y-2">
-              <Label>Projekt (volitelný)</Label>
+              <Label>{t('newTask.projectOptional')}</Label>
               <Select value={projectId || "none"} onValueChange={(val) => handleProjectChange(val === "none" ? "" : val)}>
                 <SelectTrigger>
-                  <SelectValue placeholder="Vyberte projekt" />
+                  <SelectValue placeholder={t('newTask.selectProject')} />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="none">Bez projektu</SelectItem>
+                  <SelectItem value="none">{t('newTask.noProject')}</SelectItem>
                   {projects.map((project) => (
                     <SelectItem key={project.id} value={project.id}>
                       {project.name}
@@ -722,26 +744,26 @@ export default function TestGenerator() {
             </div>
 
             <div className="space-y-2">
-              <Label>Typ testů</Label>
+              <Label>{t('testGenerator.testType')}</Label>
               <Select value={testType} onValueChange={setTestType}>
                 <SelectTrigger>
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="functional">Funkční testy</SelectItem>
-                  <SelectItem value="e2e">End-to-end testy</SelectItem>
-                  <SelectItem value="smoke">Smoke testy</SelectItem>
-                  <SelectItem value="regression">Regresní testy</SelectItem>
-                  <SelectItem value="ui">UI/UX testy</SelectItem>
+                  <SelectItem value="functional">{t('testGenerator.functional')}</SelectItem>
+                  <SelectItem value="e2e">{t('testGenerator.e2e')}</SelectItem>
+                  <SelectItem value="smoke">{t('testGenerator.smoke')}</SelectItem>
+                  <SelectItem value="regression">{t('testGenerator.regression')}</SelectItem>
+                  <SelectItem value="ui">UI/UX</SelectItem>
                 </SelectContent>
               </Select>
             </div>
           </div>
 
           <div className="space-y-2">
-            <Label>URL aplikace (volitelné)</Label>
+            <Label>{t('testGenerator.baseUrl')} ({t('common.optional')})</Label>
             <Input
-              placeholder="https://vase-aplikace.cz"
+              placeholder={t('testGenerator.baseUrlPlaceholder')}
               value={baseUrl}
               onChange={(e) => setBaseUrl(e.target.value)}
             />
@@ -752,7 +774,7 @@ export default function TestGenerator() {
             <TabsList className="grid w-full grid-cols-5">
               <TabsTrigger value="description" className="flex items-center gap-2">
                 <Sparkles className="w-4 h-4" />
-                <span className="hidden lg:inline">Popis</span>
+                <span className="hidden lg:inline">{t('testGenerator.sourceDescription')}</span>
               </TabsTrigger>
               <TabsTrigger value="documentation" className="flex items-center gap-2">
                 <FileText className="w-4 h-4" />
@@ -773,9 +795,9 @@ export default function TestGenerator() {
             </TabsList>
 
             <TabsContent value="description" className="space-y-2 mt-4">
-              <Label>Popis aplikace / funkce *</Label>
+              <Label>{t('testGenerator.appDescription')} *</Label>
               <Textarea
-                placeholder="Popište, co chcete testovat. Např.: E-shop s košíkem, přihlášením uživatelů a platební bránou..."
+                placeholder={t('testGenerator.appDescriptionPlaceholder')}
                 value={description}
                 onChange={(e) => setDescription(e.target.value)}
                 rows={5}
@@ -785,7 +807,7 @@ export default function TestGenerator() {
 
             <TabsContent value="documentation" className="space-y-4 mt-4">
               <div className="space-y-2">
-                <Label>Nahrát dokumentaci</Label>
+                <Label>{t('testGenerator.uploadFile')}</Label>
                 <div className="flex items-center gap-3">
                   <input
                     ref={fileInputRef}
@@ -805,12 +827,12 @@ export default function TestGenerator() {
                     {isExtractingPdf ? (
                       <>
                         <Loader2 className="w-4 h-4 animate-spin" />
-                        Extrahuji PDF...
+                        {t('testGenerator.extractingPdf')}
                       </>
                     ) : (
                       <>
                         <Upload className="w-4 h-4" />
-                        Nahrát soubor
+                        {t('testGenerator.uploadFile')}
                       </>
                     )}
                   </Button>
@@ -831,7 +853,7 @@ export default function TestGenerator() {
                   )}
                 </div>
                 <p className="text-xs text-muted-foreground">
-                  Podporované formáty: .pdf, .txt, .md, .json (PDF max 10MB, ostatní max 1MB)
+                  {t('testGenerator.supportedFormats')}
                 </p>
               </div>
 
@@ -841,15 +863,15 @@ export default function TestGenerator() {
                   <div className="flex items-center justify-between">
                     <Label className="flex items-center gap-2">
                       <FileText className="w-4 h-4 text-primary" />
-                      Náhled extrahovaného textu
+                      {i18n.language === 'cs' ? 'Náhled extrahovaného textu' : 'Preview of extracted text'}
                     </Label>
-                    <Badge variant="secondary">{documentation.length.toLocaleString()} znaků</Badge>
+                    <Badge variant="secondary">{documentation.length.toLocaleString()} {i18n.language === 'cs' ? 'znaků' : 'chars'}</Badge>
                   </div>
                   <div className="relative">
                     <div className="max-h-48 overflow-y-auto rounded-lg border border-border bg-muted/30 p-4">
                       <pre className="text-xs text-muted-foreground whitespace-pre-wrap font-mono">
                         {documentation.length > 2000 
-                          ? documentation.substring(0, 2000) + '\n\n... (zkráceno pro náhled)' 
+                          ? documentation.substring(0, 2000) + (i18n.language === 'cs' ? '\n\n... (zkráceno pro náhled)' : '\n\n... (truncated for preview)')
                           : documentation}
                       </pre>
                     </div>
@@ -861,20 +883,9 @@ export default function TestGenerator() {
               )}
 
               <div className="space-y-2">
-                <Label>Nebo vložte dokumentaci přímo *</Label>
+                <Label>{t('testGenerator.documentation')} *</Label>
                 <Textarea
-                  placeholder={`Vložte obsah dokumentace, návodů nebo specifikace. Např.:
-
-# Přihlášení uživatele
-1. Uživatel otevře stránku /login
-2. Vyplní email a heslo
-3. Klikne na tlačítko "Přihlásit se"
-4. Při správných údajích je přesměrován na dashboard
-5. Při chybných údajích se zobrazí chybová hláška
-
-# Registrace
-1. Uživatel otevře stránku /register
-...`}
+                  placeholder={t('testGenerator.documentationPlaceholder')}
                   value={documentation}
                   onChange={(e) => setDocumentation(e.target.value)}
                   rows={10}
@@ -885,36 +896,23 @@ export default function TestGenerator() {
 
             <TabsContent value="import_text" className="space-y-4 mt-4">
               <div className="space-y-2">
-                <Label>Vložte testy z Azure DevOps nebo jiného zdroje *</Label>
+                <Label>{t('testGenerator.pasteTests')} *</Label>
                 <Textarea
-                  placeholder={`Vložte testy v libovolném formátu. Např.:
-
-TC001: Přihlášení uživatele
-Kroky: Otevřít stránku /login, zadat email test@example.com a heslo, kliknout na "Přihlásit"
-Očekávaný výsledek: Uživatel je přesměrován na dashboard
-
-TC002: Registrace nového uživatele  
-Kroky: Otevřít /register, vyplnit formulář, potvrdit
-Očekávaný výsledek: Účet je vytvořen
-
-Nebo:
-1. Test přihlášení - zkontrolovat login flow
-2. Test odhlášení - ověřit logout
-...`}
+                  placeholder={t('testGenerator.pasteTestsPlaceholder')}
                   value={rawTestsInput}
                   onChange={(e) => setRawTestsInput(e.target.value)}
                   rows={12}
                   className="resize-none font-mono text-sm"
                 />
                 <p className="text-xs text-muted-foreground">
-                  AI automaticky rozpozná formát a extrahuje strukturované testy (název, kroky, očekávaný výsledek, priorita)
+                  {t('testGenerator.pasteTestsHelp')}
                 </p>
               </div>
             </TabsContent>
 
             <TabsContent value="import_csv" className="space-y-4 mt-4">
               <div className="space-y-2">
-                <Label>Nahrát CSV soubor s testy</Label>
+                <Label>{t('testGenerator.csvUpload')}</Label>
                 <div className="flex items-center gap-3">
                   <input
                     ref={csvInputRef}
@@ -931,13 +929,13 @@ Nebo:
                     className="flex items-center gap-2"
                   >
                     <Upload className="w-4 h-4" />
-                    Nahrát CSV
+                    {t('testGenerator.csvUpload')}
                   </Button>
                   {csvFile && (
                     <div className="flex items-center gap-2 text-sm text-muted-foreground">
                       <Table2 className="w-4 h-4" />
                       <span>{csvFile.name}</span>
-                      <Badge variant="secondary">{parsedCsvTests.length} testů</Badge>
+                      <Badge variant="secondary">{parsedCsvTests.length} {i18n.language === 'cs' ? 'testů' : 'tests'}</Badge>
                       <Button
                         type="button"
                         variant="ghost"
@@ -951,7 +949,7 @@ Nebo:
                   )}
                 </div>
                 <p className="text-xs text-muted-foreground">
-                  CSV musí obsahovat sloupce: <code className="bg-muted px-1 rounded">title</code>, <code className="bg-muted px-1 rounded">prompt</code> (nebo steps), volitelně <code className="bg-muted px-1 rounded">expected_result</code>, <code className="bg-muted px-1 rounded">priority</code>
+                  {t('testGenerator.csvHelp')}
                 </p>
               </div>
 
@@ -960,7 +958,7 @@ Nebo:
                 <div className="space-y-2">
                   <Label className="flex items-center gap-2">
                     <Table2 className="w-4 h-4 text-primary" />
-                    Náhled (prvních {Math.min(5, parsedCsvTests.length)} z {parsedCsvTests.length} testů)
+                    {t('testGenerator.csvPreview')} ({Math.min(5, parsedCsvTests.length)}/{parsedCsvTests.length})
                   </Label>
                   <div className="rounded-lg border border-border overflow-hidden">
                     <div className="overflow-x-auto">
@@ -968,9 +966,9 @@ Nebo:
                         <thead className="bg-muted/50">
                           <tr>
                             <th className="px-3 py-2 text-left font-medium">#</th>
-                            <th className="px-3 py-2 text-left font-medium">Název</th>
-                            <th className="px-3 py-2 text-left font-medium">Priorita</th>
-                            <th className="px-3 py-2 text-left font-medium">Kroky</th>
+                            <th className="px-3 py-2 text-left font-medium">{t('tests.testName')}</th>
+                            <th className="px-3 py-2 text-left font-medium">{t('tests.priority')}</th>
+                            <th className="px-3 py-2 text-left font-medium">{t('taskDetail.steps')}</th>
                           </tr>
                         </thead>
                         <tbody>
@@ -983,7 +981,7 @@ Nebo:
                                   variant={row.priority === 'high' ? 'destructive' : row.priority === 'low' ? 'secondary' : 'outline'}
                                   className={row.priority === 'medium' ? 'bg-warning text-warning-foreground' : ''}
                                 >
-                                  {row.priority === 'high' ? 'Vysoká' : row.priority === 'low' ? 'Nízká' : 'Střední'}
+                                  {row.priority === 'high' ? t('priority.high') : row.priority === 'low' ? t('priority.low') : t('priority.medium')}
                                 </Badge>
                               </td>
                               <td className="px-3 py-2 max-w-[300px] truncate text-muted-foreground">{row.prompt}</td>
@@ -1002,16 +1000,18 @@ Nebo:
                 <div className="rounded-lg border border-warning bg-warning/10 p-4 flex items-start gap-3">
                   <AlertCircle className="w-5 h-5 text-warning mt-0.5 flex-shrink-0" />
                   <div>
-                    <p className="font-medium text-warning">Nejprve vyberte projekt</p>
+                    <p className="font-medium text-warning">{i18n.language === 'cs' ? 'Nejprve vyberte projekt' : 'Select a project first'}</p>
                     <p className="text-sm text-muted-foreground mt-1">
-                      Pro import testů z Azure DevOps musíte nejprve vybrat projekt v sekci "Přiřadit k projektu" výše.
+                      {i18n.language === 'cs' 
+                        ? 'Pro import testů z Azure DevOps musíte nejprve vybrat projekt v sekci výše.'
+                        : 'To import tests from Azure DevOps, you must first select a project above.'}
                     </p>
                   </div>
                 </div>
               )}
               
               <div className="space-y-2">
-                <Label>Nahrát export z Azure DevOps</Label>
+                <Label>{t('testGenerator.azureUpload')}</Label>
                 <div className="flex items-center gap-3">
                   <input
                     ref={xlsxInputRef}
@@ -1027,7 +1027,7 @@ Nebo:
                     variant="outline"
                     onClick={() => {
                       if (!projectId) {
-                        toast.error("Nejprve vyberte projekt");
+                        toast.error(i18n.language === 'cs' ? "Nejprve vyberte projekt" : "Select a project first");
                         return;
                       }
                       xlsxInputRef.current?.click();
@@ -1036,13 +1036,13 @@ Nebo:
                     disabled={!projectId}
                   >
                     <Upload className="w-4 h-4" />
-                    Nahrát XLSX
+                    {i18n.language === 'cs' ? 'Nahrát XLSX' : 'Upload XLSX'}
                   </Button>
                   {xlsxFile && (
                     <div className="flex items-center gap-2 text-sm text-muted-foreground">
                       <FileSpreadsheet className="w-4 h-4" />
                       <span>{xlsxFile.name}</span>
-                      <Badge variant="secondary">{parsedAzureTests.length} testů</Badge>
+                      <Badge variant="secondary">{parsedAzureTests.length} {i18n.language === 'cs' ? 'testů' : 'tests'}</Badge>
                       <Button
                         type="button"
                         variant="ghost"
@@ -1056,7 +1056,7 @@ Nebo:
                   )}
                 </div>
                 <p className="text-xs text-muted-foreground">
-                  Exportujte testy z Azure DevOps jako Excel a nahrajte sem. Systém automaticky extrahuje test cases a kroky.
+                  {t('testGenerator.azureHelp')}
                 </p>
               </div>
 
@@ -1065,7 +1065,7 @@ Nebo:
                 <div className="space-y-2">
                   <Label className="flex items-center gap-2">
                     <FileSpreadsheet className="w-4 h-4 text-primary" />
-                    Náhled (prvních {Math.min(5, parsedAzureTests.length)} z {parsedAzureTests.length} testů)
+                    {t('testGenerator.azurePreview')} ({Math.min(5, parsedAzureTests.length)}/{parsedAzureTests.length})
                   </Label>
                   <div className="rounded-lg border border-border overflow-hidden">
                     <div className="overflow-x-auto">
@@ -1073,9 +1073,9 @@ Nebo:
                         <thead className="bg-muted/50">
                           <tr>
                             <th className="px-3 py-2 text-left font-medium">ID</th>
-                            <th className="px-3 py-2 text-left font-medium">Název</th>
-                            <th className="px-3 py-2 text-left font-medium">Kroky</th>
-                            <th className="px-3 py-2 text-left font-medium">První krok</th>
+                            <th className="px-3 py-2 text-left font-medium">{t('tests.testName')}</th>
+                            <th className="px-3 py-2 text-left font-medium">{t('taskDetail.steps')}</th>
+                            <th className="px-3 py-2 text-left font-medium">{i18n.language === 'cs' ? 'První krok' : 'First step'}</th>
                           </tr>
                         </thead>
                         <tbody>
@@ -1084,7 +1084,7 @@ Nebo:
                               <td className="px-3 py-2 text-muted-foreground">{test.id}</td>
                               <td className="px-3 py-2 font-medium max-w-[200px] truncate">{test.title}</td>
                               <td className="px-3 py-2">
-                                <Badge variant="outline">{test.steps.length} kroků</Badge>
+                                <Badge variant="outline">{test.steps.length} {i18n.language === 'cs' ? 'kroků' : 'steps'}</Badge>
                               </td>
                               <td className="px-3 py-2 max-w-[300px] truncate text-muted-foreground">
                                 {test.steps[0]?.action || '-'}
@@ -1110,12 +1110,12 @@ Nebo:
               {isLoading ? (
                 <>
                   <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  Generuji testy...
+                  {t('testGenerator.generatingTests')}
                 </>
               ) : (
                 <>
                   <Sparkles className="mr-2 h-4 w-4" />
-                  Vygenerovat testy
+                  {t('testGenerator.generateTests')}
                 </>
               )}
             </Button>
@@ -1130,12 +1130,12 @@ Nebo:
               {isParsingText ? (
                 <>
                   <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  Zpracovávám testy...
+                  {t('testGenerator.parsingTests')}
                 </>
               ) : (
                 <>
                   <ClipboardPaste className="mr-2 h-4 w-4" />
-                  Importovat testy z textu
+                  {t('testGenerator.parseTests')}
                 </>
               )}
             </Button>
@@ -1148,7 +1148,7 @@ Nebo:
               className="w-full gradient-primary"
             >
               <Table2 className="mr-2 h-4 w-4" />
-              Importovat {parsedCsvTests.length} testů z CSV
+              {t('testGenerator.importCsv')} ({parsedCsvTests.length})
             </Button>
           )}
 
@@ -1161,12 +1161,12 @@ Nebo:
               {isImportingAzure ? (
                 <>
                   <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  Importuji testy...
+                  {t('testGenerator.importingAzure')}
                 </>
               ) : (
                 <>
                   <FileSpreadsheet className="mr-2 h-4 w-4" />
-                  Importovat {parsedAzureTests.length} testů z Azure DevOps
+                  {t('testGenerator.importAzure')} ({parsedAzureTests.length})
                 </>
               )}
             </Button>
@@ -1178,9 +1178,11 @@ Nebo:
       {generatedTests.length > 0 && (
         <Card>
           <CardHeader>
-            <CardTitle>Vygenerované testy ({generatedTests.length})</CardTitle>
+            <CardTitle>{t('testGenerator.generatedTests')} ({generatedTests.length})</CardTitle>
             <CardDescription>
-              Můžete testy spustit přímo nebo je uložit pro pozdější použití
+              {i18n.language === 'cs' 
+                ? 'Můžete testy spustit přímo nebo je uložit pro pozdější použití'
+                : 'You can run tests directly or save them for later use'}
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
@@ -1236,7 +1238,7 @@ Nebo:
                     <p className="text-sm">{test.prompt}</p>
                   </div>
                   <div>
-                    <p className="text-sm text-muted-foreground">Očekávaný výsledek:</p>
+                    <p className="text-sm text-muted-foreground">{t('testGenerator.expectedResult')}:</p>
                     <p className="text-sm">{test.expectedResult}</p>
                   </div>
                 </div>
@@ -1249,14 +1251,14 @@ Nebo:
                 onClick={() => generatedTests.forEach((t, i) => saveTestCase(t, i))}
               >
                 <Save className="mr-2 h-4 w-4" />
-                Uložit všechny
+                {i18n.language === 'cs' ? 'Uložit všechny' : 'Save all'}
               </Button>
               <Button
                 className="gradient-primary"
                 onClick={() => generatedTests.forEach(t => runTest(t))}
               >
                 <Play className="mr-2 h-4 w-4" />
-                Spustit všechny
+                {i18n.language === 'cs' ? 'Spustit všechny' : 'Run all'}
               </Button>
             </div>
           </CardContent>

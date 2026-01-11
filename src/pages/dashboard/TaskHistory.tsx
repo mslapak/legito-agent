@@ -36,6 +36,7 @@ import {
   AlertDialogTrigger,
 } from '@/components/ui/alert-dialog';
 import { toast } from 'sonner';
+import { useTranslation } from 'react-i18next';
 
 interface Task {
   id: string;
@@ -48,6 +49,7 @@ interface Task {
 }
 
 export default function TaskHistory() {
+  const { t, i18n } = useTranslation();
   const { user } = useAuth();
   const navigate = useNavigate();
   const [tasks, setTasks] = useState<Task[]>([]);
@@ -104,26 +106,26 @@ export default function TaskHistory() {
         .eq('id', taskId);
 
       if (error) throw error;
-      toast.success('Úkol byl smazán');
+      toast.success(t('taskHistory.taskDeleted'));
       fetchTasks();
     } catch (error) {
       console.error('Error deleting task:', error);
-      toast.error('Nepodařilo se smazat úkol');
+      toast.error(t('taskHistory.deleteFailed'));
     }
   };
 
   const getStatusBadge = (status: string) => {
     switch (status) {
       case 'running':
-        return <Badge className="bg-warning text-warning-foreground"><Loader2 className="w-3 h-3 mr-1 animate-spin" />Běží</Badge>;
+        return <Badge className="bg-warning text-warning-foreground"><Loader2 className="w-3 h-3 mr-1 animate-spin" />{t('status.running')}</Badge>;
       case 'pending':
-        return <Badge variant="secondary"><Clock className="w-3 h-3 mr-1" />Čeká</Badge>;
+        return <Badge variant="secondary"><Clock className="w-3 h-3 mr-1" />{t('status.pending')}</Badge>;
       case 'completed':
-        return <Badge className="bg-success text-success-foreground"><CheckCircle2 className="w-3 h-3 mr-1" />Dokončeno</Badge>;
+        return <Badge className="bg-success text-success-foreground"><CheckCircle2 className="w-3 h-3 mr-1" />{t('status.completed')}</Badge>;
       case 'failed':
-        return <Badge variant="destructive"><XCircle className="w-3 h-3 mr-1" />Selhalo</Badge>;
+        return <Badge variant="destructive"><XCircle className="w-3 h-3 mr-1" />{t('status.failed')}</Badge>;
       case 'cancelled':
-        return <Badge variant="outline"><XCircle className="w-3 h-3 mr-1" />Zrušeno</Badge>;
+        return <Badge variant="outline"><XCircle className="w-3 h-3 mr-1" />{t('status.cancelled')}</Badge>;
       default:
         return <Badge variant="outline">{status}</Badge>;
     }
@@ -135,6 +137,8 @@ export default function TaskHistory() {
     const matchesStatus = statusFilter === 'all' || task.status === statusFilter;
     return matchesSearch && matchesStatus;
   });
+
+  const dateLocale = i18n.language === 'cs' ? 'cs-CZ' : 'en-US';
 
   if (loading) {
     return (
@@ -153,7 +157,7 @@ export default function TaskHistory() {
             <div className="relative flex-1">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
               <Input
-                placeholder="Hledat úkoly..."
+                placeholder={t('taskHistory.searchPlaceholder')}
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
                 className="pl-10"
@@ -162,15 +166,15 @@ export default function TaskHistory() {
             <Select value={statusFilter} onValueChange={setStatusFilter}>
               <SelectTrigger className="w-full sm:w-[180px]">
                 <Filter className="h-4 w-4 mr-2" />
-                <SelectValue placeholder="Status" />
+                <SelectValue placeholder={t('taskHistory.allStatuses')} />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="all">Všechny stavy</SelectItem>
-                <SelectItem value="pending">Čekající</SelectItem>
-                <SelectItem value="running">Běžící</SelectItem>
-                <SelectItem value="completed">Dokončené</SelectItem>
-                <SelectItem value="failed">Selhané</SelectItem>
-                <SelectItem value="cancelled">Zrušené</SelectItem>
+                <SelectItem value="all">{t('taskHistory.allStatuses')}</SelectItem>
+                <SelectItem value="pending">{t('taskHistory.waiting')}</SelectItem>
+                <SelectItem value="running">{t('taskHistory.running')}</SelectItem>
+                <SelectItem value="completed">{t('taskHistory.completed')}</SelectItem>
+                <SelectItem value="failed">{t('taskHistory.failed')}</SelectItem>
+                <SelectItem value="cancelled">{t('taskHistory.cancelled')}</SelectItem>
               </SelectContent>
             </Select>
           </div>
@@ -185,9 +189,9 @@ export default function TaskHistory() {
               <HistoryIcon className="w-5 h-5 text-secondary-foreground" />
             </div>
             <div>
-              <CardTitle>Historie úkolů</CardTitle>
+              <CardTitle>{t('taskHistory.title')}</CardTitle>
               <CardDescription>
-                {filteredTasks.length} úkolů celkem
+                {filteredTasks.length} {t('taskHistory.totalTasks')}
               </CardDescription>
             </div>
           </div>
@@ -196,7 +200,7 @@ export default function TaskHistory() {
           {filteredTasks.length === 0 ? (
             <div className="text-center py-12 text-muted-foreground">
               <HistoryIcon className="w-12 h-12 mx-auto mb-4 opacity-50" />
-              <p>Žádné úkoly k zobrazení</p>
+              <p>{t('taskHistory.noTasks')}</p>
             </div>
           ) : (
             <div className="space-y-3">
@@ -214,9 +218,9 @@ export default function TaskHistory() {
                       {task.prompt}
                     </p>
                     <p className="text-xs text-muted-foreground">
-                      Vytvořeno: {new Date(task.created_at).toLocaleString('cs-CZ')}
+                      {t('taskHistory.created')}: {new Date(task.created_at).toLocaleString(dateLocale)}
                       {task.completed_at && (
-                        <> • Dokončeno: {new Date(task.completed_at).toLocaleString('cs-CZ')}</>
+                        <> • {t('taskHistory.completedAt')}: {new Date(task.completed_at).toLocaleString(dateLocale)}</>
                       )}
                     </p>
                   </div>
@@ -236,18 +240,18 @@ export default function TaskHistory() {
                       </AlertDialogTrigger>
                       <AlertDialogContent>
                         <AlertDialogHeader>
-                          <AlertDialogTitle>Smazat úkol?</AlertDialogTitle>
+                          <AlertDialogTitle>{t('taskHistory.deleteTask')}</AlertDialogTitle>
                           <AlertDialogDescription>
-                            Tato akce je nevratná. Úkol a všechny jeho data budou permanentně smazány.
+                            {t('taskHistory.deleteTaskConfirm')}
                           </AlertDialogDescription>
                         </AlertDialogHeader>
                         <AlertDialogFooter>
-                          <AlertDialogCancel>Zrušit</AlertDialogCancel>
+                          <AlertDialogCancel>{t('common.cancel')}</AlertDialogCancel>
                           <AlertDialogAction
                             onClick={() => handleDelete(task.id)}
                             className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
                           >
-                            Smazat
+                            {t('common.delete')}
                           </AlertDialogAction>
                         </AlertDialogFooter>
                       </AlertDialogContent>
