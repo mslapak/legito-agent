@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useNavigate, Outlet, useLocation } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
 import { useAuth } from '@/hooks/useAuth';
 import {
   Sidebar,
@@ -37,32 +38,34 @@ import {
   FileText,
   GraduationCap,
   ClipboardList,
+  Languages,
 } from 'lucide-react';
 import pwcLogo from '@/assets/pwc-logo.png';
 
-const testingItems = [
-  { title: 'Dashboard', url: '/dashboard', icon: LayoutDashboard },
-  { title: 'Nový úkol', url: '/dashboard/new-task', icon: Play },
-  { title: 'Historie testů', url: '/dashboard/history', icon: History },
-  { title: 'Přehled testů', url: '/dashboard/tests', icon: ClipboardList },
-  { title: 'Generátor testů', url: '/dashboard/test-generator', icon: TestTube },
-  { title: 'Ověření dokumentace', url: '/dashboard/doc-verify', icon: FileCheck },
-  { title: 'Projekty', url: '/dashboard/projects', icon: FolderOpen },
-];
-
-const operationItems = [
-  { title: 'Dashboard', url: '/dashboard/operations', icon: LayoutDashboard },
-  { title: 'Nová operace', url: '/dashboard/operations/new', icon: Play },
-  { title: 'Historie operací', url: '/dashboard/operations/history', icon: History },
-  { title: 'Šablony', url: '/dashboard/operations/templates', icon: FileText },
-  { title: 'Školení', url: '/dashboard/operations/training', icon: GraduationCap },
-];
-
 export default function DashboardLayout() {
+  const { t, i18n } = useTranslation();
   const { user, loading, signOut } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
   const [isDark, setIsDark] = useState(false);
+
+  const testingItems = [
+    { title: t('nav.dashboard'), url: '/dashboard', icon: LayoutDashboard },
+    { title: t('nav.newTask'), url: '/dashboard/new-task', icon: Play },
+    { title: t('nav.taskHistory'), url: '/dashboard/history', icon: History },
+    { title: t('nav.testOverview'), url: '/dashboard/tests', icon: ClipboardList },
+    { title: t('nav.testGenerator'), url: '/dashboard/test-generator', icon: TestTube },
+    { title: t('nav.docVerify'), url: '/dashboard/doc-verify', icon: FileCheck },
+    { title: t('nav.projects'), url: '/dashboard/projects', icon: FolderOpen },
+  ];
+
+  const operationItems = [
+    { title: t('nav.dashboard'), url: '/dashboard/operations', icon: LayoutDashboard },
+    { title: t('nav.newOperation'), url: '/dashboard/operations/new', icon: Play },
+    { title: t('nav.operationHistory'), url: '/dashboard/operations/history', icon: History },
+    { title: t('nav.templates'), url: '/dashboard/operations/templates', icon: FileText },
+    { title: t('nav.training'), url: '/dashboard/operations/training', icon: GraduationCap },
+  ];
 
   useEffect(() => {
     if (!loading && !user) {
@@ -78,6 +81,10 @@ export default function DashboardLayout() {
   const toggleTheme = () => {
     document.documentElement.classList.toggle('dark');
     setIsDark(!isDark);
+  };
+
+  const toggleLanguage = () => {
+    i18n.changeLanguage(i18n.language === 'cs' ? 'en' : 'cs');
   };
 
   const handleSignOut = async () => {
@@ -99,6 +106,16 @@ export default function DashboardLayout() {
 
   const userInitials = user.email?.substring(0, 2).toUpperCase() || 'U';
 
+  const getCurrentPageTitle = () => {
+    const allItems = [...testingItems, ...operationItems];
+    const currentItem = allItems.find((item) => 
+      item.url === '/dashboard' 
+        ? location.pathname === '/dashboard' 
+        : location.pathname.startsWith(item.url)
+    );
+    return currentItem?.title || t('nav.dashboard');
+  };
+
   return (
     <SidebarProvider>
       <div className="min-h-screen flex w-full">
@@ -114,11 +131,11 @@ export default function DashboardLayout() {
 
           <SidebarContent>
             <SidebarGroup>
-              <SidebarGroupLabel className="text-sidebar-foreground/60">Testování</SidebarGroupLabel>
+              <SidebarGroupLabel className="text-sidebar-foreground/60">{t('nav.testing')}</SidebarGroupLabel>
               <SidebarGroupContent>
                 <SidebarMenu>
                   {testingItems.map((item) => (
-                    <SidebarMenuItem key={item.title}>
+                    <SidebarMenuItem key={item.url}>
                       <SidebarMenuButton asChild>
                         <NavLink
                           to={item.url}
@@ -137,11 +154,11 @@ export default function DashboardLayout() {
             </SidebarGroup>
 
             <SidebarGroup>
-              <SidebarGroupLabel className="text-sidebar-foreground/60">Operace v Legito</SidebarGroupLabel>
+              <SidebarGroupLabel className="text-sidebar-foreground/60">{t('nav.operations')}</SidebarGroupLabel>
               <SidebarGroupContent>
                 <SidebarMenu>
                   {operationItems.map((item) => (
-                    <SidebarMenuItem key={item.title}>
+                    <SidebarMenuItem key={item.url}>
                       <SidebarMenuButton asChild>
                         <NavLink
                           to={item.url}
@@ -174,18 +191,22 @@ export default function DashboardLayout() {
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="start" className="w-56">
+                <DropdownMenuItem onClick={toggleLanguage}>
+                  <Languages className="mr-2 h-4 w-4" />
+                  {i18n.language === 'cs' ? t('language.en') : t('language.cs')}
+                </DropdownMenuItem>
                 <DropdownMenuItem onClick={toggleTheme}>
                   {isDark ? <Sun className="mr-2 h-4 w-4" /> : <Moon className="mr-2 h-4 w-4" />}
-                  {isDark ? 'Světlý režim' : 'Tmavý režim'}
+                  {isDark ? t('theme.light') : t('theme.dark')}
                 </DropdownMenuItem>
                 <DropdownMenuItem>
                   <Settings className="mr-2 h-4 w-4" />
-                  Nastavení
+                  {t('common.settings')}
                 </DropdownMenuItem>
                 <DropdownMenuSeparator />
                 <DropdownMenuItem onClick={handleSignOut} className="text-destructive">
                   <LogOut className="mr-2 h-4 w-4" />
-                  Odhlásit se
+                  {t('auth.signOut')}
                 </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
@@ -196,13 +217,7 @@ export default function DashboardLayout() {
           <header className="sticky top-0 z-10 bg-background/80 backdrop-blur-sm border-b border-border px-6 py-4">
             <div className="flex items-center gap-4">
               <SidebarTrigger />
-              <h1 className="text-lg font-semibold">
-                {[...testingItems, ...operationItems].find((item) => 
-                  item.url === '/dashboard' 
-                    ? location.pathname === '/dashboard' 
-                    : location.pathname.startsWith(item.url)
-                )?.title || 'Dashboard'}
-              </h1>
+              <h1 className="text-lg font-semibold">{getCurrentPageTitle()}</h1>
             </div>
           </header>
           
