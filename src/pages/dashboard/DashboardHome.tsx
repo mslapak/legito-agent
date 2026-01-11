@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/hooks/useAuth';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -33,6 +34,7 @@ interface Stats {
 }
 
 export default function DashboardHome() {
+  const { t, i18n } = useTranslation();
   const { user } = useAuth();
   const navigate = useNavigate();
   const [tasks, setTasks] = useState<Task[]>([]);
@@ -97,23 +99,23 @@ export default function DashboardHome() {
   const getStatusBadge = (status: string) => {
     switch (status) {
       case 'running':
-        return <Badge className="bg-warning text-warning-foreground"><Loader2 className="w-3 h-3 mr-1 animate-spin" />Běží</Badge>;
+        return <Badge className="bg-warning text-warning-foreground"><Loader2 className="w-3 h-3 mr-1 animate-spin" />{t('status.running')}</Badge>;
       case 'pending':
-        return <Badge variant="secondary"><Clock className="w-3 h-3 mr-1" />Čeká</Badge>;
+        return <Badge variant="secondary"><Clock className="w-3 h-3 mr-1" />{t('status.pending')}</Badge>;
       case 'completed':
-        return <Badge className="bg-success text-success-foreground"><CheckCircle2 className="w-3 h-3 mr-1" />Dokončeno</Badge>;
+        return <Badge className="bg-success text-success-foreground"><CheckCircle2 className="w-3 h-3 mr-1" />{t('status.completed')}</Badge>;
       case 'failed':
-        return <Badge variant="destructive"><XCircle className="w-3 h-3 mr-1" />Selhalo</Badge>;
+        return <Badge variant="destructive"><XCircle className="w-3 h-3 mr-1" />{t('status.failed')}</Badge>;
       default:
         return <Badge variant="outline">{status}</Badge>;
     }
   };
 
   const statCards = [
-    { title: 'Celkem úkolů', value: stats.total, icon: Activity, color: 'text-primary' },
-    { title: 'Běžící', value: stats.running, icon: Loader2, color: 'text-warning' },
-    { title: 'Dokončeno', value: stats.completed, icon: CheckCircle2, color: 'text-success' },
-    { title: 'Selhalo', value: stats.failed, icon: XCircle, color: 'text-destructive' },
+    { title: t('dashboard.totalTasks'), value: stats.total, icon: Activity, color: 'text-primary' },
+    { title: t('dashboard.running'), value: stats.running, icon: Loader2, color: 'text-warning' },
+    { title: t('dashboard.completed'), value: stats.completed, icon: CheckCircle2, color: 'text-success' },
+    { title: t('dashboard.failed'), value: stats.failed, icon: XCircle, color: 'text-destructive' },
   ];
 
   if (loading) {
@@ -123,6 +125,8 @@ export default function DashboardHome() {
       </div>
     );
   }
+
+  const dateLocale = i18n.language === 'cs' ? 'cs-CZ' : 'en-US';
 
   return (
     <div className="space-y-8 animate-fade-in">
@@ -154,10 +158,10 @@ export default function DashboardHome() {
               <Play className="w-6 h-6 text-primary-foreground" />
             </div>
             <CardTitle className="flex items-center justify-between">
-              Nový úkol
+              {t('dashboard.newTask')}
               <ArrowRight className="h-5 w-5 opacity-0 group-hover:opacity-100 transition-opacity" />
             </CardTitle>
-            <CardDescription>Spusťte nový automatizační úkol</CardDescription>
+            <CardDescription>{t('dashboard.runNewTask')}</CardDescription>
           </CardHeader>
         </Card>
 
@@ -170,10 +174,10 @@ export default function DashboardHome() {
               <TestTube className="w-6 h-6 text-accent-foreground" />
             </div>
             <CardTitle className="flex items-center justify-between">
-              Generátor testů
+              {t('dashboard.testGenerator')}
               <ArrowRight className="h-5 w-5 opacity-0 group-hover:opacity-100 transition-opacity" />
             </CardTitle>
-            <CardDescription>Vygenerujte testy pomocí AI</CardDescription>
+            <CardDescription>{t('dashboard.generateWithAI')}</CardDescription>
           </CardHeader>
         </Card>
 
@@ -186,10 +190,10 @@ export default function DashboardHome() {
               <FolderOpen className="w-6 h-6 text-secondary-foreground" />
             </div>
             <CardTitle className="flex items-center justify-between">
-              Projekty
+              {t('dashboard.projects')}
               <ArrowRight className="h-5 w-5 opacity-0 group-hover:opacity-100 transition-opacity" />
             </CardTitle>
-            <CardDescription>Spravujte testované aplikace</CardDescription>
+            <CardDescription>{t('dashboard.manageApps')}</CardDescription>
           </CardHeader>
         </Card>
       </div>
@@ -198,11 +202,11 @@ export default function DashboardHome() {
       <Card>
         <CardHeader className="flex flex-row items-center justify-between">
           <div>
-            <CardTitle>Nedávné úkoly</CardTitle>
-            <CardDescription>Posledních 5 spuštěných úkolů</CardDescription>
+            <CardTitle>{t('dashboard.recentTasks')}</CardTitle>
+            <CardDescription>{t('dashboard.last5Tasks')}</CardDescription>
           </div>
           <Button variant="outline" onClick={() => navigate('/dashboard/history')}>
-            Zobrazit vše
+            {t('common.viewAll')}
             <ArrowRight className="ml-2 h-4 w-4" />
           </Button>
         </CardHeader>
@@ -210,13 +214,13 @@ export default function DashboardHome() {
           {tasks.length === 0 ? (
             <div className="text-center py-8 text-muted-foreground">
               <Activity className="w-12 h-12 mx-auto mb-4 opacity-50" />
-              <p>Zatím žádné úkoly</p>
+              <p>{t('dashboard.noTasksYet')}</p>
               <Button 
                 variant="link" 
                 onClick={() => navigate('/dashboard/new-task')}
                 className="mt-2"
               >
-                Vytvořit první úkol
+                {t('dashboard.createFirstTask')}
               </Button>
             </div>
           ) : (
@@ -230,7 +234,7 @@ export default function DashboardHome() {
                   <div className="space-y-1">
                     <p className="font-medium">{task.title}</p>
                     <p className="text-sm text-muted-foreground">
-                      {new Date(task.created_at).toLocaleString('cs-CZ')}
+                      {new Date(task.created_at).toLocaleString(dateLocale)}
                     </p>
                   </div>
                   {getStatusBadge(task.status)}

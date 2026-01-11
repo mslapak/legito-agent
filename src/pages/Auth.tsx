@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
 import { useAuth } from '@/hooks/useAuth';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -11,6 +12,7 @@ import { Eye, EyeOff, Loader2 } from 'lucide-react';
 import pwcLogo from '@/assets/pwc-logo.png';
 
 export default function Auth() {
+  const { t } = useTranslation();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [fullName, setFullName] = useState('');
@@ -22,7 +24,7 @@ export default function Auth() {
   const handleSignIn = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!email || !password) {
-      toast.error('Vyplňte e-mail a heslo');
+      toast.error(t('auth.fillEmailPassword'));
       return;
     }
     
@@ -33,7 +35,7 @@ export default function Auth() {
     if (error) {
       toast.error(error.message);
     } else {
-      toast.success('Přihlášení úspěšné');
+      toast.success(t('auth.loginSuccess'));
       navigate('/dashboard');
     }
   };
@@ -41,11 +43,11 @@ export default function Auth() {
   const handleSignUp = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!email || !password) {
-      toast.error('Vyplňte e-mail a heslo');
+      toast.error(t('auth.fillEmailPassword'));
       return;
     }
     if (password.length < 6) {
-      toast.error('Heslo musí mít alespoň 6 znaků');
+      toast.error(t('auth.passwordTooShort'));
       return;
     }
     
@@ -55,12 +57,12 @@ export default function Auth() {
     
     if (error) {
       if (error.message.includes('already registered')) {
-        toast.error('Tento e-mail je již registrován');
+        toast.error(t('auth.emailAlreadyRegistered'));
       } else {
         toast.error(error.message);
       }
     } else {
-      toast.success('Registrace úspěšná! Můžete se přihlásit.');
+      toast.success(t('auth.registerSuccess'));
       navigate('/dashboard');
     }
   };
@@ -75,9 +77,9 @@ export default function Auth() {
             <img src={pwcLogo} alt="PwC" className="h-20 w-auto rounded" />
           </div>
           <div>
-            <CardTitle className="text-2xl font-bold">Browser Automation</CardTitle>
+            <CardTitle className="text-2xl font-bold">{t('auth.title')}</CardTitle>
             <CardDescription className="mt-2">
-              AI-powered browser automation & testing
+              {t('auth.subtitle')}
             </CardDescription>
           </div>
         </CardHeader>
@@ -85,18 +87,18 @@ export default function Auth() {
         <CardContent>
           <Tabs defaultValue="login" className="w-full">
             <TabsList className="grid w-full grid-cols-2">
-              <TabsTrigger value="login">Přihlášení</TabsTrigger>
-              <TabsTrigger value="register">Registrace</TabsTrigger>
+              <TabsTrigger value="login">{t('auth.login')}</TabsTrigger>
+              <TabsTrigger value="register">{t('auth.register')}</TabsTrigger>
             </TabsList>
             
             <TabsContent value="login">
               <form onSubmit={handleSignIn} className="space-y-4 mt-4">
                 <div className="space-y-2">
-                  <Label htmlFor="login-email">E-mail</Label>
+                  <Label htmlFor="login-email">{t('auth.email')}</Label>
                   <Input
                     id="login-email"
                     type="email"
-                    placeholder="vas@email.cz"
+                    placeholder={t('auth.emailPlaceholder')}
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
                     disabled={isLoading}
@@ -104,12 +106,12 @@ export default function Auth() {
                 </div>
                 
                 <div className="space-y-2">
-                  <Label htmlFor="login-password">Heslo</Label>
+                  <Label htmlFor="login-password">{t('auth.password')}</Label>
                   <div className="relative">
                     <Input
                       id="login-password"
                       type={showPassword ? 'text' : 'password'}
-                      placeholder="••••••••"
+                      placeholder={t('auth.passwordPlaceholder')}
                       value={password}
                       onChange={(e) => setPassword(e.target.value)}
                       disabled={isLoading}
@@ -130,10 +132,10 @@ export default function Auth() {
                   {isLoading ? (
                     <>
                       <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                      Přihlašování...
+                      {t('auth.signingIn')}
                     </>
                   ) : (
-                    'Přihlásit se'
+                    t('auth.signIn')
                   )}
                 </Button>
               </form>
@@ -142,11 +144,11 @@ export default function Auth() {
             <TabsContent value="register">
               <form onSubmit={handleSignUp} className="space-y-4 mt-4">
                 <div className="space-y-2">
-                  <Label htmlFor="register-name">Jméno (volitelné)</Label>
+                  <Label htmlFor="register-name">{t('auth.fullNameOptional')}</Label>
                   <Input
                     id="register-name"
                     type="text"
-                    placeholder="Jan Novák"
+                    placeholder={t('auth.namePlaceholder')}
                     value={fullName}
                     onChange={(e) => setFullName(e.target.value)}
                     disabled={isLoading}
@@ -154,11 +156,11 @@ export default function Auth() {
                 </div>
                 
                 <div className="space-y-2">
-                  <Label htmlFor="register-email">E-mail</Label>
+                  <Label htmlFor="register-email">{t('auth.email')}</Label>
                   <Input
                     id="register-email"
                     type="email"
-                    placeholder="vas@email.cz"
+                    placeholder={t('auth.emailPlaceholder')}
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
                     disabled={isLoading}
@@ -166,12 +168,12 @@ export default function Auth() {
                 </div>
                 
                 <div className="space-y-2">
-                  <Label htmlFor="register-password">Heslo</Label>
+                  <Label htmlFor="register-password">{t('auth.password')}</Label>
                   <div className="relative">
                     <Input
                       id="register-password"
                       type={showPassword ? 'text' : 'password'}
-                      placeholder="Min. 6 znaků"
+                      placeholder={t('auth.minPassword')}
                       value={password}
                       onChange={(e) => setPassword(e.target.value)}
                       disabled={isLoading}
@@ -192,10 +194,10 @@ export default function Auth() {
                   {isLoading ? (
                     <>
                       <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                      Registrace...
+                      {t('auth.signingUp')}
                     </>
                   ) : (
-                    'Registrovat se'
+                    t('auth.signUp')
                   )}
                 </Button>
               </form>
