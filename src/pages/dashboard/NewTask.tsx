@@ -17,6 +17,7 @@ import {
 } from '@/components/ui/select';
 import { toast } from 'sonner';
 import { Play, Loader2, Sparkles } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 
 interface Project {
   id: string;
@@ -24,6 +25,7 @@ interface Project {
 }
 
 export default function NewTask() {
+  const { t } = useTranslation();
   const { session } = useAuth();
   const navigate = useNavigate();
   const [title, setTitle] = useState('');
@@ -58,7 +60,7 @@ export default function NewTask() {
     e.preventDefault();
     
     if (!prompt.trim()) {
-      toast.error('Zadejte popis úkolu');
+      toast.error(t('newTask.enterDescription'));
       return;
     }
 
@@ -78,11 +80,11 @@ export default function NewTask() {
         throw new Error(response.error.message);
       }
 
-      toast.success('Úkol byl vytvořen a spuštěn');
+      toast.success(t('newTask.taskCreated'));
       navigate('/dashboard/history');
     } catch (error) {
       console.error('Error creating task:', error);
-      toast.error(error instanceof Error ? error.message : 'Nepodařilo se vytvořit úkol');
+      toast.error(error instanceof Error ? error.message : t('newTask.createFailed'));
     } finally {
       setIsLoading(false);
     }
@@ -104,9 +106,9 @@ export default function NewTask() {
               <Play className="w-6 h-6 text-primary-foreground" />
             </div>
             <div>
-              <CardTitle>Nový úkol</CardTitle>
+              <CardTitle>{t('newTask.title')}</CardTitle>
               <CardDescription>
-                Zadejte prompt pro Browser-Use agenta
+                {t('newTask.subtitle')}
               </CardDescription>
             </div>
           </div>
@@ -114,10 +116,10 @@ export default function NewTask() {
         <CardContent>
           <form onSubmit={handleSubmit} className="space-y-6">
             <div className="space-y-2">
-              <Label htmlFor="title">Název úkolu (volitelný)</Label>
+              <Label htmlFor="title">{t('newTask.taskNameOptional')}</Label>
               <Input
                 id="title"
-                placeholder="Např. Test přihlášení"
+                placeholder={t('newTask.taskNamePlaceholder')}
                 value={title}
                 onChange={(e) => setTitle(e.target.value)}
                 disabled={isLoading}
@@ -125,13 +127,13 @@ export default function NewTask() {
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="project">Projekt (volitelný)</Label>
+              <Label htmlFor="project">{t('newTask.projectOptional')}</Label>
               <Select value={projectId} onValueChange={(val) => setProjectId(val === "none" ? "" : val)} disabled={loadingProjects}>
                 <SelectTrigger>
-                  <SelectValue placeholder="Vyberte projekt" />
+                  <SelectValue placeholder={t('newTask.selectProject')} />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="none">Bez projektu</SelectItem>
+                  <SelectItem value="none">{t('newTask.noProject')}</SelectItem>
                   {projects.map((project) => (
                     <SelectItem key={project.id} value={project.id}>
                       {project.name}
@@ -142,10 +144,10 @@ export default function NewTask() {
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="prompt">Popis úkolu *</Label>
+              <Label htmlFor="prompt">{t('newTask.taskDescription')} *</Label>
               <Textarea
                 id="prompt"
-                placeholder="Popište, co má agent udělat..."
+                placeholder={t('newTask.taskDescriptionPlaceholder')}
                 value={prompt}
                 onChange={(e) => setPrompt(e.target.value)}
                 disabled={isLoading}
@@ -153,7 +155,7 @@ export default function NewTask() {
                 className="resize-none"
               />
               <p className="text-sm text-muted-foreground">
-                Popište úkol přirozeným jazykem. Agent automaticky naviguje prohlížeč a provede požadované akce.
+                {t('newTask.taskDescriptionHelp')}
               </p>
             </div>
 
@@ -167,10 +169,10 @@ export default function NewTask() {
               />
               <div className="flex-1">
                 <Label htmlFor="keepBrowserOpen" className="font-medium cursor-pointer">
-                  Nechat prohlížeč otevřený po dokončení
+                  {t('newTask.keepBrowserOpen')}
                 </Label>
                 <p className="text-sm text-muted-foreground mt-1">
-                  Umožní pokračovat v interakci s prohlížečem pomocí dalších promptů
+                  {t('newTask.keepBrowserOpenHelp')}
                 </p>
               </div>
             </div>
@@ -179,7 +181,7 @@ export default function NewTask() {
             <div className="space-y-3">
               <Label className="flex items-center gap-2">
                 <Sparkles className="w-4 h-4 text-primary" />
-                Příklady promptů
+                {t('newTask.examplePrompts')}
               </Label>
               <div className="grid gap-2">
                 {examplePrompts.map((example, index) => (
@@ -200,12 +202,12 @@ export default function NewTask() {
               {isLoading ? (
                 <>
                   <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  Spouštím úkol...
+                  {t('newTask.runningTask')}
                 </>
               ) : (
                 <>
                   <Play className="mr-2 h-4 w-4" />
-                  Spustit úkol
+                  {t('newTask.runTask')}
                 </>
               )}
             </Button>

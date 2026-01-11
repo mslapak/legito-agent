@@ -52,6 +52,7 @@ import {
 import ProjectTestHistory from '@/components/ProjectTestHistory';
 import ProjectCredentials from '@/components/ProjectCredentials';
 import DocumentationVerification from '@/components/DocumentationVerification';
+import { useTranslation } from 'react-i18next';
 
 interface Project {
   id: string;
@@ -68,6 +69,7 @@ interface ProjectWithTestCount extends Project {
 }
 
 export default function Projects() {
+  const { t, i18n } = useTranslation();
   const { user } = useAuth();
   const [projects, setProjects] = useState<ProjectWithTestCount[]>([]);
   const [loading, setLoading] = useState(true);
@@ -83,6 +85,8 @@ export default function Projects() {
   const [setupPrompts, setSetupPrompts] = useState<Record<string, string>>({});
   const [savingSetupPrompt, setSavingSetupPrompt] = useState<string | null>(null);
   const [testingSetup, setTestingSetup] = useState<string | null>(null);
+
+  const dateLocale = i18n.language === 'cs' ? 'cs-CZ' : 'en-US';
 
   useEffect(() => {
     if (user) {
@@ -118,7 +122,7 @@ export default function Projects() {
       setProjects(projectsWithCounts);
     } catch (error) {
       console.error('Error fetching projects:', error);
-      toast.error('Nepodařilo se načíst projekty');
+      toast.error(t('projects.loadFailed'));
     } finally {
       setLoading(false);
     }
@@ -144,7 +148,7 @@ export default function Projects() {
     e.preventDefault();
     
     if (!formData.name.trim()) {
-      toast.error('Zadejte název projektu');
+      toast.error(i18n.language === 'cs' ? 'Zadejte název projektu' : 'Enter project name');
       return;
     }
 
@@ -161,10 +165,10 @@ export default function Projects() {
           .eq('id', editingProject.id);
 
         if (error) throw error;
-        toast.success('Projekt aktualizován');
+        toast.success(t('projects.projectUpdated'));
       } else {
         const { data: { user } } = await supabase.auth.getUser();
-        if (!user) throw new Error('Uživatel není přihlášen');
+        if (!user) throw new Error(i18n.language === 'cs' ? 'Uživatel není přihlášen' : 'User not logged in');
 
         const { error } = await supabase
           .from('projects')
@@ -176,14 +180,14 @@ export default function Projects() {
           });
 
         if (error) throw error;
-        toast.success('Projekt vytvořen');
+        toast.success(t('projects.projectCreated'));
       }
 
       setIsDialogOpen(false);
       fetchProjects();
     } catch (error) {
       console.error('Error saving project:', error);
-      toast.error('Nepodařilo se uložit projekt');
+      toast.error(t('projects.saveFailed'));
     } finally {
       setIsSaving(false);
     }
@@ -197,11 +201,11 @@ export default function Projects() {
         .eq('id', projectId);
 
       if (error) throw error;
-      toast.success('Projekt smazán');
+      toast.success(t('projects.projectDeleted'));
       fetchProjects();
     } catch (error) {
       console.error('Error deleting project:', error);
-      toast.error('Nepodařilo se smazat projekt');
+      toast.error(t('projects.deleteFailed'));
     }
   };
 
@@ -223,11 +227,11 @@ export default function Projects() {
         .eq('id', project.id);
 
       if (error) throw error;
-      toast.success('Setup prompt uložen');
+      toast.success(t('projects.setupSaved'));
       fetchProjects();
     } catch (error) {
       console.error('Error saving setup prompt:', error);
-      toast.error('Nepodařilo se uložit setup prompt');
+      toast.error(t('projects.setupSaveFailed'));
     } finally {
       setSavingSetupPrompt(null);
     }
@@ -237,12 +241,12 @@ export default function Projects() {
     const currentSetupPrompt = setupPrompts[project.id] ?? project.setup_prompt;
     
     if (!currentSetupPrompt?.trim()) {
-      toast.error('Nejprve vyplňte setup prompt');
+      toast.error(t('projects.fillSetupFirst'));
       return;
     }
 
     if (!project.base_url) {
-      toast.error('Projekt nemá nastavenou URL aplikace');
+      toast.error(t('projects.projectNoUrl'));
       return;
     }
 
@@ -258,12 +262,20 @@ export default function Projects() {
 
       // Build setup-only prompt
       let promptParts: string[] = [];
-      promptParts.push(`Otevři stránku: ${project.base_url}`);
-      promptParts.push(`Proveď tyto přípravné kroky:\n${currentSetupPrompt}`);
-      promptParts.push(`Po dokončení přípravných kroků potvrď, že setup proběhl úspěšně.`);
+      promptParts.push(i18n.language === 'cs' 
+        ? `Otevři stránku: ${project.base_url}`
+        : `Open page: ${project.base_url}`);
+      promptParts.push(i18n.language === 'cs'
+        ? `Proveď tyto přípravné kroky:\n${currentSetupPrompt}`
+        : `Perform these setup steps:\n${currentSetupPrompt}`);
+      promptParts.push(i18n.language === 'cs'
+        ? `Po dokončení přípravných kroků potvrď, že setup proběhl úspěšně.`
+        : `After completing setup steps, confirm that setup was successful.`);
 
       if (credentials) {
-        promptParts.push(`Přihlašovací údaje (použij když je potřeba):\n- Email/Username: ${credentials.username}\n- Heslo: ${credentials.password}`);
+        promptParts.push(i18n.language === 'cs'
+          ? `Přihlašovací údaje (použij když je potřeba):\n- Email/Username: ${credentials.username}\n- Heslo: ${credentials.password}`
+          : `Credentials (use when needed):\n- Email/Username: ${credentials.username}\n- Password: ${credentials.password}`);
       }
 
       const fullPrompt = promptParts.join('\n\n');
@@ -281,10 +293,10 @@ export default function Projects() {
         throw new Error(response.error.message);
       }
 
-      toast.success('Setup test byl spuštěn - sledujte v historii úloh');
+      toast.success(t('projects.setupTestStarted'));
     } catch (error) {
       console.error('Error testing setup:', error);
-      toast.error('Nepodařilo se spustit test setupu');
+      toast.error(t('projects.setupTestFailed'));
     } finally {
       setTestingSetup(null);
     }
@@ -307,9 +319,9 @@ export default function Projects() {
             <FolderOpen className="w-6 h-6 text-secondary-foreground" />
           </div>
           <div>
-            <h1 className="text-2xl font-bold">Projekty</h1>
+            <h1 className="text-2xl font-bold">{t('projects.title')}</h1>
             <p className="text-muted-foreground">
-              Spravujte testované webové aplikace
+              {t('projects.subtitle')}
             </p>
           </div>
         </div>
@@ -318,50 +330,50 @@ export default function Projects() {
           <DialogTrigger asChild>
             <Button onClick={openCreateDialog} className="gradient-primary">
               <Plus className="mr-2 h-4 w-4" />
-              Nový projekt
+              {t('projects.newProject')}
             </Button>
           </DialogTrigger>
           <DialogContent>
             <form onSubmit={handleSubmit}>
               <DialogHeader>
                 <DialogTitle>
-                  {editingProject ? 'Upravit projekt' : 'Nový projekt'}
+                  {editingProject ? t('projects.editProject') : t('projects.newProject')}
                 </DialogTitle>
                 <DialogDescription>
                   {editingProject 
-                    ? 'Upravte údaje o projektu'
-                    : 'Vytvořte nový projekt pro organizaci testů'
+                    ? t('projects.editProjectDescription')
+                    : t('projects.createProjectDescription')
                   }
                 </DialogDescription>
               </DialogHeader>
 
               <div className="space-y-4 py-4">
                 <div className="space-y-2">
-                  <Label htmlFor="name">Název projektu *</Label>
+                  <Label htmlFor="name">{t('projects.projectName')} *</Label>
                   <Input
                     id="name"
-                    placeholder="Můj e-shop"
+                    placeholder={t('projects.projectNamePlaceholder')}
                     value={formData.name}
                     onChange={(e) => setFormData(prev => ({ ...prev, name: e.target.value }))}
                   />
                 </div>
 
                 <div className="space-y-2">
-                  <Label htmlFor="base_url">URL aplikace</Label>
+                  <Label htmlFor="base_url">{t('projects.appUrl')}</Label>
                   <Input
                     id="base_url"
                     type="url"
-                    placeholder="https://example.com"
+                    placeholder={t('projects.appUrlPlaceholder')}
                     value={formData.base_url}
                     onChange={(e) => setFormData(prev => ({ ...prev, base_url: e.target.value }))}
                   />
                 </div>
 
                 <div className="space-y-2">
-                  <Label htmlFor="description">Popis</Label>
+                  <Label htmlFor="description">{t('projects.description')}</Label>
                   <Textarea
                     id="description"
-                    placeholder="Krátký popis projektu..."
+                    placeholder={t('projects.descriptionPlaceholder')}
                     value={formData.description}
                     onChange={(e) => setFormData(prev => ({ ...prev, description: e.target.value }))}
                     rows={3}
@@ -371,16 +383,16 @@ export default function Projects() {
 
               <DialogFooter>
                 <Button type="button" variant="outline" onClick={() => setIsDialogOpen(false)}>
-                  Zrušit
+                  {t('common.cancel')}
                 </Button>
                 <Button type="submit" disabled={isSaving} className="gradient-primary">
                   {isSaving ? (
                     <>
                       <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                      Ukládám...
+                      {t('projects.saving')}
                     </>
                   ) : (
-                    editingProject ? 'Uložit změny' : 'Vytvořit projekt'
+                    editingProject ? t('projects.saveChanges') : t('projects.createProject')
                   )}
                 </Button>
               </DialogFooter>
@@ -394,13 +406,13 @@ export default function Projects() {
         <Card>
           <CardContent className="py-12 text-center">
             <FolderOpen className="w-16 h-16 mx-auto mb-4 text-muted-foreground/50" />
-            <h3 className="text-lg font-medium mb-2">Zatím žádné projekty</h3>
+            <h3 className="text-lg font-medium mb-2">{t('projects.noProjects')}</h3>
             <p className="text-muted-foreground mb-4">
-              Vytvořte svůj první projekt pro organizaci testů
+              {t('projects.noProjectsDescription')}
             </p>
             <Button onClick={openCreateDialog} className="gradient-primary">
               <Plus className="mr-2 h-4 w-4" />
-              Vytvořit projekt
+              {t('projects.createProject')}
             </Button>
           </CardContent>
         </Card>
@@ -423,7 +435,7 @@ export default function Projects() {
                             {project.testCount > 0 && (
                               <Badge variant="secondary" className="flex items-center gap-1">
                                 <TestTube className="w-3 h-3" />
-                                {project.testCount} testů
+                                {project.testCount} {t('projects.tests')}
                               </Badge>
                             )}
                           </div>
@@ -459,18 +471,18 @@ export default function Projects() {
                           </AlertDialogTrigger>
                           <AlertDialogContent>
                             <AlertDialogHeader>
-                              <AlertDialogTitle>Smazat projekt?</AlertDialogTitle>
+                              <AlertDialogTitle>{t('projects.deleteProject')}</AlertDialogTitle>
                               <AlertDialogDescription>
-                                Tato akce je nevratná. Projekt "{project.name}" a všechny jeho testy budou permanentně smazány.
+                                {t('projects.deleteProjectConfirm', { name: project.name })}
                               </AlertDialogDescription>
                             </AlertDialogHeader>
                             <AlertDialogFooter>
-                              <AlertDialogCancel>Zrušit</AlertDialogCancel>
+                              <AlertDialogCancel>{t('common.cancel')}</AlertDialogCancel>
                               <AlertDialogAction
                                 onClick={() => handleDelete(project.id)}
                                 className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
                               >
-                                Smazat
+                                {t('common.delete')}
                               </AlertDialogAction>
                             </AlertDialogFooter>
                           </AlertDialogContent>
@@ -498,7 +510,7 @@ export default function Projects() {
                       )}
                       <span className="flex items-center gap-1">
                         <Calendar className="h-4 w-4" />
-                        {new Date(project.created_at).toLocaleDateString('cs-CZ')}
+                        {new Date(project.created_at).toLocaleDateString(dateLocale)}
                       </span>
                     </div>
                   </CardHeader>
@@ -515,7 +527,7 @@ export default function Projects() {
                         <div className="flex items-center justify-between">
                           <h4 className="font-medium flex items-center gap-2">
                             <Settings2 className="w-4 h-4 text-primary" />
-                            Setup pro testy
+                            {t('projects.setupPrompt')}
                           </h4>
                           <div className="flex items-center gap-2">
                             <Button
@@ -523,14 +535,14 @@ export default function Projects() {
                               size="sm"
                               onClick={() => testSetupPrompt(project)}
                               disabled={testingSetup === project.id || !project.base_url}
-                              title={!project.base_url ? 'Projekt nemá nastavenou URL' : 'Spustit pouze setup bez testu'}
+                              title={!project.base_url ? t('projects.projectNoUrl') : t('projects.testSetup')}
                             >
                               {testingSetup === project.id ? (
                                 <Loader2 className="h-4 w-4 animate-spin" />
                               ) : (
                                 <>
                                   <Play className="h-4 w-4 mr-1" />
-                                  Otestovat setup
+                                  {t('projects.testSetup')}
                                 </>
                               )}
                             </Button>
@@ -545,7 +557,7 @@ export default function Projects() {
                               ) : (
                                 <>
                                   <Save className="h-4 w-4 mr-1" />
-                                  Uložit
+                                  {t('projects.saveSetup')}
                                 </>
                               )}
                             </Button>
@@ -555,11 +567,11 @@ export default function Projects() {
                           <div className="flex items-start gap-2 text-sm text-muted-foreground mb-3">
                             <Info className="w-4 h-4 mt-0.5 flex-shrink-0" />
                             <p>
-                              Tento prompt se automaticky spustí před každým testem (např. otevření URL, přihlášení, navigace na výchozí stránku).
+                              {t('projects.setupPromptHelp')}
                             </p>
                           </div>
                           <Textarea
-                            placeholder={`Příklad:\n1. Klikni na tlačítko "Login" v horním menu\n2. Vyplň přihlašovací údaje (budou dodány automaticky)\n3. Klikni na "Sign In"\n4. Počkej na načtení dashboardu`}
+                            placeholder={t('projects.setupPromptPlaceholder')}
                             value={setupPrompts[project.id] ?? project.setup_prompt ?? ''}
                             onChange={(e) => handleSetupPromptChange(project.id, e.target.value)}
                             rows={5}
@@ -579,7 +591,7 @@ export default function Projects() {
                       <div>
                         <h4 className="font-medium mb-4 flex items-center gap-2">
                           <TestTube className="w-4 h-4 text-primary" />
-                          Historie vygenerovaných testů
+                          {t('projects.testHistory')}
                         </h4>
                         <ProjectTestHistory 
                           projectId={project.id} 

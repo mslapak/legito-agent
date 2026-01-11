@@ -26,6 +26,7 @@ import {
   Send,
   Download,
 } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 
 interface Task {
   id: string;
@@ -45,6 +46,7 @@ interface Task {
 }
 
 export default function TaskDetail() {
+  const { t, i18n } = useTranslation();
   const { taskId } = useParams();
   const { session } = useAuth();
   const navigate = useNavigate();
@@ -54,6 +56,8 @@ export default function TaskDetail() {
   const [followUpPrompt, setFollowUpPrompt] = useState('');
   const [sendingFollowUp, setSendingFollowUp] = useState(false);
   const [liveViewError, setLiveViewError] = useState(false);
+
+  const dateLocale = i18n.language === 'cs' ? 'cs-CZ' : 'en-US';
 
   useEffect(() => {
     if (taskId) {
@@ -87,7 +91,7 @@ export default function TaskDetail() {
       setTask(data);
     } catch (error) {
       console.error('Error fetching task:', error);
-      toast.error('Nepodařilo se načíst úkol');
+      toast.error(t('toast.loadFailed'));
     } finally {
       setLoading(false);
     }
@@ -184,11 +188,11 @@ export default function TaskDetail() {
         })
         .eq('id', task.id);
 
-      toast.success('Stav aktualizován');
+      toast.success(t('taskDetail.statusUpdated'));
       fetchTask();
     } catch (error) {
       console.error('Error refreshing status:', error);
-      toast.error('Nepodařilo se aktualizovat stav');
+      toast.error(t('taskDetail.updateFailed'));
     } finally {
       setActionLoading(false);
     }
@@ -207,12 +211,12 @@ export default function TaskDetail() {
       });
 
       if (response.error) throw response.error;
-      toast.success(action === 'stop_task' ? 'Úkol zastaven' : 
-                   action === 'pause_task' ? 'Úkol pozastaven' : 'Úkol obnoven');
+      toast.success(action === 'stop_task' ? t('taskDetail.taskStopped') : 
+                   action === 'pause_task' ? t('taskDetail.taskPaused') : t('taskDetail.taskResumed'));
       fetchTask();
     } catch (error) {
       console.error(`Error ${action}:`, error);
-      toast.error('Akce se nezdařila');
+      toast.error(t('taskDetail.actionFailed'));
     } finally {
       setActionLoading(false);
     }
@@ -233,14 +237,14 @@ export default function TaskDetail() {
 
       if (response.error) throw response.error;
       
-      toast.success('Pokyn odeslán');
+      toast.success(t('taskDetail.instructionSent'));
       setFollowUpPrompt('');
       
       // Refresh task status
       setTimeout(() => refreshStatus(), 1000);
     } catch (error) {
       console.error('Error sending follow-up:', error);
-      toast.error('Nepodařilo se odeslat pokyn');
+      toast.error(t('taskDetail.instructionFailed'));
     } finally {
       setSendingFollowUp(false);
     }
@@ -251,7 +255,7 @@ export default function TaskDetail() {
     
     setActionLoading(true);
     try {
-      toast.info('Ukončuji a stahuji média...');
+      toast.info(t('taskDetail.downloadingMedia'));
       
       // Use the improved stop_task which handles media sync with retries
       const stopResponse = await supabase.functions.invoke('browser-use', {
@@ -271,15 +275,15 @@ export default function TaskDetail() {
       
       const totalMedia = screenshots.length + recordings.length;
       if (totalMedia > 0) {
-        toast.success(`Staženo ${screenshots.length} screenshotů a ${recordings.length} videí`);
+        toast.success(t('taskDetail.downloadedMedia', { screenshots: screenshots.length, videos: recordings.length }));
       } else {
-        toast.warning('Žádná média nebyla nalezena');
+        toast.warning(t('taskDetail.noMediaFound'));
       }
       
       fetchTask();
     } catch (error) {
       console.error('Error stopping and downloading:', error);
-      toast.error('Nepodařilo se stáhnout média');
+      toast.error(t('taskDetail.downloadFailed'));
     } finally {
       setActionLoading(false);
     }
@@ -288,15 +292,15 @@ export default function TaskDetail() {
   const getStatusBadge = (status: string) => {
     switch (status) {
       case 'running':
-        return <Badge className="bg-warning text-warning-foreground"><Loader2 className="w-3 h-3 mr-1 animate-spin" />Běží</Badge>;
+        return <Badge className="bg-warning text-warning-foreground"><Loader2 className="w-3 h-3 mr-1 animate-spin" />{t('status.running')}</Badge>;
       case 'pending':
-        return <Badge variant="secondary"><Clock className="w-3 h-3 mr-1" />Čeká</Badge>;
+        return <Badge variant="secondary"><Clock className="w-3 h-3 mr-1" />{t('status.pending')}</Badge>;
       case 'completed':
-        return <Badge className="bg-success text-success-foreground"><CheckCircle2 className="w-3 h-3 mr-1" />Dokončeno</Badge>;
+        return <Badge className="bg-success text-success-foreground"><CheckCircle2 className="w-3 h-3 mr-1" />{t('status.completed')}</Badge>;
       case 'failed':
-        return <Badge variant="destructive"><XCircle className="w-3 h-3 mr-1" />Selhalo</Badge>;
+        return <Badge variant="destructive"><XCircle className="w-3 h-3 mr-1" />{t('status.failed')}</Badge>;
       case 'cancelled':
-        return <Badge variant="outline"><XCircle className="w-3 h-3 mr-1" />Zrušeno</Badge>;
+        return <Badge variant="outline"><XCircle className="w-3 h-3 mr-1" />{t('status.cancelled')}</Badge>;
       default:
         return <Badge variant="outline">{status}</Badge>;
     }
@@ -313,9 +317,9 @@ export default function TaskDetail() {
   if (!task) {
     return (
       <div className="text-center py-12">
-        <p className="text-muted-foreground">Úkol nebyl nalezen</p>
+        <p className="text-muted-foreground">{t('taskDetail.taskNotFound')}</p>
         <Button variant="link" onClick={() => navigate('/dashboard/history')}>
-          Zpět na historii
+          {t('taskDetail.backToHistory')}
         </Button>
       </div>
     );
@@ -337,21 +341,21 @@ export default function TaskDetail() {
             {getStatusBadge(task.status)}
           </div>
           <p className="text-sm text-muted-foreground mt-1">
-            Vytvořeno: {new Date(task.created_at).toLocaleString('cs-CZ')}
+            {t('taskHistory.created')}: {new Date(task.created_at).toLocaleString(dateLocale)}
           </p>
         </div>
         
         <div className="flex items-center gap-2">
           <Button variant="outline" onClick={refreshStatus} disabled={actionLoading}>
             <RefreshCw className={`h-4 w-4 mr-2 ${actionLoading ? 'animate-spin' : ''}`} />
-            Obnovit
+            {t('taskDetail.refresh')}
           </Button>
           
           {task.status === 'running' && (
             <>
               <Button variant="outline" onClick={() => handleAction('pause_task')} disabled={actionLoading}>
                 <Pause className="h-4 w-4 mr-2" />
-                Pozastavit
+                {t('taskDetail.pause')}
               </Button>
               <Button 
                 variant="default" 
@@ -360,7 +364,7 @@ export default function TaskDetail() {
                 className="bg-primary"
               >
                 <Download className="h-4 w-4 mr-2" />
-                Ukončit a stáhnout
+                {t('taskDetail.stopAndDownload')}
               </Button>
             </>
           )}
@@ -368,7 +372,7 @@ export default function TaskDetail() {
           {task.status !== 'running' && task.status !== 'completed' && task.browser_use_task_id && (
             <Button variant="outline" onClick={stopAndDownloadMedia} disabled={actionLoading}>
               <Download className="h-4 w-4 mr-2" />
-              Stáhnout média
+              {t('taskDetail.downloadMedia')}
             </Button>
           )}
         </div>
@@ -380,13 +384,13 @@ export default function TaskDetail() {
           <CardHeader className="flex flex-row items-center justify-between pb-2">
             <div className="flex items-center gap-2">
               <Monitor className="h-5 w-5 text-primary" />
-              <CardTitle className="text-lg">Živý náhled prohlížeče</CardTitle>
+              <CardTitle className="text-lg">{t('taskDetail.liveView')}</CardTitle>
               <Badge className="bg-success text-success-foreground animate-pulse">LIVE</Badge>
             </div>
             <Button variant="outline" size="sm" asChild>
               <a href={task.live_url} target="_blank" rel="noopener noreferrer">
                 <ExternalLink className="h-4 w-4 mr-2" />
-                Otevřít v novém okně
+                {t('taskDetail.openNewWindow')}
               </a>
             </Button>
           </CardHeader>
@@ -395,8 +399,8 @@ export default function TaskDetail() {
               {liveViewError ? (
                 <div className="absolute inset-0 flex flex-col items-center justify-center text-muted-foreground">
                   <Monitor className="h-12 w-12 mb-2 opacity-50" />
-                  <p className="text-sm">Live view není dostupný</p>
-                  <p className="text-xs mt-1">Zkuste otevřít v novém okně</p>
+                  <p className="text-sm">{t('taskDetail.liveViewUnavailable')}</p>
+                  <p className="text-xs mt-1">{t('taskDetail.tryNewWindow')}</p>
                 </div>
               ) : (
                 <iframe
@@ -412,7 +416,7 @@ export default function TaskDetail() {
             {/* Human-in-the-Loop Input */}
             <div className="flex gap-2">
               <Input
-                placeholder="Zadejte další pokyn pro agenta..."
+                placeholder={t('taskDetail.followUpPlaceholder')}
                 value={followUpPrompt}
                 onChange={(e) => setFollowUpPrompt(e.target.value)}
                 onKeyDown={(e) => e.key === 'Enter' && !sendingFollowUp && sendFollowUpPrompt()}
@@ -428,7 +432,7 @@ export default function TaskDetail() {
                 ) : (
                   <>
                     <Send className="h-4 w-4 mr-2" />
-                    Pokračovat
+                    {t('taskDetail.continue')}
                   </>
                 )}
               </Button>
@@ -440,22 +444,22 @@ export default function TaskDetail() {
       {/* Main Content */}
       <Tabs defaultValue="overview" className="space-y-4">
         <TabsList>
-          <TabsTrigger value="overview">Přehled</TabsTrigger>
-          <TabsTrigger value="steps">Kroky</TabsTrigger>
+          <TabsTrigger value="overview">{t('taskDetail.overview')}</TabsTrigger>
+          <TabsTrigger value="steps">{t('taskDetail.steps')}</TabsTrigger>
           <TabsTrigger value="screenshots">
-            Screenshoty {screenshotCount > 0 && <Badge variant="secondary" className="ml-2">{screenshotCount}</Badge>}
+            {t('taskDetail.screenshots')} {screenshotCount > 0 && <Badge variant="secondary" className="ml-2">{screenshotCount}</Badge>}
           </TabsTrigger>
           <TabsTrigger value="recordings">
-            Videa {recordingCount > 0 && <Badge variant="secondary" className="ml-2">{recordingCount}</Badge>}
+            {t('taskDetail.videos')} {recordingCount > 0 && <Badge variant="secondary" className="ml-2">{recordingCount}</Badge>}
           </TabsTrigger>
-          <TabsTrigger value="result">Výsledek</TabsTrigger>
+          <TabsTrigger value="result">{t('taskDetail.result')}</TabsTrigger>
         </TabsList>
 
         <TabsContent value="overview">
           <div className="grid gap-6 md:grid-cols-2">
             <Card>
               <CardHeader>
-                <CardTitle className="text-lg">Zadání</CardTitle>
+                <CardTitle className="text-lg">{t('taskDetail.assignment')}</CardTitle>
               </CardHeader>
               <CardContent>
                 <p className="text-muted-foreground whitespace-pre-wrap">{task.prompt}</p>
@@ -464,24 +468,24 @@ export default function TaskDetail() {
 
             <Card>
               <CardHeader>
-                <CardTitle className="text-lg">Informace</CardTitle>
+                <CardTitle className="text-lg">{t('taskDetail.information')}</CardTitle>
               </CardHeader>
               <CardContent className="space-y-4">
                 <div className="flex justify-between">
-                  <span className="text-muted-foreground">Status</span>
+                  <span className="text-muted-foreground">{t('tests.status')}</span>
                   {getStatusBadge(task.status)}
                 </div>
                 <div className="flex justify-between">
-                  <span className="text-muted-foreground">Browser-Use ID</span>
+                  <span className="text-muted-foreground">{t('taskDetail.browserUseId')}</span>
                   <span className="font-mono text-sm">{task.browser_use_task_id || '-'}</span>
                 </div>
                 <div className="flex justify-between">
-                  <span className="text-muted-foreground">Spuštěno</span>
-                  <span>{task.started_at ? new Date(task.started_at).toLocaleString('cs-CZ') : '-'}</span>
+                  <span className="text-muted-foreground">{t('taskDetail.started')}</span>
+                  <span>{task.started_at ? new Date(task.started_at).toLocaleString(dateLocale) : '-'}</span>
                 </div>
                 <div className="flex justify-between">
-                  <span className="text-muted-foreground">Dokončeno</span>
-                  <span>{task.completed_at ? new Date(task.completed_at).toLocaleString('cs-CZ') : '-'}</span>
+                  <span className="text-muted-foreground">{t('taskDetail.finishedAt')}</span>
+                  <span>{task.completed_at ? new Date(task.completed_at).toLocaleString(dateLocale) : '-'}</span>
                 </div>
               </CardContent>
             </Card>
@@ -489,7 +493,7 @@ export default function TaskDetail() {
             {task.error_message && (
               <Card className="md:col-span-2 border-destructive">
                 <CardHeader>
-                  <CardTitle className="text-lg text-destructive">Chyba</CardTitle>
+                  <CardTitle className="text-lg text-destructive">{t('taskDetail.error')}</CardTitle>
                 </CardHeader>
                 <CardContent>
                   <p className="text-destructive font-mono text-sm">{task.error_message}</p>
@@ -504,10 +508,10 @@ export default function TaskDetail() {
             <CardHeader>
               <CardTitle className="text-lg flex items-center gap-2">
                 <FileText className="h-5 w-5" />
-                Kroky agenta
+                {t('taskDetail.stepsPerformed')}
               </CardTitle>
               <CardDescription>
-                Detailní přehled akcí provedených agentem
+                {t('taskDetail.stepsPerformed')}
               </CardDescription>
             </CardHeader>
             <CardContent>
@@ -535,13 +539,13 @@ export default function TaskDetail() {
                         )}
                         {step.next_goal && (
                           <div>
-                            <span className="text-xs font-semibold text-primary">Další cíl:</span>
+                            <span className="text-xs font-semibold text-primary">{t('taskDetail.step')}:</span>
                             <p className="text-sm">{step.next_goal}</p>
                           </div>
                         )}
                         {step.evaluation_previous_goal && (
                           <div>
-                            <span className="text-xs font-semibold text-muted-foreground">Hodnocení:</span>
+                            <span className="text-xs font-semibold text-muted-foreground">{t('taskDetail.result')}:</span>
                             <p className="text-sm text-muted-foreground">{step.evaluation_previous_goal}</p>
                           </div>
                         )}
@@ -557,7 +561,7 @@ export default function TaskDetail() {
               ) : (
                 <div className="text-center py-8 text-muted-foreground">
                   <FileText className="w-12 h-12 mx-auto mb-4 opacity-50" />
-                  <p>Zatím žádné kroky</p>
+                  <p>{t('taskDetail.noSteps')}</p>
                 </div>
               )}
             </CardContent>
@@ -569,7 +573,7 @@ export default function TaskDetail() {
             <CardHeader>
               <CardTitle className="text-lg flex items-center gap-2">
                 <ImageIcon className="h-5 w-5" />
-                Screenshoty
+                {t('taskDetail.screenshots')}
               </CardTitle>
             </CardHeader>
             <CardContent>
@@ -588,8 +592,8 @@ export default function TaskDetail() {
               ) : (
                 <div className="text-center py-8 text-muted-foreground">
                   <ImageIcon className="w-12 h-12 mx-auto mb-4 opacity-50" />
-                  <p>Žádné screenshoty</p>
-                  <p className="text-sm mt-2">Screenshoty jsou dostupné po ukončení browser session</p>
+                  <p>{t('taskDetail.noScreenshots')}</p>
+                  <p className="text-sm mt-2">{t('taskDetail.screenshotsAppear')}</p>
                 </div>
               )}
             </CardContent>
@@ -601,7 +605,7 @@ export default function TaskDetail() {
             <CardHeader>
               <CardTitle className="text-lg flex items-center gap-2">
                 <Video className="h-5 w-5" />
-                Videa
+                {t('taskDetail.videos')}
               </CardTitle>
             </CardHeader>
             <CardContent>
@@ -620,7 +624,7 @@ export default function TaskDetail() {
                         <Button variant="ghost" size="sm" asChild>
                           <a href={url} target="_blank" rel="noopener noreferrer" download>
                             <Download className="h-4 w-4 mr-2" />
-                            Stáhnout
+                            {t('common.export')}
                           </a>
                         </Button>
                       </div>
@@ -630,8 +634,8 @@ export default function TaskDetail() {
               ) : (
                 <div className="text-center py-8 text-muted-foreground">
                   <Video className="w-12 h-12 mx-auto mb-4 opacity-50" />
-                  <p>Žádná videa</p>
-                  <p className="text-sm mt-2">Videa jsou dostupná po ukončení browser session</p>
+                  <p>{t('taskDetail.noVideos')}</p>
+                  <p className="text-sm mt-2">{t('taskDetail.videosAppear')}</p>
                 </div>
               )}
             </CardContent>
@@ -641,7 +645,7 @@ export default function TaskDetail() {
         <TabsContent value="result">
           <Card>
             <CardHeader>
-              <CardTitle className="text-lg">Výsledek</CardTitle>
+              <CardTitle className="text-lg">{t('taskDetail.result')}</CardTitle>
             </CardHeader>
             <CardContent>
               {task.result ? (
@@ -650,7 +654,7 @@ export default function TaskDetail() {
                 </pre>
               ) : (
                 <div className="text-center py-8 text-muted-foreground">
-                  <p>Zatím žádný výsledek</p>
+                  <p>{t('taskDetail.noResult')}</p>
                 </div>
               )}
             </CardContent>
