@@ -394,13 +394,16 @@ export type Database = {
       }
       test_batch_runs: {
         Row: {
+          batch_size: number | null
           completed_at: string | null
           completed_tests: number | null
           created_at: string | null
           current_test_id: string | null
+          error_message: string | null
           failed_tests: number | null
           id: string
           passed_tests: number | null
+          paused: boolean | null
           started_at: string | null
           status: string | null
           test_ids: string[]
@@ -409,13 +412,16 @@ export type Database = {
           user_id: string
         }
         Insert: {
+          batch_size?: number | null
           completed_at?: string | null
           completed_tests?: number | null
           created_at?: string | null
           current_test_id?: string | null
+          error_message?: string | null
           failed_tests?: number | null
           id?: string
           passed_tests?: number | null
+          paused?: boolean | null
           started_at?: string | null
           status?: string | null
           test_ids: string[]
@@ -424,13 +430,16 @@ export type Database = {
           user_id: string
         }
         Update: {
+          batch_size?: number | null
           completed_at?: string | null
           completed_tests?: number | null
           created_at?: string | null
           current_test_id?: string | null
+          error_message?: string | null
           failed_tests?: number | null
           id?: string
           passed_tests?: number | null
+          paused?: boolean | null
           started_at?: string | null
           status?: string | null
           test_ids?: string[]

@@ -231,7 +231,21 @@
     "activeBatches": "Aktivní dávky na pozadí",
     "batchProgress": "Dávka {{id}}: {{completed}}/{{total}} testů",
     "viewScreenshots": "Screenshoty",
-    "viewVideo": "Video"
+    "viewVideo": "Video",
+    "batchSize": "Velikost dávky",
+    "testsPerBatch": "{{count}} testů",
+    "estimatedTime": "Odhadovaný čas",
+    "estimatedTimeValue": "~{{minutes}} min",
+    "selectAllFiltered": "Vybrat vše ({{count}})",
+    "selectAllPage": "Vybrat stránku",
+    "pauseBatch": "Pozastavit",
+    "resumeBatch": "Pokračovat",
+    "cancelBatch": "Zrušit dávku",
+    "batchPaused": "Dávka pozastavena",
+    "batchResumed": "Dávka pokračuje",
+    "batchCancelled": "Dávka zrušena",
+    "pageInfo": "Stránka {{page}} z {{total}}",
+    "showingRange": "Zobrazeno {{from}}-{{to}} z {{total}}"
   },
   "testGenerator": {
     "title": "Generátor testů",
@@ -282,7 +296,17 @@
     "importAzure": "Importovat z Azure",
     "importingAzure": "Importuji...",
     "testsImported": "Importováno {{count}} testů",
-    "testsImportedAndSaved": "Importováno a uloženo {{count}} testů do projektu"
+    "testsImportedAndSaved": "Importováno a uloženo {{count}} testů do projektu",
+    "importStats": "Statistiky importu",
+    "totalTests": "Celkem testů",
+    "totalSteps": "Celkem kroků",
+    "avgStepsPerTest": "Průměr kroků/test",
+    "estimatedRunTime": "Odhadovaný čas běhu",
+    "importProgress": "Importováno {{current}} z {{total}}",
+    "chunkedImportInfo": "Import bude proveden po {{chunk}} testech",
+    "duplicatesFound": "Nalezeno {{count}} duplicit (Azure DevOps ID)",
+    "skipDuplicates": "Přeskočit duplicity",
+    "importAll": "Importovat vše"
   },
   "projects": {
     "title": "Projekty",
