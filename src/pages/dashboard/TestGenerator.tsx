@@ -17,7 +17,7 @@ import {
 import { Badge } from '@/components/ui/badge';
 import { Progress } from '@/components/ui/progress';
 import { toast } from 'sonner';
-import { TestTube, Sparkles, Loader2, Play, Save, Trash2, FileText, Upload, X, ClipboardPaste, Table2, FileSpreadsheet, AlertCircle } from 'lucide-react';
+import { TestTube, Sparkles, Loader2, Play, Save, Trash2, FileText, Upload, X, ClipboardPaste, Table2, FileSpreadsheet, AlertCircle, Layers } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import { getDocument, GlobalWorkerOptions } from 'pdfjs-dist';
 import { useTranslation } from 'react-i18next';
@@ -89,6 +89,10 @@ export default function TestGenerator() {
   const xlsxInputRef = useRef<HTMLInputElement>(null);
   const [isImportingAzure, setIsImportingAzure] = useState(false);
   const [importProgress, setImportProgress] = useState<{ current: number; total: number } | null>(null);
+  const [importChunkSize, setImportChunkSize] = useState<number>(25);
+
+  // Average time per test in minutes (based on historical data)
+  const AVG_TIME_PER_TEST = 5;
 
   useEffect(() => {
     fetchProjects();
@@ -560,13 +564,12 @@ export default function TestGenerator() {
             azure_devops_id: allAzureIds[idx] || null,
           }));
 
-          // Chunked import for large datasets (100 tests per chunk)
-          const CHUNK_SIZE = 100;
+          // Use user-selected chunk size
+          const CHUNK_SIZE = importChunkSize;
           const totalTests = testsWithIds.length;
           
-          if (totalTests > CHUNK_SIZE) {
-            setImportProgress({ current: 0, total: totalTests });
-          }
+          // Always show progress for chunked imports
+          setImportProgress({ current: 0, total: totalTests });
 
           for (let i = 0; i < totalTests; i += CHUNK_SIZE) {
             const chunk = testsWithIds.slice(i, i + CHUNK_SIZE);
@@ -596,9 +599,7 @@ export default function TestGenerator() {
             }
 
             // Update progress
-            if (totalTests > CHUNK_SIZE) {
-              setImportProgress({ current: Math.min(i + CHUNK_SIZE, totalTests), total: totalTests });
-            }
+            setImportProgress({ current: Math.min(i + CHUNK_SIZE, totalTests), total: totalTests });
           }
 
           toast.success(t('testGenerator.testsImportedAndSaved', { count: parsedAzureTests.length }));
@@ -1134,16 +1135,43 @@ export default function TestGenerator() {
                     </div>
                     <div className="p-3 rounded-lg bg-warning/10 border border-warning/20">
                       <p className="text-xs text-muted-foreground">{t('testGenerator.estimatedRunTime')}</p>
-                      <p className="text-2xl font-bold text-warning">~{Math.ceil(parsedAzureTests.length * 5)} min</p>
+                      <p className="text-2xl font-bold text-warning">~{Math.ceil(parsedAzureTests.length * AVG_TIME_PER_TEST)} min</p>
                     </div>
                   </div>
 
-                  {/* Import info */}
-                  {parsedAzureTests.length > 100 && (
-                    <div className="p-3 rounded-lg bg-muted/50 border text-sm text-muted-foreground">
-                      {t('testGenerator.chunkedImportInfo', { chunk: 100 })}
+                  {/* Chunk Size Selector with dynamic estimate */}
+                  <div className="p-4 rounded-lg bg-muted/50 border space-y-3">
+                    <div className="flex items-center justify-between">
+                      <Label className="flex items-center gap-2">
+                        <Layers className="w-4 h-4" />
+                        {i18n.language === 'cs' ? 'Velikost chunku pro import' : 'Import chunk size'}
+                      </Label>
+                      <div className="text-right">
+                        <span className="text-sm text-muted-foreground">
+                          {i18n.language === 'cs' ? 'Odhadovaný čas na chunk:' : 'Est. time per chunk:'}{' '}
+                        </span>
+                        <span className="font-semibold text-warning">
+                          ~{importChunkSize * AVG_TIME_PER_TEST} min
+                        </span>
+                      </div>
                     </div>
-                  )}
+                    <div className="flex items-center gap-3">
+                      <Select value={importChunkSize.toString()} onValueChange={(v) => setImportChunkSize(parseInt(v))}>
+                        <SelectTrigger className="w-40">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="10">10 {i18n.language === 'cs' ? 'testů' : 'tests'} (~{10 * AVG_TIME_PER_TEST} min)</SelectItem>
+                          <SelectItem value="25">25 {i18n.language === 'cs' ? 'testů' : 'tests'} (~{25 * AVG_TIME_PER_TEST} min)</SelectItem>
+                          <SelectItem value="50">50 {i18n.language === 'cs' ? 'testů' : 'tests'} (~{50 * AVG_TIME_PER_TEST} min)</SelectItem>
+                          <SelectItem value="100">100 {i18n.language === 'cs' ? 'testů' : 'tests'} (~{100 * AVG_TIME_PER_TEST} min)</SelectItem>
+                        </SelectContent>
+                      </Select>
+                      <div className="flex-1 text-sm text-muted-foreground">
+                        {Math.ceil(parsedAzureTests.length / importChunkSize)} {i18n.language === 'cs' ? 'chunků celkem' : 'chunks total'}
+                      </div>
+                    </div>
+                  </div>
 
                   <Label className="flex items-center gap-2">
                     <FileSpreadsheet className="w-4 h-4 text-primary" />
