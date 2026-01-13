@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useTranslation } from 'react-i18next';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/hooks/useAuth';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -31,7 +32,7 @@ import { toast } from 'sonner';
 import { FileText, Pencil, Trash2, Play, ChevronDown, ChevronRight, Clock, Layers } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { format } from 'date-fns';
-import { cs } from 'date-fns/locale';
+import { cs, enUS } from 'date-fns/locale';
 import { Json } from '@/integrations/supabase/types';
 
 interface Step {
@@ -53,6 +54,7 @@ interface OperationTemplate {
 }
 
 export default function OperationTemplates() {
+  const { t, i18n } = useTranslation();
   const { user } = useAuth();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
@@ -64,6 +66,8 @@ export default function OperationTemplates() {
   const [editPrompt, setEditPrompt] = useState('');
   const [editSteps, setEditSteps] = useState<Step[]>([]);
   const [expandedTemplates, setExpandedTemplates] = useState<Set<string>>(new Set());
+
+  const dateLocale = i18n.language === 'cs' ? cs : enUS;
 
   const { data: templates, isLoading } = useQuery({
     queryKey: ['operation-templates'],
@@ -95,11 +99,11 @@ export default function OperationTemplates() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['operation-templates'] });
-      toast.success('Šablona byla aktualizována');
+      toast.success(t('operations.templateUpdated'));
       setEditingTemplate(null);
     },
     onError: () => {
-      toast.error('Nepodařilo se aktualizovat šablonu');
+      toast.error(t('operations.templateUpdateFailed'));
     },
   });
 
@@ -114,11 +118,11 @@ export default function OperationTemplates() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['operation-templates'] });
-      toast.success('Šablona byla smazána');
+      toast.success(t('operations.templateDeleted'));
       setDeleteTemplate(null);
     },
     onError: () => {
-      toast.error('Nepodařilo se smazat šablonu');
+      toast.error(t('operations.templateDeleteFailed'));
     },
   });
 
@@ -184,8 +188,8 @@ export default function OperationTemplates() {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h2 className="text-2xl font-bold">Šablony operací</h2>
-          <p className="text-muted-foreground">Spravujte uložené šablony pro rychlé spouštění operací</p>
+          <h2 className="text-2xl font-bold">{t('operations.templatesTitle')}</h2>
+          <p className="text-muted-foreground">{t('operations.templatesSubtitle')}</p>
         </div>
       </div>
 
@@ -193,12 +197,12 @@ export default function OperationTemplates() {
         <Card>
           <CardContent className="flex flex-col items-center justify-center py-12 text-center">
             <FileText className="h-12 w-12 text-muted-foreground mb-4" />
-            <h3 className="text-lg font-medium mb-2">Žádné šablony</h3>
+            <h3 className="text-lg font-medium mb-2">{t('operations.noTemplates')}</h3>
             <p className="text-muted-foreground mb-4">
-              Zatím nemáte žádné uložené šablony. Vytvořte šablonu z historie operací.
+              {t('operations.noTemplatesDescription')}
             </p>
             <Button onClick={() => navigate('/dashboard/operations/history')}>
-              Přejít na historii operací
+              {t('operations.goToHistory')}
             </Button>
           </CardContent>
         </Card>
@@ -225,7 +229,7 @@ export default function OperationTemplates() {
                         onClick={() => handleUseTemplate(template)}
                       >
                         <Play className="h-4 w-4 mr-1" />
-                        Použít
+                        {t('operations.use')}
                       </Button>
                       <Button
                         variant="ghost"
@@ -249,16 +253,16 @@ export default function OperationTemplates() {
                   <div className="flex items-center gap-4 text-sm text-muted-foreground">
                     <div className="flex items-center gap-1">
                       <Clock className="h-4 w-4" />
-                      {format(new Date(template.created_at), 'dd. MMM yyyy', { locale: cs })}
+                      {format(new Date(template.created_at), 'dd. MMM yyyy', { locale: dateLocale })}
                     </div>
                     <div className="flex items-center gap-1">
                       <Layers className="h-4 w-4" />
-                      {steps.length} kroků
+                      {steps.length} {t('operations.steps')}
                     </div>
                   </div>
 
                   <div className="bg-muted/50 rounded-lg p-3">
-                    <p className="text-sm font-medium mb-1">Prompt:</p>
+                    <p className="text-sm font-medium mb-1">{t('operations.prompt')}:</p>
                     <p className="text-sm text-muted-foreground line-clamp-2">{template.prompt}</p>
                   </div>
 
@@ -266,7 +270,7 @@ export default function OperationTemplates() {
                     <Collapsible open={isExpanded} onOpenChange={() => toggleExpanded(template.id)}>
                       <CollapsibleTrigger asChild>
                         <Button variant="ghost" size="sm" className="w-full justify-between">
-                          <span>Kroky ({steps.length})</span>
+                          <span>{t('taskDetail.steps')} ({steps.length})</span>
                           {isExpanded ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
                         </Button>
                       </CollapsibleTrigger>
@@ -302,15 +306,15 @@ export default function OperationTemplates() {
       <Dialog open={!!editingTemplate} onOpenChange={(open) => !open && setEditingTemplate(null)}>
         <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>Upravit šablonu</DialogTitle>
+            <DialogTitle>{t('operations.editTemplate')}</DialogTitle>
             <DialogDescription>
-              Upravte název, popis, prompt a kroky šablony
+              {t('operations.editTemplateDescription')}
             </DialogDescription>
           </DialogHeader>
 
           <div className="space-y-4">
             <div className="space-y-2">
-              <Label htmlFor="edit-name">Název</Label>
+              <Label htmlFor="edit-name">{t('operations.name')}</Label>
               <Input
                 id="edit-name"
                 value={editName}
@@ -319,17 +323,17 @@ export default function OperationTemplates() {
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="edit-description">Popis</Label>
+              <Label htmlFor="edit-description">{t('operations.description')}</Label>
               <Input
                 id="edit-description"
                 value={editDescription}
                 onChange={(e) => setEditDescription(e.target.value)}
-                placeholder="Volitelný popis šablony"
+                placeholder={t('operations.descriptionPlaceholder')}
               />
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="edit-prompt">Prompt</Label>
+              <Label htmlFor="edit-prompt">{t('operations.prompt')}</Label>
               <Textarea
                 id="edit-prompt"
                 value={editPrompt}
@@ -340,9 +344,9 @@ export default function OperationTemplates() {
 
             <div className="space-y-2">
               <div className="flex items-center justify-between">
-                <Label>Kroky ({editSteps.length})</Label>
+                <Label>{t('taskDetail.steps')} ({editSteps.length})</Label>
                 <Button type="button" variant="outline" size="sm" onClick={addEditStep}>
-                  Přidat krok
+                  {t('operations.addStep')}
                 </Button>
               </div>
               <div className="space-y-2 max-h-64 overflow-y-auto">
@@ -355,7 +359,7 @@ export default function OperationTemplates() {
                       <Input
                         value={step.next_goal}
                         onChange={(e) => updateEditStep(index, 'next_goal', e.target.value)}
-                        placeholder="Cíl kroku"
+                        placeholder={t('operations.stepGoal')}
                       />
                     </div>
                     <Button
@@ -375,10 +379,10 @@ export default function OperationTemplates() {
 
           <DialogFooter>
             <Button variant="outline" onClick={() => setEditingTemplate(null)}>
-              Zrušit
+              {t('common.cancel')}
             </Button>
             <Button onClick={handleSaveEdit} disabled={updateMutation.isPending}>
-              {updateMutation.isPending ? 'Ukládám...' : 'Uložit změny'}
+              {updateMutation.isPending ? t('operations.saving') : t('operations.saveChanges')}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -388,18 +392,18 @@ export default function OperationTemplates() {
       <AlertDialog open={!!deleteTemplate} onOpenChange={(open) => !open && setDeleteTemplate(null)}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Smazat šablonu?</AlertDialogTitle>
+            <AlertDialogTitle>{t('operations.deleteTemplate')}</AlertDialogTitle>
             <AlertDialogDescription>
-              Opravdu chcete smazat šablonu "{deleteTemplate?.name}"? Tuto akci nelze vrátit zpět.
+              {t('operations.deleteTemplateConfirm', { name: deleteTemplate?.name })}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel>Zrušit</AlertDialogCancel>
+            <AlertDialogCancel>{t('common.cancel')}</AlertDialogCancel>
             <AlertDialogAction
               onClick={() => deleteTemplate && deleteMutation.mutate(deleteTemplate.id)}
               className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
             >
-              Smazat
+              {t('common.delete')}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

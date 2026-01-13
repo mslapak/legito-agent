@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -8,12 +9,12 @@ import { Badge } from '@/components/ui/badge';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from '@/components/ui/dialog';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from '@/components/ui/alert-dialog';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { GraduationCap, Upload, Link as LinkIcon, FileText, Trash2, Eye, Loader2, Sparkles, Plus, Check } from 'lucide-react';
+import { GraduationCap, Upload, FileText, Trash2, Eye, Loader2, Sparkles, Plus, Check } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/hooks/useAuth';
 import { useToast } from '@/hooks/use-toast';
 import { format } from 'date-fns';
-import { cs } from 'date-fns/locale';
+import { cs, enUS } from 'date-fns/locale';
 
 interface Training {
   id: string;
@@ -26,6 +27,7 @@ interface Training {
 }
 
 const OperationTraining = () => {
+  const { t, i18n } = useTranslation();
   const { user } = useAuth();
   const { toast } = useToast();
   const [trainings, setTrainings] = useState<Training[]>([]);
@@ -35,12 +37,13 @@ const OperationTraining = () => {
   const [selectedTraining, setSelectedTraining] = useState<Training | null>(null);
   const [isStructuring, setIsStructuring] = useState<string | null>(null);
   
-  // Form state
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
   const [sourceContent, setSourceContent] = useState('');
   const [sourceType, setSourceType] = useState<'text' | 'file'>('text');
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  const dateLocale = i18n.language === 'cs' ? cs : enUS;
 
   useEffect(() => {
     if (user) fetchTrainings();
@@ -58,7 +61,7 @@ const OperationTraining = () => {
       setTrainings(data || []);
     } catch (error) {
       console.error('Error fetching trainings:', error);
-      toast({ title: 'Chyba', description: 'Nepodařilo se načíst školení', variant: 'destructive' });
+      toast({ title: t('common.error'), description: t('operations.trainingLoadFailed'), variant: 'destructive' });
     } finally {
       setIsLoading(false);
     }
@@ -79,7 +82,7 @@ const OperationTraining = () => {
 
   const handleSubmit = async () => {
     if (!name.trim() || !sourceContent.trim()) {
-      toast({ title: 'Chyba', description: 'Vyplňte název a obsah', variant: 'destructive' });
+      toast({ title: t('common.error'), description: t('operations.fillNameAndContent'), variant: 'destructive' });
       return;
     }
 
@@ -95,7 +98,7 @@ const OperationTraining = () => {
 
       if (error) throw error;
 
-      toast({ title: 'Úspěch', description: 'Školení bylo přidáno' });
+      toast({ title: t('common.success'), description: t('operations.trainingAdded') });
       setIsDialogOpen(false);
       setName('');
       setDescription('');
@@ -103,7 +106,7 @@ const OperationTraining = () => {
       fetchTrainings();
     } catch (error) {
       console.error('Error creating training:', error);
-      toast({ title: 'Chyba', description: 'Nepodařilo se vytvořit školení', variant: 'destructive' });
+      toast({ title: t('common.error'), description: t('operations.trainingCreateFailed'), variant: 'destructive' });
     } finally {
       setIsSubmitting(false);
     }
@@ -123,11 +126,11 @@ const OperationTraining = () => {
         .update({ structured_instructions: data.instructions })
         .eq('id', training.id);
 
-      toast({ title: 'Úspěch', description: 'Instrukce byly strukturovány' });
+      toast({ title: t('common.success'), description: t('operations.structureSuccess') });
       fetchTrainings();
     } catch (error) {
       console.error('Error structuring training:', error);
-      toast({ title: 'Chyba', description: 'Nepodařilo se strukturovat instrukce', variant: 'destructive' });
+      toast({ title: t('common.error'), description: t('operations.structureFailed'), variant: 'destructive' });
     } finally {
       setIsStructuring(null);
     }
@@ -137,11 +140,11 @@ const OperationTraining = () => {
     try {
       const { error } = await supabase.from('operation_trainings').delete().eq('id', id);
       if (error) throw error;
-      toast({ title: 'Smazáno', description: 'Školení bylo odstraněno' });
+      toast({ title: t('common.success'), description: t('operations.trainingDeleted') });
       fetchTrainings();
     } catch (error) {
       console.error('Error deleting training:', error);
-      toast({ title: 'Chyba', description: 'Nepodařilo se smazat školení', variant: 'destructive' });
+      toast({ title: t('common.error'), description: t('operations.trainingDeleteFailed'), variant: 'destructive' });
     }
   };
 
@@ -162,56 +165,56 @@ const OperationTraining = () => {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h2 className="text-2xl font-bold">Školící dokumentace</h2>
-          <p className="text-muted-foreground">Návody a tréninky pro automatizaci operací</p>
+          <h2 className="text-2xl font-bold">{t('operations.trainingTitle')}</h2>
+          <p className="text-muted-foreground">{t('operations.trainingSubtitle')}</p>
         </div>
         <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
           <DialogTrigger asChild>
-            <Button><Plus className="w-4 h-4 mr-2" />Přidat školení</Button>
+            <Button><Plus className="w-4 h-4 mr-2" />{t('operations.addTraining')}</Button>
           </DialogTrigger>
           <DialogContent className="max-w-2xl">
             <DialogHeader>
-              <DialogTitle>Nové školení</DialogTitle>
+              <DialogTitle>{t('operations.newTraining')}</DialogTitle>
             </DialogHeader>
             <div className="space-y-4">
               <div className="space-y-2">
-                <Label>Název</Label>
-                <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="Např. Jak vytvořit šablonu" />
+                <Label>{t('operations.trainingName')}</Label>
+                <Input value={name} onChange={(e) => setName(e.target.value)} placeholder={t('operations.trainingNamePlaceholder')} />
               </div>
               <div className="space-y-2">
-                <Label>Popis (volitelné)</Label>
-                <Input value={description} onChange={(e) => setDescription(e.target.value)} placeholder="Krátký popis školení" />
+                <Label>{t('operations.trainingDescription')}</Label>
+                <Input value={description} onChange={(e) => setDescription(e.target.value)} placeholder={t('operations.trainingDescriptionPlaceholder')} />
               </div>
               <Tabs value={sourceType} onValueChange={(v) => setSourceType(v as 'text' | 'file')}>
                 <TabsList className="grid w-full grid-cols-2">
-                  <TabsTrigger value="text"><FileText className="w-4 h-4 mr-2" />Text</TabsTrigger>
-                  <TabsTrigger value="file"><Upload className="w-4 h-4 mr-2" />Soubor</TabsTrigger>
+                  <TabsTrigger value="text"><FileText className="w-4 h-4 mr-2" />{t('operations.text')}</TabsTrigger>
+                  <TabsTrigger value="file"><Upload className="w-4 h-4 mr-2" />{t('operations.file')}</TabsTrigger>
                 </TabsList>
                 <TabsContent value="text" className="mt-4">
                   <Textarea
                     value={sourceContent}
                     onChange={(e) => setSourceContent(e.target.value)}
-                    placeholder="Vložte obsah školení..."
+                    placeholder={t('operations.pasteContent')}
                     rows={10}
                   />
                 </TabsContent>
                 <TabsContent value="file" className="mt-4">
                   <div className="border-2 border-dashed rounded-lg p-8 text-center">
                     <Upload className="w-8 h-8 mx-auto mb-4 text-muted-foreground" />
-                    <p className="text-muted-foreground mb-4">Nahrajte TXT nebo MD soubor</p>
+                    <p className="text-muted-foreground mb-4">{t('operations.uploadTxtMd')}</p>
                     <Input type="file" accept=".txt,.md" onChange={handleFileUpload} className="max-w-xs mx-auto" />
                     {sourceContent && (
-                      <p className="mt-4 text-sm text-green-500"><Check className="w-4 h-4 inline mr-1" />Soubor načten ({sourceContent.length} znaků)</p>
+                      <p className="mt-4 text-sm text-green-500"><Check className="w-4 h-4 inline mr-1" />{t('operations.fileLoaded', { chars: sourceContent.length })}</p>
                     )}
                   </div>
                 </TabsContent>
               </Tabs>
             </div>
             <DialogFooter>
-              <Button variant="outline" onClick={() => setIsDialogOpen(false)}>Zrušit</Button>
+              <Button variant="outline" onClick={() => setIsDialogOpen(false)}>{t('common.cancel')}</Button>
               <Button onClick={handleSubmit} disabled={isSubmitting}>
                 {isSubmitting && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
-                Uložit
+                {t('common.save')}
               </Button>
             </DialogFooter>
           </DialogContent>
@@ -222,9 +225,9 @@ const OperationTraining = () => {
         <Card className="py-12">
           <CardContent className="text-center">
             <GraduationCap className="w-16 h-16 mx-auto mb-4 text-muted-foreground/50" />
-            <h3 className="text-lg font-semibold mb-2">Zatím žádná školení</h3>
-            <p className="text-muted-foreground mb-4">Přidejte návody a tréninky pro automatizaci operací</p>
-            <Button onClick={() => setIsDialogOpen(true)}><Plus className="w-4 h-4 mr-2" />Přidat první školení</Button>
+            <h3 className="text-lg font-semibold mb-2">{t('operations.noTrainings')}</h3>
+            <p className="text-muted-foreground mb-4">{t('operations.noTrainingsDescription')}</p>
+            <Button onClick={() => setIsDialogOpen(true)}><Plus className="w-4 h-4 mr-2" />{t('operations.addFirstTraining')}</Button>
           </CardContent>
         </Card>
       ) : (
@@ -239,24 +242,24 @@ const OperationTraining = () => {
                     <div className="flex items-center gap-2 mt-2">
                       <Badge variant="outline">
                         {training.source_type === 'file' ? <Upload className="w-3 h-3 mr-1" /> : <FileText className="w-3 h-3 mr-1" />}
-                        {training.source_type === 'file' ? 'Soubor' : 'Text'}
+                        {training.source_type === 'file' ? t('operations.file') : t('operations.text')}
                       </Badge>
                       {training.structured_instructions ? (
                         <Badge className="bg-green-500/10 text-green-500 border-green-500/20">
                           <Check className="w-3 h-3 mr-1" />
-                          Strukturováno ({Array.isArray(training.structured_instructions) ? training.structured_instructions.length : 0} kroků)
+                          {t('operations.structured')} ({Array.isArray(training.structured_instructions) ? training.structured_instructions.length : 0} {t('operations.structuredSteps')})
                         </Badge>
                       ) : (
-                        <Badge variant="secondary">Čeká na strukturování</Badge>
+                        <Badge variant="secondary">{t('operations.awaitingStructuring')}</Badge>
                       )}
                       <span className="text-xs text-muted-foreground">
-                        {format(new Date(training.created_at), 'dd.MM.yyyy', { locale: cs })}
+                        {format(new Date(training.created_at), 'dd.MM.yyyy', { locale: dateLocale })}
                       </span>
                     </div>
                   </div>
                   <div className="flex gap-2">
                     <Button variant="outline" size="sm" onClick={() => viewTraining(training)}>
-                      <Eye className="w-4 h-4 mr-1" />Zobrazit
+                      <Eye className="w-4 h-4 mr-1" />{t('operations.view')}
                     </Button>
                     {!training.structured_instructions && (
                       <Button
@@ -270,7 +273,7 @@ const OperationTraining = () => {
                         ) : (
                           <Sparkles className="w-4 h-4 mr-1" />
                         )}
-                        Strukturovat
+                        {t('operations.structure')}
                       </Button>
                     )}
                     <AlertDialog>
@@ -279,12 +282,12 @@ const OperationTraining = () => {
                       </AlertDialogTrigger>
                       <AlertDialogContent>
                         <AlertDialogHeader>
-                          <AlertDialogTitle>Smazat školení?</AlertDialogTitle>
-                          <AlertDialogDescription>Tato akce je nevratná.</AlertDialogDescription>
+                          <AlertDialogTitle>{t('operations.deleteTraining')}</AlertDialogTitle>
+                          <AlertDialogDescription>{t('operations.deleteTrainingConfirm')}</AlertDialogDescription>
                         </AlertDialogHeader>
                         <AlertDialogFooter>
-                          <AlertDialogCancel>Zrušit</AlertDialogCancel>
-                          <AlertDialogAction onClick={() => handleDelete(training.id)}>Smazat</AlertDialogAction>
+                          <AlertDialogCancel>{t('common.cancel')}</AlertDialogCancel>
+                          <AlertDialogAction onClick={() => handleDelete(training.id)}>{t('common.delete')}</AlertDialogAction>
                         </AlertDialogFooter>
                       </AlertDialogContent>
                     </AlertDialog>
@@ -309,7 +312,7 @@ const OperationTraining = () => {
               )}
               
               <div>
-                <h4 className="font-semibold mb-2">Zdrojový obsah</h4>
+                <h4 className="font-semibold mb-2">{t('operations.sourceContent')}</h4>
                 <div className="bg-muted p-4 rounded-lg max-h-60 overflow-y-auto">
                   <pre className="text-sm whitespace-pre-wrap">{selectedTraining.source_content}</pre>
                 </div>
@@ -317,7 +320,7 @@ const OperationTraining = () => {
 
               {selectedTraining.structured_instructions && (
                 <div>
-                  <h4 className="font-semibold mb-2">Strukturované instrukce</h4>
+                  <h4 className="font-semibold mb-2">{t('operations.structuredInstructions')}</h4>
                   <div className="space-y-2">
                     {Array.isArray(selectedTraining.structured_instructions) ? (
                       selectedTraining.structured_instructions.map((step: any, index: number) => (
@@ -326,7 +329,7 @@ const OperationTraining = () => {
                             {index + 1}
                           </span>
                           <div>
-                            <p className="font-medium">{step.title || step.action || `Krok ${index + 1}`}</p>
+                            <p className="font-medium">{step.title || step.action || `${t('operations.step')} ${index + 1}`}</p>
                             {step.description && <p className="text-sm text-muted-foreground">{step.description}</p>}
                           </div>
                         </div>

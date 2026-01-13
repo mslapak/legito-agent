@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
 import { useAuth } from '@/hooks/useAuth';
 import { supabase } from '@/integrations/supabase/client';
 import { Card, CardContent } from '@/components/ui/card';
@@ -48,7 +49,7 @@ import {
   Save,
 } from 'lucide-react';
 import { format } from 'date-fns';
-import { cs } from 'date-fns/locale';
+import { cs, enUS } from 'date-fns/locale';
 import type { Json } from '@/integrations/supabase/types';
 
 interface Operation {
@@ -62,6 +63,7 @@ interface Operation {
 }
 
 export default function OperationHistory() {
+  const { t, i18n } = useTranslation();
   const { user } = useAuth();
   const navigate = useNavigate();
   const [operations, setOperations] = useState<Operation[]>([]);
@@ -69,11 +71,12 @@ export default function OperationHistory() {
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('all');
   
-  // Save as template dialog
   const [saveTemplateOpen, setSaveTemplateOpen] = useState(false);
   const [selectedOperation, setSelectedOperation] = useState<Operation | null>(null);
   const [templateName, setTemplateName] = useState('');
   const [savingTemplate, setSavingTemplate] = useState(false);
+
+  const dateLocale = i18n.language === 'cs' ? cs : enUS;
 
   useEffect(() => {
     if (user) {
@@ -94,7 +97,7 @@ export default function OperationHistory() {
       .order('created_at', { ascending: false });
 
     if (error) {
-      toast.error('Nepodařilo se načíst operace');
+      toast.error(t('operations.loadFailed'));
       console.error(error);
     } else {
       setOperations(data || []);
@@ -124,9 +127,9 @@ export default function OperationHistory() {
     const { error } = await supabase.from('tasks').delete().eq('id', operationId);
 
     if (error) {
-      toast.error('Nepodařilo se smazat operaci');
+      toast.error(t('operations.deleteFailed'));
     } else {
-      toast.success('Operace smazána');
+      toast.success(t('operations.operationDeleted'));
       fetchOperations();
     }
   };
@@ -139,7 +142,7 @@ export default function OperationHistory() {
 
   const handleSaveAsTemplate = async () => {
     if (!templateName.trim() || !selectedOperation) {
-      toast.error('Zadejte název šablony');
+      toast.error(t('operations.enterTemplateName'));
       return;
     }
 
@@ -154,12 +157,12 @@ export default function OperationHistory() {
 
       if (error) throw error;
 
-      toast.success('Šablona uložena');
+      toast.success(t('operations.templateSaved'));
       setSaveTemplateOpen(false);
       setSelectedOperation(null);
       setTemplateName('');
     } catch (error: any) {
-      toast.error('Nepodařilo se uložit šablonu');
+      toast.error(t('operations.templateSaveFailed'));
     } finally {
       setSavingTemplate(false);
     }
@@ -171,35 +174,35 @@ export default function OperationHistory() {
         return (
           <Badge variant="default" className="bg-green-500/10 text-green-500 border-green-500/20">
             <CheckCircle className="w-3 h-3 mr-1" />
-            Dokončeno
+            {t('status.completed')}
           </Badge>
         );
       case 'failed':
         return (
           <Badge variant="destructive">
             <XCircle className="w-3 h-3 mr-1" />
-            Chyba
+            {t('operations.error')}
           </Badge>
         );
       case 'running':
         return (
           <Badge variant="default" className="bg-blue-500/10 text-blue-500 border-blue-500/20">
             <Play className="w-3 h-3 mr-1" />
-            Běží
+            {t('status.running')}
           </Badge>
         );
       case 'cancelled':
         return (
           <Badge variant="secondary">
             <Ban className="w-3 h-3 mr-1" />
-            Zrušeno
+            {t('status.cancelled')}
           </Badge>
         );
       default:
         return (
           <Badge variant="outline">
             <Clock className="w-3 h-3 mr-1" />
-            Čeká
+            {t('status.pending')}
           </Badge>
         );
     }
@@ -232,7 +235,7 @@ export default function OperationHistory() {
         <div className="relative flex-1">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
           <Input
-            placeholder="Hledat operace..."
+            placeholder={t('operations.searchOperations')}
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             className="pl-9"
@@ -240,15 +243,15 @@ export default function OperationHistory() {
         </div>
         <Select value={statusFilter} onValueChange={setStatusFilter}>
           <SelectTrigger className="w-full sm:w-40">
-            <SelectValue placeholder="Status" />
+            <SelectValue placeholder={t('tests.status')} />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="all">Vše</SelectItem>
-            <SelectItem value="pending">Čeká</SelectItem>
-            <SelectItem value="running">Běží</SelectItem>
-            <SelectItem value="completed">Dokončeno</SelectItem>
-            <SelectItem value="failed">Chyba</SelectItem>
-            <SelectItem value="cancelled">Zrušeno</SelectItem>
+            <SelectItem value="all">{t('operations.all')}</SelectItem>
+            <SelectItem value="pending">{t('operations.waiting')}</SelectItem>
+            <SelectItem value="running">{t('status.running')}</SelectItem>
+            <SelectItem value="completed">{t('status.completed')}</SelectItem>
+            <SelectItem value="failed">{t('operations.error')}</SelectItem>
+            <SelectItem value="cancelled">{t('status.cancelled')}</SelectItem>
           </SelectContent>
         </Select>
       </div>
@@ -256,13 +259,13 @@ export default function OperationHistory() {
       {filteredOperations.length === 0 ? (
         <Card>
           <CardContent className="py-12 text-center">
-            <p className="text-muted-foreground">Žádné operace nenalezeny</p>
+            <p className="text-muted-foreground">{t('operations.noOperationsFound')}</p>
             <Button
               variant="link"
               onClick={() => navigate('/dashboard/operations/new')}
               className="mt-2"
             >
-              Vytvořit novou operaci
+              {t('operations.createNewOperation')}
             </Button>
           </CardContent>
         </Card>
@@ -278,13 +281,13 @@ export default function OperationHistory() {
                       {getStatusBadge(operation.status)}
                       {getStepsCount(operation.steps) > 0 && (
                         <Badge variant="outline" className="text-xs">
-                          {getStepsCount(operation.steps)} kroků
+                          {getStepsCount(operation.steps)} {t('operations.steps')}
                         </Badge>
                       )}
                     </div>
                     <p className="text-sm text-muted-foreground line-clamp-2">{operation.prompt}</p>
                     <p className="text-xs text-muted-foreground mt-2">
-                      {format(new Date(operation.created_at), 'PPp', { locale: cs })}
+                      {format(new Date(operation.created_at), 'PPp', { locale: dateLocale })}
                     </p>
                   </div>
                   <div className="flex items-center gap-2 flex-wrap">
@@ -292,10 +295,10 @@ export default function OperationHistory() {
                       variant="outline"
                       size="sm"
                       onClick={() => openSaveTemplateDialog(operation)}
-                      title="Uložit jako šablonu"
+                      title={t('operations.saveAsTemplate')}
                     >
                       <Save className="h-4 w-4 sm:mr-1" />
-                      <span className="hidden sm:inline">Šablona</span>
+                      <span className="hidden sm:inline">{t('nav.templates')}</span>
                     </Button>
                     <Button
                       variant="outline"
@@ -303,7 +306,7 @@ export default function OperationHistory() {
                       onClick={() => navigate(`/dashboard/operations/new?duplicate_from=${operation.id}`)}
                     >
                       <Copy className="h-4 w-4 sm:mr-1" />
-                      <span className="hidden sm:inline">Duplikovat</span>
+                      <span className="hidden sm:inline">{t('operations.duplicate')}</span>
                     </Button>
                     <Button
                       variant="outline"
@@ -311,7 +314,7 @@ export default function OperationHistory() {
                       onClick={() => navigate(`/dashboard/operations/${operation.id}`)}
                     >
                       <Eye className="h-4 w-4 sm:mr-1" />
-                      <span className="hidden sm:inline">Detail</span>
+                      <span className="hidden sm:inline">{t('operations.detail')}</span>
                     </Button>
                     <AlertDialog>
                       <AlertDialogTrigger asChild>
@@ -321,15 +324,15 @@ export default function OperationHistory() {
                       </AlertDialogTrigger>
                       <AlertDialogContent>
                         <AlertDialogHeader>
-                          <AlertDialogTitle>Smazat operaci?</AlertDialogTitle>
+                          <AlertDialogTitle>{t('operations.deleteOperation')}</AlertDialogTitle>
                           <AlertDialogDescription>
-                            Tato akce je nevratná. Operace bude trvale smazána.
+                            {t('operations.deleteOperationConfirm')}
                           </AlertDialogDescription>
                         </AlertDialogHeader>
                         <AlertDialogFooter>
-                          <AlertDialogCancel>Zrušit</AlertDialogCancel>
+                          <AlertDialogCancel>{t('common.cancel')}</AlertDialogCancel>
                           <AlertDialogAction onClick={() => handleDelete(operation.id)}>
-                            Smazat
+                            {t('common.delete')}
                           </AlertDialogAction>
                         </AlertDialogFooter>
                       </AlertDialogContent>
@@ -346,30 +349,30 @@ export default function OperationHistory() {
       <Dialog open={saveTemplateOpen} onOpenChange={setSaveTemplateOpen}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Uložit jako šablonu</DialogTitle>
+            <DialogTitle>{t('operations.saveAsTemplate')}</DialogTitle>
             <DialogDescription>
-              Uložte tuto operaci jako šablonu pro opakované použití.
+              {t('operations.saveTemplateDescription')}
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4 py-4">
             <div className="space-y-2">
-              <Label htmlFor="template-name">Název šablony</Label>
+              <Label htmlFor="template-name">{t('operations.templateName')}</Label>
               <Input
                 id="template-name"
                 value={templateName}
                 onChange={(e) => setTemplateName(e.target.value)}
-                placeholder="Např. Vytvoření template v Legito"
+                placeholder={t('operations.templateNamePlaceholder')}
               />
             </div>
             {selectedOperation && getStepsCount(selectedOperation.steps) > 0 && (
               <p className="text-sm text-muted-foreground">
-                Šablona bude obsahovat {getStepsCount(selectedOperation.steps)} kroků.
+                {t('operations.templateWillContain', { count: getStepsCount(selectedOperation.steps) })}
               </p>
             )}
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setSaveTemplateOpen(false)}>
-              Zrušit
+              {t('common.cancel')}
             </Button>
             <Button onClick={handleSaveAsTemplate} disabled={savingTemplate}>
               {savingTemplate ? (
@@ -377,7 +380,7 @@ export default function OperationHistory() {
               ) : (
                 <Save className="h-4 w-4 mr-2" />
               )}
-              Uložit šablonu
+              {t('operations.saveTemplate')}
             </Button>
           </DialogFooter>
         </DialogContent>
