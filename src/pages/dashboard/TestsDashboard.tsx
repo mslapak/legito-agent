@@ -28,6 +28,8 @@ import {
   Camera,
   Film,
   ExternalLink,
+  Pause,
+  Square,
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import { toast } from 'sonner';
@@ -75,6 +77,8 @@ interface BatchRun {
   current_test_id: string | null;
   started_at: string | null;
   created_at: string;
+  paused: boolean | null;
+  batch_size: number | null;
 }
 
 type SortField = 'title' | 'status' | 'priority' | 'last_run_at' | 'created_at';
@@ -665,6 +669,58 @@ export default function TestsDashboard() {
     return test?.title || testId.substring(0, 8);
   };
 
+  // Batch control handlers
+  const pauseBatch = async (batchId: string) => {
+    try {
+      const { error } = await supabase
+        .from('test_batch_runs')
+        .update({ paused: true })
+        .eq('id', batchId);
+
+      if (error) throw error;
+      toast.success(t('tests.batchPaused'));
+      fetchActiveBatches();
+    } catch (error) {
+      console.error('Error pausing batch:', error);
+      toast.error(t('common.error'));
+    }
+  };
+
+  const resumeBatch = async (batchId: string) => {
+    try {
+      const { error } = await supabase
+        .from('test_batch_runs')
+        .update({ paused: false })
+        .eq('id', batchId);
+
+      if (error) throw error;
+      toast.success(t('tests.batchResumed'));
+      fetchActiveBatches();
+    } catch (error) {
+      console.error('Error resuming batch:', error);
+      toast.error(t('common.error'));
+    }
+  };
+
+  const cancelBatch = async (batchId: string) => {
+    try {
+      const { error } = await supabase
+        .from('test_batch_runs')
+        .update({ 
+          status: 'cancelled',
+          completed_at: new Date().toISOString(),
+        })
+        .eq('id', batchId);
+
+      if (error) throw error;
+      toast.success(t('tests.batchCancelled'));
+      fetchActiveBatches();
+    } catch (error) {
+      console.error('Error cancelling batch:', error);
+      toast.error(t('common.error'));
+    }
+  };
+
   const exportToExcel = async () => {
     setExporting(true);
     try {
@@ -725,24 +781,72 @@ export default function TestsDashboard() {
           </CardHeader>
           <CardContent className="space-y-3">
             {activeBatches.map((batch) => (
-              <div key={batch.id} className="space-y-2">
+              <div key={batch.id} className="space-y-2 p-3 rounded-lg bg-background/50 border">
                 <div className="flex items-center justify-between text-sm">
-                  <span>
-                    {batch.completed_tests}/{batch.total_tests} {i18n.language === 'cs' ? 'testů dokončeno' : 'tests completed'}
+                  <div className="flex items-center gap-2">
+                    {batch.paused ? (
+                      <Badge variant="secondary" className="gap-1">
+                        <Pause className="h-3 w-3" />
+                        {t('tests.paused')}
+                      </Badge>
+                    ) : (
+                      <Badge className="bg-primary gap-1">
+                        <Loader2 className="h-3 w-3 animate-spin" />
+                        {t('tests.running')}
+                      </Badge>
+                    )}
+                    <span>
+                      {batch.completed_tests}/{batch.total_tests} {i18n.language === 'cs' ? 'testů' : 'tests'}
+                    </span>
                     {batch.passed_tests > 0 && (
-                      <span className="text-success ml-2">✓ {batch.passed_tests}</span>
+                      <span className="text-success">✓ {batch.passed_tests}</span>
                     )}
                     {batch.failed_tests > 0 && (
-                      <span className="text-destructive ml-2">✗ {batch.failed_tests}</span>
+                      <span className="text-destructive">✗ {batch.failed_tests}</span>
                     )}
-                  </span>
-                  <span className="text-muted-foreground">
-                    {batch.current_test_id && `${i18n.language === 'cs' ? 'Aktuální' : 'Current'}: ${getTestTitle(batch.current_test_id)}`}
-                  </span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className="text-muted-foreground text-xs">
+                      {batch.current_test_id && `${i18n.language === 'cs' ? 'Aktuální' : 'Current'}: ${getTestTitle(batch.current_test_id)}`}
+                    </span>
+                    {/* Batch controls */}
+                    <div className="flex gap-1">
+                      {batch.paused ? (
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => resumeBatch(batch.id)}
+                          className="h-7 px-2"
+                        >
+                          <Play className="h-3 w-3 mr-1" />
+                          {t('tests.resume')}
+                        </Button>
+                      ) : (
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => pauseBatch(batch.id)}
+                          className="h-7 px-2"
+                        >
+                          <Pause className="h-3 w-3 mr-1" />
+                          {t('tests.pause')}
+                        </Button>
+                      )}
+                      <Button
+                        size="sm"
+                        variant="destructive"
+                        onClick={() => cancelBatch(batch.id)}
+                        className="h-7 px-2"
+                      >
+                        <Square className="h-3 w-3 mr-1" />
+                        {t('tests.cancel')}
+                      </Button>
+                    </div>
+                  </div>
                 </div>
                 <Progress 
                   value={(batch.completed_tests / batch.total_tests) * 100} 
-                  className="h-2"
+                  className={`h-2 ${batch.paused ? 'opacity-50' : ''}`}
                 />
               </div>
             ))}

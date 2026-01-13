@@ -47,6 +47,40 @@ async function runBatchInBackground(batchId: string, testIds: string[], userId: 
   let failedTests = 0;
 
   for (const testId of testIds) {
+    // Check if batch is paused or cancelled
+    const { data: batchState } = await supabase
+      .from("test_batch_runs")
+      .select("paused, status")
+      .eq("id", batchId)
+      .single();
+
+    if (batchState?.status === "cancelled") {
+      console.log(`[Batch ${batchId}] Batch was cancelled, stopping execution`);
+      break;
+    }
+
+    // Wait while paused
+    while (batchState?.paused) {
+      console.log(`[Batch ${batchId}] Batch is paused, waiting...`);
+      await delay(5000);
+      
+      const { data: checkState } = await supabase
+        .from("test_batch_runs")
+        .select("paused, status")
+        .eq("id", batchId)
+        .single();
+      
+      if (checkState?.status === "cancelled") {
+        console.log(`[Batch ${batchId}] Batch was cancelled while paused`);
+        return;
+      }
+      
+      if (!checkState?.paused) {
+        console.log(`[Batch ${batchId}] Batch resumed, continuing...`);
+        break;
+      }
+    }
+
     console.log(`[Batch ${batchId}] Processing test ${testId} (${completedTests + 1}/${testIds.length})`);
 
     // Update current test
