@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -7,7 +8,7 @@ import { Play, History, FileText, GraduationCap, Clock, CheckCircle, XCircle, Lo
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/hooks/useAuth';
 import { format } from 'date-fns';
-import { cs } from 'date-fns/locale';
+import { cs, enUS } from 'date-fns/locale';
 
 interface Task {
   id: string;
@@ -24,12 +25,15 @@ interface Stats {
 }
 
 const OperationsDashboard = () => {
+  const { t, i18n } = useTranslation();
   const { user } = useAuth();
   const [tasks, setTasks] = useState<Task[]>([]);
   const [stats, setStats] = useState<Stats>({ total: 0, running: 0, completed: 0, failed: 0 });
   const [templateCount, setTemplateCount] = useState(0);
   const [trainingCount, setTrainingCount] = useState(0);
   const [isLoading, setIsLoading] = useState(true);
+
+  const dateLocale = i18n.language === 'cs' ? cs : enUS;
 
   useEffect(() => {
     if (user) {
@@ -45,7 +49,6 @@ const OperationsDashboard = () => {
   const fetchData = async () => {
     setIsLoading(true);
     try {
-      // Fetch recent operations
       const { data: tasksData } = await supabase
         .from('tasks')
         .select('id, title, status, created_at')
@@ -55,7 +58,6 @@ const OperationsDashboard = () => {
         .limit(5);
       setTasks(tasksData || []);
 
-      // Fetch stats
       const { data: allTasks } = await supabase
         .from('tasks')
         .select('status')
@@ -71,13 +73,11 @@ const OperationsDashboard = () => {
         });
       }
 
-      // Fetch template count
       const { count: tplCount } = await supabase
         .from('operation_templates')
         .select('*', { count: 'exact', head: true });
       setTemplateCount(tplCount || 0);
 
-      // Fetch training count
       const { count: trnCount } = await supabase
         .from('operation_trainings')
         .select('*', { count: 'exact', head: true });
@@ -92,13 +92,13 @@ const OperationsDashboard = () => {
   const getStatusBadge = (status: string) => {
     switch (status) {
       case 'completed':
-        return <Badge className="bg-green-500/10 text-green-500 border-green-500/20"><CheckCircle className="w-3 h-3 mr-1" />Dokončeno</Badge>;
+        return <Badge className="bg-green-500/10 text-green-500 border-green-500/20"><CheckCircle className="w-3 h-3 mr-1" />{t('status.completed')}</Badge>;
       case 'running':
-        return <Badge className="bg-blue-500/10 text-blue-500 border-blue-500/20"><Loader2 className="w-3 h-3 mr-1 animate-spin" />Běží</Badge>;
+        return <Badge className="bg-blue-500/10 text-blue-500 border-blue-500/20"><Loader2 className="w-3 h-3 mr-1 animate-spin" />{t('status.running')}</Badge>;
       case 'failed':
-        return <Badge className="bg-red-500/10 text-red-500 border-red-500/20"><XCircle className="w-3 h-3 mr-1" />Selhalo</Badge>;
+        return <Badge className="bg-red-500/10 text-red-500 border-red-500/20"><XCircle className="w-3 h-3 mr-1" />{t('status.failed')}</Badge>;
       case 'pending':
-        return <Badge className="bg-yellow-500/10 text-yellow-500 border-yellow-500/20"><Clock className="w-3 h-3 mr-1" />Čeká</Badge>;
+        return <Badge className="bg-yellow-500/10 text-yellow-500 border-yellow-500/20"><Clock className="w-3 h-3 mr-1" />{t('status.pending')}</Badge>;
       default:
         return <Badge variant="outline">{status}</Badge>;
     }
@@ -118,25 +118,25 @@ const OperationsDashboard = () => {
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
         <Card>
           <CardHeader className="pb-2">
-            <CardDescription>Celkem operací</CardDescription>
+            <CardDescription>{t('operations.totalOperations')}</CardDescription>
             <CardTitle className="text-3xl">{stats.total}</CardTitle>
           </CardHeader>
         </Card>
         <Card>
           <CardHeader className="pb-2">
-            <CardDescription>Běžící</CardDescription>
+            <CardDescription>{t('operations.running')}</CardDescription>
             <CardTitle className="text-3xl text-blue-500">{stats.running}</CardTitle>
           </CardHeader>
         </Card>
         <Card>
           <CardHeader className="pb-2">
-            <CardDescription>Dokončeno</CardDescription>
+            <CardDescription>{t('operations.completed')}</CardDescription>
             <CardTitle className="text-3xl text-green-500">{stats.completed}</CardTitle>
           </CardHeader>
         </Card>
         <Card>
           <CardHeader className="pb-2">
-            <CardDescription>Selhalo</CardDescription>
+            <CardDescription>{t('operations.failed')}</CardDescription>
             <CardTitle className="text-3xl text-red-500">{stats.failed}</CardTitle>
           </CardHeader>
         </Card>
@@ -152,8 +152,8 @@ const OperationsDashboard = () => {
                   <Play className="w-5 h-5 text-primary" />
                 </div>
                 <div>
-                  <CardTitle className="text-base">Nová operace</CardTitle>
-                  <CardDescription>Spustit novou operaci</CardDescription>
+                  <CardTitle className="text-base">{t('operations.newOperation')}</CardTitle>
+                  <CardDescription>{t('operations.runNew')}</CardDescription>
                 </div>
               </div>
             </CardHeader>
@@ -168,8 +168,8 @@ const OperationsDashboard = () => {
                   <FileText className="w-5 h-5 text-primary" />
                 </div>
                 <div>
-                  <CardTitle className="text-base">Šablony</CardTitle>
-                  <CardDescription>{templateCount} uložených šablon</CardDescription>
+                  <CardTitle className="text-base">{t('nav.templates')}</CardTitle>
+                  <CardDescription>{templateCount} {t('operations.savedTemplates')}</CardDescription>
                 </div>
               </div>
             </CardHeader>
@@ -184,8 +184,8 @@ const OperationsDashboard = () => {
                   <GraduationCap className="w-5 h-5 text-primary" />
                 </div>
                 <div>
-                  <CardTitle className="text-base">Školení</CardTitle>
-                  <CardDescription>{trainingCount} tréninků</CardDescription>
+                  <CardTitle className="text-base">{t('nav.training')}</CardTitle>
+                  <CardDescription>{trainingCount} {t('operations.trainings')}</CardDescription>
                 </div>
               </div>
             </CardHeader>
@@ -200,8 +200,8 @@ const OperationsDashboard = () => {
                   <History className="w-5 h-5 text-primary" />
                 </div>
                 <div>
-                  <CardTitle className="text-base">Historie</CardTitle>
-                  <CardDescription>Zobrazit všechny operace</CardDescription>
+                  <CardTitle className="text-base">{t('operations.history')}</CardTitle>
+                  <CardDescription>{t('operations.viewAllOperations')}</CardDescription>
                 </div>
               </div>
             </CardHeader>
@@ -213,9 +213,9 @@ const OperationsDashboard = () => {
       <Card>
         <CardHeader>
           <div className="flex items-center justify-between">
-            <CardTitle>Nedávné operace</CardTitle>
+            <CardTitle>{t('operations.recentOperations')}</CardTitle>
             <Button variant="outline" size="sm" asChild>
-              <Link to="/dashboard/operations/history">Zobrazit vše</Link>
+              <Link to="/dashboard/operations/history">{t('operations.viewAll')}</Link>
             </Button>
           </div>
         </CardHeader>
@@ -223,9 +223,9 @@ const OperationsDashboard = () => {
           {tasks.length === 0 ? (
             <div className="text-center py-8 text-muted-foreground">
               <Play className="w-12 h-12 mx-auto mb-4 opacity-50" />
-              <p>Zatím žádné operace</p>
+              <p>{t('operations.noOperationsYet')}</p>
               <Button className="mt-4" asChild>
-                <Link to="/dashboard/operations/new">Spustit první operaci</Link>
+                <Link to="/dashboard/operations/new">{t('operations.startFirstOperation')}</Link>
               </Button>
             </div>
           ) : (
@@ -239,7 +239,7 @@ const OperationsDashboard = () => {
                   <div>
                     <p className="font-medium">{task.title}</p>
                     <p className="text-sm text-muted-foreground">
-                      {format(new Date(task.created_at), 'dd.MM.yyyy HH:mm', { locale: cs })}
+                      {format(new Date(task.created_at), 'dd.MM.yyyy HH:mm', { locale: dateLocale })}
                     </p>
                   </div>
                   {getStatusBadge(task.status)}
