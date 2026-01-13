@@ -15,6 +15,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Badge } from '@/components/ui/badge';
+import { Progress } from '@/components/ui/progress';
 import { toast } from 'sonner';
 import { TestTube, Sparkles, Loader2, Play, Save, Trash2, FileText, Upload, X, ClipboardPaste, Table2, FileSpreadsheet, AlertCircle } from 'lucide-react';
 import * as XLSX from 'xlsx';
@@ -87,6 +88,7 @@ export default function TestGenerator() {
   const [parsedAzureTests, setParsedAzureTests] = useState<GeneratedTestCase[]>([]);
   const xlsxInputRef = useRef<HTMLInputElement>(null);
   const [isImportingAzure, setIsImportingAzure] = useState(false);
+  const [importProgress, setImportProgress] = useState<{ current: number; total: number } | null>(null);
 
   useEffect(() => {
     fetchProjects();
@@ -537,29 +539,60 @@ export default function TestGenerator() {
       try {
         const { data: { user } } = await supabase.auth.getUser();
         if (user) {
-          const testsToInsert = parsedAzureTests.map((tc, idx) => ({
-            user_id: user.id,
-            project_id: projectId,
-            title: tc.title,
-            prompt: tc.prompt,
-            expected_result: tc.expectedResult,
-            priority: tc.priority,
-            status: 'pending',
-            source_type: 'import_azure_devops',
-            azure_devops_id: xlsxPreview[idx]?.id || null,
+          // Get all Azure DevOps test IDs from the parsed preview
+          const allAzureIds = xlsxPreview.map(t => t.id);
+          
+          // Build full mapping of test to azure_devops_id
+          const testsWithIds = parsedAzureTests.map((tc, idx) => ({
+            ...tc,
+            azure_devops_id: allAzureIds[idx] || null,
           }));
 
-          const { error: insertError } = await supabase
-            .from('generated_tests')
-            .insert(testsToInsert);
-
-          if (insertError) {
-            console.error('Error saving tests to DB:', insertError);
-          } else {
-            toast.success(t('testGenerator.testsImportedAndSaved', { count: parsedAzureTests.length }));
-            setIsImportingAzure(false);
-            return;
+          // Chunked import for large datasets (100 tests per chunk)
+          const CHUNK_SIZE = 100;
+          const totalTests = testsWithIds.length;
+          
+          if (totalTests > CHUNK_SIZE) {
+            setImportProgress({ current: 0, total: totalTests });
           }
+
+          for (let i = 0; i < totalTests; i += CHUNK_SIZE) {
+            const chunk = testsWithIds.slice(i, i + CHUNK_SIZE);
+            
+            const testsToInsert = chunk.map((tc) => ({
+              user_id: user.id,
+              project_id: projectId,
+              title: tc.title,
+              prompt: tc.prompt,
+              expected_result: tc.expectedResult,
+              priority: tc.priority,
+              status: 'pending',
+              source_type: 'import_azure_devops',
+              azure_devops_id: tc.azure_devops_id,
+            }));
+
+            const { error: insertError } = await supabase
+              .from('generated_tests')
+              .insert(testsToInsert);
+
+            if (insertError) {
+              console.error('Error saving tests to DB:', insertError);
+              toast.error(`${t('common.error')}: ${insertError.message}`);
+              setIsImportingAzure(false);
+              setImportProgress(null);
+              return;
+            }
+
+            // Update progress
+            if (totalTests > CHUNK_SIZE) {
+              setImportProgress({ current: Math.min(i + CHUNK_SIZE, totalTests), total: totalTests });
+            }
+          }
+
+          toast.success(t('testGenerator.testsImportedAndSaved', { count: parsedAzureTests.length }));
+          setIsImportingAzure(false);
+          setImportProgress(null);
+          return;
         }
       } catch (error) {
         console.error('Error saving Azure tests:', error);
@@ -567,6 +600,7 @@ export default function TestGenerator() {
     }
     
     setIsImportingAzure(false);
+    setImportProgress(null);
     toast.success(t('testGenerator.testsImported', { count: parsedAzureTests.length }));
   };
 
@@ -1060,17 +1094,53 @@ export default function TestGenerator() {
                 </p>
               </div>
 
-              {/* Azure DevOps Preview */}
+              {/* Azure DevOps Preview with Enhanced Statistics */}
               {xlsxPreview.length > 0 && (
-                <div className="space-y-2">
+                <div className="space-y-4">
+                  {/* Statistics Cards */}
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                    <div className="p-3 rounded-lg bg-primary/10 border border-primary/20">
+                      <p className="text-xs text-muted-foreground">{t('testGenerator.totalTests')}</p>
+                      <p className="text-2xl font-bold text-primary">{parsedAzureTests.length}</p>
+                    </div>
+                    <div className="p-3 rounded-lg bg-muted border">
+                      <p className="text-xs text-muted-foreground">{t('testGenerator.totalSteps')}</p>
+                      <p className="text-2xl font-bold">
+                        {xlsxPreview.reduce((acc, t) => acc + t.steps.length, 0) + 
+                          (parsedAzureTests.length > 5 
+                            ? Math.round((parsedAzureTests.length - 5) * (xlsxPreview.reduce((acc, t) => acc + t.steps.length, 0) / 5))
+                            : 0)}
+                      </p>
+                    </div>
+                    <div className="p-3 rounded-lg bg-muted border">
+                      <p className="text-xs text-muted-foreground">{t('testGenerator.avgStepsPerTest')}</p>
+                      <p className="text-2xl font-bold">
+                        {xlsxPreview.length > 0 
+                          ? (xlsxPreview.reduce((acc, t) => acc + t.steps.length, 0) / xlsxPreview.length).toFixed(1)
+                          : 0}
+                      </p>
+                    </div>
+                    <div className="p-3 rounded-lg bg-warning/10 border border-warning/20">
+                      <p className="text-xs text-muted-foreground">{t('testGenerator.estimatedRunTime')}</p>
+                      <p className="text-2xl font-bold text-warning">~{Math.ceil(parsedAzureTests.length * 5)} min</p>
+                    </div>
+                  </div>
+
+                  {/* Import info */}
+                  {parsedAzureTests.length > 100 && (
+                    <div className="p-3 rounded-lg bg-muted/50 border text-sm text-muted-foreground">
+                      {t('testGenerator.chunkedImportInfo', { chunk: 100 })}
+                    </div>
+                  )}
+
                   <Label className="flex items-center gap-2">
                     <FileSpreadsheet className="w-4 h-4 text-primary" />
                     {t('testGenerator.azurePreview')} ({Math.min(5, parsedAzureTests.length)}/{parsedAzureTests.length})
                   </Label>
                   <div className="rounded-lg border border-border overflow-hidden">
-                    <div className="overflow-x-auto">
+                    <div className="overflow-x-auto max-h-80">
                       <table className="w-full text-sm">
-                        <thead className="bg-muted/50">
+                        <thead className="bg-muted/50 sticky top-0">
                           <tr>
                             <th className="px-3 py-2 text-left font-medium">ID</th>
                             <th className="px-3 py-2 text-left font-medium">{t('tests.testName')}</th>
@@ -1091,6 +1161,13 @@ export default function TestGenerator() {
                               </td>
                             </tr>
                           ))}
+                          {parsedAzureTests.length > 5 && (
+                            <tr className="border-t border-border bg-muted/30">
+                              <td colSpan={4} className="px-3 py-2 text-center text-muted-foreground text-sm">
+                                ... {i18n.language === 'cs' ? `a dalších ${parsedAzureTests.length - 5} testů` : `and ${parsedAzureTests.length - 5} more tests`}
+                              </td>
+                            </tr>
+                          )}
                         </tbody>
                       </table>
                     </div>
@@ -1153,23 +1230,36 @@ export default function TestGenerator() {
           )}
 
           {sourceTab === 'import_azure' && (
-            <Button 
-              onClick={handleImportAzure} 
-              disabled={parsedAzureTests.length === 0 || isImportingAzure} 
-              className="w-full gradient-primary"
-            >
-              {isImportingAzure ? (
-                <>
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  {t('testGenerator.importingAzure')}
-                </>
-              ) : (
-                <>
-                  <FileSpreadsheet className="mr-2 h-4 w-4" />
-                  {t('testGenerator.importAzure')} ({parsedAzureTests.length})
-                </>
+            <div className="space-y-3">
+              {importProgress && (
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between text-sm">
+                    <span>{t('testGenerator.importProgress', { current: importProgress.current, total: importProgress.total })}</span>
+                    <span className="text-muted-foreground">{Math.round((importProgress.current / importProgress.total) * 100)}%</span>
+                  </div>
+                  <Progress value={(importProgress.current / importProgress.total) * 100} className="h-2" />
+                </div>
               )}
-            </Button>
+              <Button 
+                onClick={handleImportAzure} 
+                disabled={parsedAzureTests.length === 0 || isImportingAzure} 
+                className="w-full gradient-primary"
+              >
+                {isImportingAzure ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    {importProgress 
+                      ? t('testGenerator.importProgress', { current: importProgress.current, total: importProgress.total })
+                      : t('testGenerator.importingAzure')}
+                  </>
+                ) : (
+                  <>
+                    <FileSpreadsheet className="mr-2 h-4 w-4" />
+                    {t('testGenerator.importAzure')} ({parsedAzureTests.length})
+                  </>
+                )}
+              </Button>
+            </div>
           )}
         </CardContent>
       </Card>

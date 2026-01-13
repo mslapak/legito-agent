@@ -110,7 +110,10 @@ export default function TestsDashboard() {
 
   // Pagination
   const [page, setPage] = useState(1);
-  const pageSize = 25;
+  const [pageSize, setPageSize] = useState(50);
+  
+  // Batch size for execution
+  const [batchSize, setBatchSize] = useState(50);
 
   const dateLocale = i18n.language === 'cs' ? 'cs-CZ' : 'en-US';
 
@@ -420,6 +423,14 @@ export default function TestsDashboard() {
     }
   };
 
+  const selectAllFiltered = () => {
+    if (selectedTests.size === sortedTests.length) {
+      setSelectedTests(new Set());
+    } else {
+      setSelectedTests(new Set(sortedTests.map(t => t.id)));
+    }
+  };
+
   const toggleSelectTest = (testId: string) => {
     const newSelected = new Set(selectedTests);
     if (newSelected.has(testId)) {
@@ -429,6 +440,9 @@ export default function TestsDashboard() {
     }
     setSelectedTests(newSelected);
   };
+
+  // Estimated run time calculation (5 min per test average)
+  const estimatedMinutes = Math.ceil((selectedTests.size * 5));
 
   const runSelectedTests = async () => {
     const testIds = Array.from(selectedTests);
@@ -440,13 +454,14 @@ export default function TestsDashboard() {
     // Background mode - create batch and let edge function handle it
     if (backgroundMode) {
       try {
-        // Create batch record
+        // Create batch record with batch_size
         const { data: batch, error: batchError } = await supabase
           .from('test_batch_runs')
           .insert({
             user_id: user?.id,
             test_ids: testIds,
             total_tests: testIds.length,
+            batch_size: batchSize,
             status: 'pending',
           })
           .select()
@@ -859,58 +874,116 @@ export default function TestsDashboard() {
       {/* Results Table */}
       <Card>
         <CardHeader>
-          <div className="flex items-center justify-between flex-wrap gap-4">
-            <div className="flex items-center gap-3">
-              <CardTitle>{t('tests.result')} ({sortedTests.length})</CardTitle>
-              {selectedTests.size > 0 && (
-                <Badge variant="secondary">{selectedTests.size} {t('tests.selected')}</Badge>
-              )}
-            </div>
-            <div className="flex items-center gap-4">
-              {/* Background mode toggle */}
-              <div className="flex items-center gap-2">
-                <Switch
-                  id="background-mode"
-                  checked={backgroundMode}
-                  onCheckedChange={setBackgroundMode}
-                  disabled={bulkRunning}
-                />
-                <Label 
-                  htmlFor="background-mode" 
-                  className="flex items-center gap-1.5 cursor-pointer text-sm"
-                >
-                  {backgroundMode ? (
-                    <Cloud className="h-4 w-4 text-primary" />
-                  ) : (
-                    <CloudOff className="h-4 w-4 text-muted-foreground" />
-                  )}
-                  {backgroundMode ? t('tests.backgroundMode') : t('tests.foregroundMode')}
-                </Label>
-              </div>
-              
-              <Button 
-                onClick={runSelectedTests} 
-                disabled={bulkRunning || selectedTests.size === 0}
-                className="gap-2"
-                variant={backgroundMode ? "default" : "default"}
-              >
-                {bulkRunning ? (
+          <div className="flex flex-col gap-4">
+            <div className="flex items-center justify-between flex-wrap gap-4">
+              <div className="flex items-center gap-3">
+                <CardTitle>{t('tests.result')} ({sortedTests.length})</CardTitle>
+                {selectedTests.size > 0 && (
                   <>
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                    {t('tests.runningTests')} {currentBulkIndex !== null ? `(${currentBulkIndex + 1}/${selectedTests.size})` : '...'}
-                  </>
-                ) : backgroundMode ? (
-                  <>
-                    <Cloud className="h-4 w-4" />
-                    {t('tests.runSelected')} ({selectedTests.size})
-                  </>
-                ) : (
-                  <>
-                    <Play className="h-4 w-4" />
-                    {t('tests.runSelected')} ({selectedTests.size})
+                    <Badge variant="secondary">{selectedTests.size} {t('tests.selected')}</Badge>
+                    {selectedTests.size > 0 && (
+                      <span className="text-xs text-muted-foreground">
+                        {t('tests.estimatedTimeValue', { minutes: estimatedMinutes })}
+                      </span>
+                    )}
                   </>
                 )}
-              </Button>
+              </div>
+              <div className="flex items-center gap-2">
+                {/* Page size selector */}
+                <Select value={pageSize.toString()} onValueChange={(v) => { setPageSize(Number(v)); setPage(1); }}>
+                  <SelectTrigger className="w-24">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="25">25</SelectItem>
+                    <SelectItem value="50">50</SelectItem>
+                    <SelectItem value="100">100</SelectItem>
+                    <SelectItem value="200">200</SelectItem>
+                  </SelectContent>
+                </Select>
+                <span className="text-sm text-muted-foreground">/</span>
+                <span className="text-sm text-muted-foreground">{i18n.language === 'cs' ? 'stránka' : 'page'}</span>
+              </div>
+            </div>
+            
+            {/* Batch controls row */}
+            <div className="flex items-center justify-between flex-wrap gap-4 pb-2 border-b">
+              <div className="flex items-center gap-4">
+                {/* Select all filtered button */}
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={selectAllFiltered}
+                  disabled={bulkRunning || sortedTests.length === 0}
+                >
+                  {selectedTests.size === sortedTests.length && sortedTests.length > 0
+                    ? t('tests.deselectAll')
+                    : t('tests.selectAllFiltered', { count: sortedTests.length })}
+                </Button>
+              </div>
+              
+              <div className="flex items-center gap-4">
+                {/* Batch size selector */}
+                <div className="flex items-center gap-2">
+                  <Label className="text-sm text-muted-foreground whitespace-nowrap">{t('tests.batchSize')}:</Label>
+                  <Select value={batchSize.toString()} onValueChange={(v) => setBatchSize(Number(v))}>
+                    <SelectTrigger className="w-20">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="10">10</SelectItem>
+                      <SelectItem value="25">25</SelectItem>
+                      <SelectItem value="50">50</SelectItem>
+                      <SelectItem value="100">100</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                
+                {/* Background mode toggle */}
+                <div className="flex items-center gap-2">
+                  <Switch
+                    id="background-mode"
+                    checked={backgroundMode}
+                    onCheckedChange={setBackgroundMode}
+                    disabled={bulkRunning}
+                  />
+                  <Label 
+                    htmlFor="background-mode" 
+                    className="flex items-center gap-1.5 cursor-pointer text-sm"
+                  >
+                    {backgroundMode ? (
+                      <Cloud className="h-4 w-4 text-primary" />
+                    ) : (
+                      <CloudOff className="h-4 w-4 text-muted-foreground" />
+                    )}
+                    {backgroundMode ? t('tests.backgroundMode') : t('tests.foregroundMode')}
+                  </Label>
+                </div>
+                
+                <Button 
+                  onClick={runSelectedTests} 
+                  disabled={bulkRunning || selectedTests.size === 0}
+                  className="gap-2"
+                >
+                  {bulkRunning ? (
+                    <>
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                      {t('tests.runningTests')} {currentBulkIndex !== null ? `(${currentBulkIndex + 1}/${selectedTests.size})` : '...'}
+                    </>
+                  ) : backgroundMode ? (
+                    <>
+                      <Cloud className="h-4 w-4" />
+                      {t('tests.runSelected')} ({selectedTests.size})
+                    </>
+                  ) : (
+                    <>
+                      <Play className="h-4 w-4" />
+                      {t('tests.runSelected')} ({selectedTests.size})
+                    </>
+                  )}
+                </Button>
+              </div>
             </div>
           </div>
         </CardHeader>

@@ -231,7 +231,21 @@
     "activeBatches": "Active background batches",
     "batchProgress": "Batch {{id}}: {{completed}}/{{total}} tests",
     "viewScreenshots": "Screenshots",
-    "viewVideo": "Video"
+    "viewVideo": "Video",
+    "batchSize": "Batch size",
+    "testsPerBatch": "{{count}} tests",
+    "estimatedTime": "Estimated time",
+    "estimatedTimeValue": "~{{minutes}} min",
+    "selectAllFiltered": "Select all ({{count}})",
+    "selectAllPage": "Select page",
+    "pauseBatch": "Pause",
+    "resumeBatch": "Resume",
+    "cancelBatch": "Cancel batch",
+    "batchPaused": "Batch paused",
+    "batchResumed": "Batch resumed",
+    "batchCancelled": "Batch cancelled",
+    "pageInfo": "Page {{page}} of {{total}}",
+    "showingRange": "Showing {{from}}-{{to}} of {{total}}"
   },
   "testGenerator": {
     "title": "Test Generator",
@@ -282,7 +296,17 @@
     "importAzure": "Import from Azure",
     "importingAzure": "Importing...",
     "testsImported": "Imported {{count}} tests",
-    "testsImportedAndSaved": "Imported and saved {{count}} tests to project"
+    "testsImportedAndSaved": "Imported and saved {{count}} tests to project",
+    "importStats": "Import Statistics",
+    "totalTests": "Total tests",
+    "totalSteps": "Total steps",
+    "avgStepsPerTest": "Avg steps/test",
+    "estimatedRunTime": "Estimated run time",
+    "importProgress": "Imported {{current}} of {{total}}",
+    "chunkedImportInfo": "Import will be performed in chunks of {{chunk}} tests",
+    "duplicatesFound": "Found {{count}} duplicates (Azure DevOps ID)",
+    "skipDuplicates": "Skip duplicates",
+    "importAll": "Import all"
   },
   "projects": {
     "title": "Projects",
