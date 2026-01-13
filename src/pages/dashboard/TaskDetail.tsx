@@ -8,6 +8,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { toast } from 'sonner';
+import StructuredResult from '@/components/StructuredResult';
 import {
   ArrowLeft,
   CheckCircle2,
@@ -648,15 +649,7 @@ export default function TaskDetail() {
               <CardTitle className="text-lg">{t('taskDetail.result')}</CardTitle>
             </CardHeader>
             <CardContent>
-              {task.result ? (
-                <pre className="p-4 rounded-lg bg-muted overflow-x-auto text-sm font-mono">
-                  {JSON.stringify(task.result, null, 2)}
-                </pre>
-              ) : (
-                <div className="text-center py-8 text-muted-foreground">
-                  <p>{t('taskDetail.noResult')}</p>
-                </div>
-              )}
+              <StructuredResult result={task.result} />
             </CardContent>
           </Card>
         </TabsContent>
