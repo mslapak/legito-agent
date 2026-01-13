@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { useTranslation } from 'react-i18next';
 import { supabase } from '@/integrations/supabase/client';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -27,6 +28,7 @@ import {
   ChevronRight,
 } from 'lucide-react';
 import { format } from 'date-fns';
+import { cs, enUS } from 'date-fns/locale';
 
 // PDF.js will be loaded dynamically to avoid module resolution issues
 let pdfjsLib: typeof import('pdfjs-dist') | null = null;
@@ -71,6 +73,9 @@ export default function DocumentationVerification({
   projectName, 
   baseUrl 
 }: DocumentationVerificationProps) {
+  const { t, i18n } = useTranslation();
+  const dateLocale = i18n.language === 'cs' ? cs : enUS;
+  
   const [documentation, setDocumentation] = useState('');
   const [uploadedFile, setUploadedFile] = useState<File | null>(null);
   const [extractedText, setExtractedText] = useState('');
@@ -133,12 +138,12 @@ export default function DocumentationVerification({
     ];
 
     if (!allowedTypes.includes(file.type) && !file.name.endsWith('.md')) {
-      toast.error('Podporované formáty: PDF, TXT, MD, DOCX');
+      toast.error(t('docVerify.supportedFormats'));
       return;
     }
 
     if (file.size > 10 * 1024 * 1024) {
-      toast.error('Maximální velikost souboru je 10 MB');
+      toast.error(t('docVerify.maxFileSize'));
       return;
     }
 
@@ -153,16 +158,16 @@ export default function DocumentationVerification({
       } else if (file.type === 'text/plain' || file.name.endsWith('.md')) {
         text = await file.text();
       } else {
-        toast.error('Tento typ souboru zatím není podporován');
+        toast.error(t('docVerify.unsupportedFormat'));
         return;
       }
 
       setExtractedText(text);
       setDocumentation(text);
-      toast.success('Text extrahován z dokumentace');
+      toast.success(t('docVerify.textExtracted'));
     } catch (error) {
       console.error('Error extracting text:', error);
-      toast.error('Nepodařilo se extrahovat text z dokumentace');
+      toast.error(t('docVerify.extractFailed'));
     } finally {
       setIsExtracting(false);
     }
@@ -178,7 +183,7 @@ export default function DocumentationVerification({
 
   const fetchDocFromUrl = async () => {
     if (!docUrl.trim()) {
-      toast.error('Zadejte URL dokumentace');
+      toast.error(t('docVerify.enterDocUrl'));
       return;
     }
 
@@ -194,15 +199,15 @@ export default function DocumentationVerification({
       if (data?.content) {
         setDocumentation(data.content);
         const imagesInfo = data.imagesAnalyzed > 0 
-          ? ` Analyzováno ${data.imagesAnalyzed} obrázků.`
+          ? t('docVerify.imagesAnalyzed', { count: data.imagesAnalyzed })
           : '';
-        toast.success(`Dokumentace načtena z URL (${data.content.length} znaků).${imagesInfo}`);
+        toast.success(t('docVerify.docLoaded', { chars: data.content.length, images: imagesInfo }));
       } else {
-        toast.error('Nepodařilo se načíst obsah z URL');
+        toast.error(t('docVerify.urlFetchFailed'));
       }
     } catch (error) {
       console.error('Error fetching URL:', error);
-      toast.error('Nepodařilo se načíst dokumentaci z URL');
+      toast.error(t('docVerify.urlFetchFailed'));
     } finally {
       setIsFetchingUrl(false);
     }
@@ -210,12 +215,12 @@ export default function DocumentationVerification({
 
   const generateSteps = async () => {
     if (!documentation.trim()) {
-      toast.error('Vložte dokumentaci k ověření');
+      toast.error(t('docVerify.enterDocUrl'));
       return;
     }
 
     if (!baseUrl) {
-      toast.error('Projekt nemá nastavenou URL aplikace');
+      toast.error(t('docVerify.noAppUrl'));
       return;
     }
 
@@ -251,10 +256,10 @@ Důležité:
       }));
 
       setSteps(generatedSteps);
-      toast.success(`Vygenerováno ${generatedSteps.length} kroků k ověření`);
+      toast.success(t('docVerify.stepsGenerated', { count: generatedSteps.length }));
     } catch (error) {
       console.error('Error generating steps:', error);
-      toast.error('Nepodařilo se vygenerovat kroky');
+      toast.error(t('docVerify.generateFailed'));
     } finally {
       setIsGeneratingSteps(false);
     }
@@ -262,12 +267,12 @@ Důležité:
 
   const runVerification = async () => {
     if (steps.length === 0) {
-      toast.error('Nejdříve vygenerujte kroky');
+      toast.error(t('docVerify.generateStepsFirst'));
       return;
     }
 
     if (!baseUrl) {
-      toast.error('Projekt nemá nastavenou URL aplikace');
+      toast.error(t('docVerify.noAppUrl'));
       return;
     }
 
@@ -276,7 +281,7 @@ Důležité:
     // Create verification record in database
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) {
-      toast.error('Nejste přihlášen');
+      toast.error(t('docVerify.notLoggedIn'));
       setIsRunning(false);
       return;
     }
@@ -299,7 +304,7 @@ Důležité:
 
     if (verificationError) {
       console.error('Error creating verification:', verificationError);
-      toast.error('Nepodařilo se vytvořit záznam ověření');
+      toast.error(t('docVerify.createRecordFailed'));
       setIsRunning(false);
       return;
     }
@@ -365,7 +370,7 @@ DŮLEŽITÉ: Na konci ověř, jestli tento krok funguje správně podle dokument
           }
 
           if (statusData?.expired || statusData?.status === 'not_found') {
-            result = { status: 'finished', output: 'Sezení vypršelo' };
+            result = { status: 'finished', output: t('docVerify.sessionExpired') };
             break;
           }
 
@@ -407,14 +412,14 @@ DŮLEŽITÉ: Na konci ověř, jestli tento krok funguje správně podle dokument
         console.error('Error running step:', error);
         failedCount++;
         setSteps(prev => prev.map((s, idx) => 
-          idx === i ? { ...s, status: 'failed', result: 'Chyba při spuštění' } : s
+          idx === i ? { ...s, status: 'failed', result: t('docVerify.runError') } : s
         ));
 
         await supabase
           .from('verification_steps')
           .update({
             status: 'failed',
-            result: 'Chyba při spuštění',
+            result: t('docVerify.runError'),
             completed_at: new Date().toISOString(),
           })
           .eq('verification_id', verification.id)
@@ -437,7 +442,7 @@ DŮLEŽITÉ: Na konci ověř, jestli tento krok funguje správně podle dokument
     setCurrentStepIndex(-1);
     setCurrentVerificationId(null);
     fetchHistory();
-    toast.success('Ověření dokumentace dokončeno a uloženo');
+    toast.success(t('docVerify.verificationComplete'));
   };
 
   const deleteHistoryItem = async (id: string) => {
@@ -447,10 +452,10 @@ DŮLEŽITÉ: Na konci ověř, jestli tento krok funguje správně podle dokument
       .eq('id', id);
 
     if (error) {
-      toast.error('Nepodařilo se smazat záznam');
+      toast.error(t('docVerify.recordDeleteFailed'));
     } else {
       setHistory(prev => prev.filter(h => h.id !== id));
-      toast.success('Záznam smazán');
+      toast.success(t('docVerify.recordDeleted'));
     }
   };
 
@@ -470,13 +475,13 @@ DŮLEŽITÉ: Na konci ověř, jestli tento krok funguje správně podle dokument
   const getStatusBadge = (status: VerificationStep['status']) => {
     switch (status) {
       case 'pending':
-        return <Badge variant="secondary">Čeká</Badge>;
+        return <Badge variant="secondary">{t('docVerify.statusPending')}</Badge>;
       case 'running':
-        return <Badge variant="default">Běží</Badge>;
+        return <Badge variant="default">{t('docVerify.statusRunning')}</Badge>;
       case 'passed':
-        return <Badge className="bg-green-500 hover:bg-green-600">Aktuální</Badge>;
+        return <Badge className="bg-green-500 hover:bg-green-600">{t('docVerify.statusPassed')}</Badge>;
       case 'failed':
-        return <Badge variant="destructive">Neaktuální</Badge>;
+        return <Badge variant="destructive">{t('docVerify.statusFailed')}</Badge>;
     }
   };
 
@@ -489,27 +494,27 @@ DŮLEŽITÉ: Na konci ověř, jestli tento krok funguje správně podle dokument
       <CardHeader>
         <CardTitle className="flex items-center gap-2 text-base">
           <FileCheck className="w-5 h-5 text-primary" />
-          Ověření dokumentace
+          {t('docVerify.verification')}
         </CardTitle>
       </CardHeader>
       <CardContent className="space-y-4">
         {/* Upload Section */}
         <div className="space-y-3">
-          <Label>Zdroj dokumentace</Label>
+          <Label>{t('docVerify.source')}</Label>
           
           <Tabs value={sourceTab} onValueChange={(v) => setSourceTab(v as 'file' | 'url' | 'text')}>
             <TabsList className="grid w-full grid-cols-3">
               <TabsTrigger value="file" className="flex items-center gap-2">
                 <Upload className="w-4 h-4" />
-                Soubor
+                {t('docVerify.sourceFile')}
               </TabsTrigger>
               <TabsTrigger value="url" className="flex items-center gap-2">
                 <Globe className="w-4 h-4" />
-                URL
+                {t('docVerify.sourceUrl')}
               </TabsTrigger>
               <TabsTrigger value="text" className="flex items-center gap-2">
                 <FileText className="w-4 h-4" />
-                Text
+                {t('docVerify.sourceText')}
               </TabsTrigger>
             </TabsList>
 
@@ -525,7 +530,7 @@ DŮLEŽITÉ: Na konci ověř, jestli tento krok funguje správně podle dokument
                   <div className="flex items-center justify-center gap-2 p-4 border-2 border-dashed rounded-lg cursor-pointer hover:border-primary hover:bg-muted/50 transition-colors">
                     <Upload className="w-5 h-5 text-muted-foreground" />
                     <span className="text-sm text-muted-foreground">
-                      Nahrát PDF, TXT, MD
+                      {t('docVerify.uploadPdf')}
                     </span>
                   </div>
                 </label>
@@ -546,7 +551,7 @@ DŮLEŽITÉ: Na konci ověř, jestli tento krok funguje správně podle dokument
             <TabsContent value="url" className="space-y-3 mt-3">
               <div className="flex gap-2">
                 <Input
-                  placeholder="https://docs.example.com/manual"
+                  placeholder={t('docVerify.urlPlaceholder')}
                   value={docUrl}
                   onChange={(e) => setDocUrl(e.target.value)}
                   className="flex-1"
@@ -564,13 +569,13 @@ DŮLEŽITÉ: Na konci ověř, jestli tento krok funguje správně podle dokument
                 </Button>
               </div>
               <p className="text-xs text-muted-foreground">
-                Zadejte URL stránky s dokumentací
+                {t('docVerify.enterUrlHint')}
               </p>
             </TabsContent>
 
             <TabsContent value="text" className="space-y-3 mt-3">
               <Textarea
-                placeholder="Vložte text dokumentace přímo sem..."
+                placeholder={t('docVerify.pasteDocText')}
                 value={documentation}
                 onChange={(e) => setDocumentation(e.target.value)}
                 rows={6}
@@ -583,8 +588,8 @@ DŮLEŽITÉ: Na konci ověř, jestli tento krok funguje správně podle dokument
           {documentation && sourceTab !== 'text' && (
             <div className="space-y-2">
               <div className="flex items-center justify-between">
-                <Label className="text-xs text-muted-foreground">Načtená dokumentace</Label>
-                <Badge variant="secondary">{documentation.length.toLocaleString()} znaků</Badge>
+                <Label className="text-xs text-muted-foreground">{t('docVerify.loadedDoc')}</Label>
+                <Badge variant="secondary">{documentation.length.toLocaleString()} {t('docVerify.chars')}</Badge>
               </div>
               <div className="max-h-32 overflow-y-auto rounded-lg border border-border bg-muted/30 p-3">
                 <pre className="text-xs text-muted-foreground whitespace-pre-wrap font-mono">
@@ -607,12 +612,12 @@ DŮLEŽITÉ: Na konci ověř, jestli tento krok funguje správně podle dokument
           {isGeneratingSteps ? (
             <>
               <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-              Generuji kroky...
+              {t('docVerify.generatingSteps')}
             </>
           ) : (
             <>
               <FileText className="mr-2 h-4 w-4" />
-              Vygenerovat kroky z dokumentace
+              {t('docVerify.generateSteps')}
             </>
           )}
         </Button>
@@ -622,7 +627,7 @@ DŮLEŽITÉ: Na konci ověř, jestli tento krok funguje správně podle dokument
           <div className="space-y-3">
             <div className="flex items-center justify-between">
               <span className="text-sm font-medium">
-                Kroky k ověření ({passedSteps}/{steps.length} aktuální)
+                {t('docVerify.stepsToVerify')} ({passedSteps}/{steps.length} {t('docVerify.current')})
               </span>
               <Button
                 onClick={runVerification}
@@ -633,12 +638,12 @@ DŮLEŽITÉ: Na konci ověř, jestli tento krok funguje správně podle dokument
                 {isRunning ? (
                   <>
                     <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                    Ověřuji...
+                    {t('docVerify.verifying')}
                   </>
                 ) : (
                   <>
                     <Play className="mr-2 h-4 w-4" />
-                    Spustit ověření
+                    {t('docVerify.runVerification')}
                   </>
                 )}
               </Button>
@@ -662,7 +667,7 @@ DŮLEŽITÉ: Na konci ověř, jestli tento krok funguje správně podle dokument
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2 mb-1">
                       <span className="text-xs font-medium text-muted-foreground">
-                        Krok {index + 1}
+                        {t('docVerify.step')} {index + 1}
                       </span>
                       {getStatusBadge(step.status)}
                     </div>
@@ -681,7 +686,7 @@ DŮLEŽITÉ: Na konci ověř, jestli tento krok funguje správně podle dokument
 
         {!baseUrl && (
           <p className="text-xs text-muted-foreground text-center">
-            Pro ověření dokumentace nastavte URL aplikace v projektu
+            {t('docVerify.setAppUrl')}
           </p>
         )}
 
@@ -692,7 +697,7 @@ DŮLEŽITÉ: Na konci ověř, jestli tento krok funguje správně podle dokument
               <Button variant="ghost" className="w-full justify-between">
                 <span className="flex items-center gap-2">
                   <History className="w-4 h-4" />
-                  Historie ověření ({history.length})
+                  {t('docVerify.history')} ({history.length})
                 </span>
                 {isHistoryOpen ? (
                   <ChevronDown className="w-4 h-4" />
@@ -710,11 +715,10 @@ DŮLEŽITÉ: Na konci ověř, jestli tento krok funguje správně podle dokument
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2 mb-1">
                       <span className="text-xs text-muted-foreground">
-                        {format(new Date(item.created_at), 'd. M. yyyy HH:mm')}
+                        {format(new Date(item.created_at), 'd. M. yyyy HH:mm', { locale: dateLocale })}
                       </span>
                       <Badge variant="secondary" className="text-xs">
-                        {item.documentation_source === 'url' ? 'URL' : 
-                         item.documentation_source === 'file' ? 'Soubor' : 'Text'}
+                        {t(`docVerify.sourceLabel.${item.documentation_source}`)}
                       </Badge>
                       {item.status === 'completed' ? (
                         <Badge 
@@ -723,10 +727,10 @@ DŮLEŽITÉ: Na konci ověř, jestli tento krok funguje správně podle dokument
                             : 'bg-amber-500 hover:bg-amber-600'
                           }
                         >
-                          {item.passed_steps}/{item.total_steps} OK
+                          {item.passed_steps}/{item.total_steps} {t('docVerify.okCount')}
                         </Badge>
                       ) : (
-                        <Badge variant="default">Běží...</Badge>
+                        <Badge variant="default">{t('docVerify.runningStatus')}</Badge>
                       )}
                     </div>
                     {item.documentation_url && (
