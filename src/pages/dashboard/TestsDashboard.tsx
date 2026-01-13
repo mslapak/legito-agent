@@ -46,6 +46,7 @@ interface GeneratedTest {
   azure_devops_id: string | null;
   project_id: string | null;
   task_id: string | null;
+  test_suite_id: string | null;
   created_at: string;
   last_run_at: string | null;
   execution_time_ms: number | null;
@@ -56,6 +57,13 @@ interface GeneratedTest {
 interface Project {
   id: string;
   name: string;
+}
+
+interface TestSuite {
+  id: string;
+  name: string;
+  project_id: string | null;
+  description: string | null;
 }
 
 interface Stats {
@@ -90,6 +98,7 @@ export default function TestsDashboard() {
   const navigate = useNavigate();
   const [tests, setTests] = useState<GeneratedTest[]>([]);
   const [projects, setProjects] = useState<Project[]>([]);
+  const [testSuites, setTestSuites] = useState<TestSuite[]>([]);
   const [loading, setLoading] = useState(true);
   const [exporting, setExporting] = useState(false);
 
@@ -105,6 +114,7 @@ export default function TestsDashboard() {
   // Filters
   const [search, setSearch] = useState('');
   const [projectFilter, setProjectFilter] = useState<string>('all');
+  const [suiteFilter, setSuiteFilter] = useState<string>('all');
   const [statusFilter, setStatusFilter] = useState<string>('all');
   const [priorityFilter, setPriorityFilter] = useState<string>('all');
 
@@ -305,7 +315,7 @@ export default function TestsDashboard() {
 
   const fetchData = async () => {
     try {
-      const [testsResult, projectsResult] = await Promise.all([
+      const [testsResult, projectsResult, suitesResult] = await Promise.all([
         supabase
           .from('generated_tests')
           .select('*')
@@ -314,13 +324,19 @@ export default function TestsDashboard() {
           .from('projects')
           .select('id, name')
           .order('name'),
+        supabase
+          .from('test_suites')
+          .select('id, name, project_id, description')
+          .order('created_at', { ascending: false }),
       ]);
 
       if (testsResult.error) throw testsResult.error;
       if (projectsResult.error) throw projectsResult.error;
+      if (suitesResult.error) throw suitesResult.error;
 
       setTests(testsResult.data || []);
       setProjects(projectsResult.data || []);
+      setTestSuites(suitesResult.data || []);
     } catch (error) {
       console.error('Error fetching data:', error);
       toast.error(t('tests.loadFailed'));
@@ -349,12 +365,27 @@ export default function TestsDashboard() {
         (test.azure_devops_id && test.azure_devops_id.toLowerCase().includes(search.toLowerCase()));
       
       const matchesProject = projectFilter === 'all' || test.project_id === projectFilter;
+      const matchesSuite = suiteFilter === 'all' || 
+        (suiteFilter === 'none' ? test.test_suite_id === null : test.test_suite_id === suiteFilter);
       const matchesStatus = statusFilter === 'all' || test.status === statusFilter;
       const matchesPriority = priorityFilter === 'all' || test.priority === priorityFilter;
 
-      return matchesSearch && matchesProject && matchesStatus && matchesPriority;
+      return matchesSearch && matchesProject && matchesSuite && matchesStatus && matchesPriority;
     });
-  }, [tests, search, projectFilter, statusFilter, priorityFilter]);
+  }, [tests, search, projectFilter, suiteFilter, statusFilter, priorityFilter]);
+
+  // Get suites filtered by selected project
+  const filteredSuites = useMemo(() => {
+    if (projectFilter === 'all') return testSuites;
+    return testSuites.filter(s => s.project_id === projectFilter);
+  }, [testSuites, projectFilter]);
+
+  // Helper to get suite name
+  const getSuiteName = (suiteId: string | null) => {
+    if (!suiteId) return null;
+    const suite = testSuites.find(s => s.id === suiteId);
+    return suite?.name || null;
+  };
 
   const sortedTests = useMemo(() => {
     return [...filteredTests].sort((a, b) => {
@@ -445,12 +476,13 @@ export default function TestsDashboard() {
   const resetFilters = () => {
     setSearch('');
     setProjectFilter('all');
+    setSuiteFilter('all');
     setStatusFilter('all');
     setPriorityFilter('all');
     setPage(1);
   };
 
-  const hasActiveFilters = search || projectFilter !== 'all' || statusFilter !== 'all' || priorityFilter !== 'all';
+  const hasActiveFilters = search || projectFilter !== 'all' || suiteFilter !== 'all' || statusFilter !== 'all' || priorityFilter !== 'all';
 
   // Navigate to task detail
   const handleTestClick = (test: GeneratedTest) => {
@@ -970,7 +1002,7 @@ export default function TestsDashboard() {
           </div>
         </CardHeader>
         <CardContent>
-          <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+          <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-5">
             <div className="relative">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
               <Input
@@ -980,7 +1012,7 @@ export default function TestsDashboard() {
                 className="pl-9"
               />
             </div>
-            <Select value={projectFilter} onValueChange={(v) => { setProjectFilter(v); setPage(1); }}>
+            <Select value={projectFilter} onValueChange={(v) => { setProjectFilter(v); setSuiteFilter('all'); setPage(1); }}>
               <SelectTrigger>
                 <SelectValue placeholder={t('tests.allProjects')} />
               </SelectTrigger>
@@ -988,6 +1020,18 @@ export default function TestsDashboard() {
                 <SelectItem value="all">{t('tests.allProjects')}</SelectItem>
                 {projects.map(project => (
                   <SelectItem key={project.id} value={project.id}>{project.name}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <Select value={suiteFilter} onValueChange={(v) => { setSuiteFilter(v); setPage(1); }}>
+              <SelectTrigger>
+                <SelectValue placeholder={i18n.language === 'cs' ? 'Všechny suites' : 'All suites'} />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">{i18n.language === 'cs' ? 'Všechny suites' : 'All suites'}</SelectItem>
+                <SelectItem value="none">{i18n.language === 'cs' ? 'Bez suite' : 'No suite'}</SelectItem>
+                {filteredSuites.map(suite => (
+                  <SelectItem key={suite.id} value={suite.id}>{suite.name}</SelectItem>
                 ))}
               </SelectContent>
             </Select>
@@ -1218,6 +1262,11 @@ export default function TestsDashboard() {
                         </td>
                         <td className="p-3 cursor-pointer" onClick={() => navigate(`/dashboard/projects`)}>
                           <div className="max-w-xs truncate font-medium">{test.title}</div>
+                          {getSuiteName(test.test_suite_id) && (
+                            <div className="text-xs text-muted-foreground mt-0.5">
+                              {getSuiteName(test.test_suite_id)}
+                            </div>
+                          )}
                         </td>
                         <td className="p-3 text-muted-foreground text-sm">
                           {getProjectName(test.project_id)}

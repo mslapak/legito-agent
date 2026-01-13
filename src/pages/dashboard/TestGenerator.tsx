@@ -567,16 +567,50 @@ export default function TestGenerator() {
           // Use user-selected chunk size
           const CHUNK_SIZE = importChunkSize;
           const totalTests = testsWithIds.length;
+          const totalChunks = Math.ceil(totalTests / CHUNK_SIZE);
           
           // Always show progress for chunked imports
           setImportProgress({ current: 0, total: totalTests });
 
+          // Get project name for suite naming
+          const selectedProject = projects.find(p => p.id === projectId);
+          const projectName = selectedProject?.name || 'Import';
+          const importDate = new Date().toLocaleDateString(i18n.language === 'cs' ? 'cs-CZ' : 'en-US');
+
           for (let i = 0; i < totalTests; i += CHUNK_SIZE) {
+            const chunkIndex = Math.floor(i / CHUNK_SIZE) + 1;
             const chunk = testsWithIds.slice(i, i + CHUNK_SIZE);
             
+            // Create a test suite for this chunk
+            const suiteName = totalChunks > 1 
+              ? `${projectName} - ${i18n.language === 'cs' ? 'Chunk' : 'Chunk'} ${chunkIndex}/${totalChunks} (${importDate})`
+              : `${projectName} - Import (${importDate})`;
+            
+            const { data: suiteData, error: suiteError } = await supabase
+              .from('test_suites')
+              .insert({
+                user_id: user.id,
+                project_id: projectId,
+                name: suiteName,
+                description: i18n.language === 'cs' 
+                  ? `Automaticky vytvořeno při importu z Azure DevOps. ${chunk.length} testů.`
+                  : `Automatically created during Azure DevOps import. ${chunk.length} tests.`,
+              })
+              .select('id')
+              .single();
+
+            if (suiteError) {
+              console.error('Error creating test suite:', suiteError);
+              toast.error(`${t('common.error')}: ${suiteError.message}`);
+              setIsImportingAzure(false);
+              setImportProgress(null);
+              return;
+            }
+
             const testsToInsert = chunk.map((tc) => ({
               user_id: user.id,
               project_id: projectId,
+              test_suite_id: suiteData.id,
               title: tc.title,
               prompt: tc.prompt,
               expected_result: tc.expectedResult,
@@ -602,7 +636,10 @@ export default function TestGenerator() {
             setImportProgress({ current: Math.min(i + CHUNK_SIZE, totalTests), total: totalTests });
           }
 
-          toast.success(t('testGenerator.testsImportedAndSaved', { count: parsedAzureTests.length }));
+          const successMsg = i18n.language === 'cs'
+            ? `Importováno ${parsedAzureTests.length} testů do ${totalChunks} ${totalChunks === 1 ? 'suite' : 'suites'}`
+            : `Imported ${parsedAzureTests.length} tests into ${totalChunks} suite${totalChunks === 1 ? '' : 's'}`;
+          toast.success(successMsg);
           setIsImportingAzure(false);
           setImportProgress(null);
           return;
