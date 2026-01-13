@@ -128,17 +128,60 @@ export default function TestsDashboard() {
     }
   }, [user]);
 
-  // Poll active batches for progress
+  // Real-time subscription for batch runs
   useEffect(() => {
-    if (activeBatches.length === 0) return;
+    if (!user) return;
 
-    const interval = setInterval(() => {
-      fetchActiveBatches();
-      fetchData();
-    }, 3000);
+    const batchChannel = supabase
+      .channel('batch-runs-realtime')
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'test_batch_runs',
+        },
+        (payload) => {
+          console.log('Batch run update:', payload);
+          // Refresh batches on any change
+          fetchActiveBatches();
+        }
+      )
+      .subscribe();
 
-    return () => clearInterval(interval);
-  }, [activeBatches.length]);
+    return () => {
+      supabase.removeChannel(batchChannel);
+    };
+  }, [user]);
+
+  // Real-time subscription for test updates
+  useEffect(() => {
+    if (!user) return;
+
+    const testsChannel = supabase
+      .channel('tests-realtime')
+      .on(
+        'postgres_changes',
+        {
+          event: 'UPDATE',
+          schema: 'public',
+          table: 'generated_tests',
+        },
+        (payload) => {
+          console.log('Test update:', payload);
+          // Update single test in state without full refetch
+          const updatedTest = payload.new as GeneratedTest;
+          setTests(prev => prev.map(t => 
+            t.id === updatedTest.id ? updatedTest : t
+          ));
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(testsChannel);
+    };
+  }, [user]);
 
   // Poll running tests to check their actual status
   useEffect(() => {
