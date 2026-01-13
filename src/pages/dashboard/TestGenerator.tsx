@@ -421,22 +421,34 @@ export default function TestGenerator() {
     
     const tests: AzureDevOpsTestCase[] = [];
     let currentTest: AzureDevOpsTestCase | null = null;
+    let testCounter = 0;
     
     for (const row of rows) {
+      // Support both ID column and Work Item Type column
       const id = row['ID']?.toString() || '';
+      const workItemType = row['Work Item Type']?.toString() || '';
       const title = row['Title']?.toString() || '';
       const stepNum = row['Test Step']?.toString() || '';
       const stepAction = row['Step Action']?.toString() || '';
       const stepExpected = row['Step Expected']?.toString() || '';
       
-      // New test case row (has ID and Title)
-      if (id && title && !stepNum) {
+      // New test case row detection:
+      // 1. Has ID and Title (without step number)
+      // 2. Or has Work Item Type = "Test Case" and Title
+      const isNewTestCase = 
+        (id && title && !stepNum) || 
+        (workItemType.toLowerCase() === 'test case' && title && !stepNum);
+      
+      if (isNewTestCase) {
         if (currentTest) tests.push(currentTest);
-        currentTest = { id, title, steps: [] };
+        testCounter++;
+        // Use ID if available, otherwise generate one from counter
+        const testId = id || `TC-${testCounter}`;
+        currentTest = { id: testId, title, steps: [] };
       }
       
-      // Step row
-      if (currentTest && stepNum && stepAction) {
+      // Step row - can have action OR expected result
+      if (currentTest && stepNum && (stepAction || stepExpected)) {
         currentTest.steps.push({
           stepNumber: parseInt(stepNum) || currentTest.steps.length + 1,
           action: stepAction,
