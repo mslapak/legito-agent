@@ -1,4 +1,13 @@
 {
+  "tests": {
+    "pause": "Pause",
+    "resume": "Resume",
+    "cancel": "Cancel",
+    "paused": "Paused",
+    "batchPaused": "Batch has been paused",
+    "batchResumed": "Batch resumed",
+    "batchCancelled": "Batch has been cancelled"
+  },
   "common": {
     "loading": "Loading...",
     "save": "Save",

@@ -1,4 +1,13 @@
 {
+  "tests": {
+    "pause": "Pozastavit",
+    "resume": "Pokračovat",
+    "cancel": "Zrušit",
+    "paused": "Pozastaveno",
+    "batchPaused": "Dávka byla pozastavena",
+    "batchResumed": "Dávka pokračuje",
+    "batchCancelled": "Dávka byla zrušena"
+  },
   "common": {
     "loading": "Načítání...",
     "save": "Uložit",
