@@ -30,6 +30,8 @@ import {
   ExternalLink,
   Pause,
   Square,
+  Trash2,
+  FolderX,
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import { toast } from 'sonner';
@@ -835,6 +837,75 @@ export default function TestsDashboard() {
     }
   };
 
+  // Delete selected tests
+  const deleteSelectedTests = async () => {
+    if (selectedTests.size === 0) return;
+    
+    const confirmMsg = i18n.language === 'cs' 
+      ? `Opravdu chcete smazat ${selectedTests.size} vybraných testů?`
+      : `Are you sure you want to delete ${selectedTests.size} selected tests?`;
+    
+    if (!confirm(confirmMsg)) return;
+
+    try {
+      const { error } = await supabase
+        .from('generated_tests')
+        .delete()
+        .in('id', Array.from(selectedTests));
+
+      if (error) throw error;
+
+      toast.success(i18n.language === 'cs' 
+        ? `Smazáno ${selectedTests.size} testů`
+        : `Deleted ${selectedTests.size} tests`);
+      setSelectedTests(new Set());
+      fetchData();
+    } catch (error) {
+      console.error('Error deleting tests:', error);
+      toast.error(t('common.error'));
+    }
+  };
+
+  // Delete entire suite with all its tests
+  const deleteSuite = async (suiteId: string) => {
+    const suite = testSuites.find(s => s.id === suiteId);
+    if (!suite) return;
+
+    const testsInSuite = tests.filter(t => t.test_suite_id === suiteId).length;
+    const confirmMsg = i18n.language === 'cs' 
+      ? `Opravdu chcete smazat suite "${suite.name}" a všech ${testsInSuite} testů v něm?`
+      : `Are you sure you want to delete suite "${suite.name}" and all ${testsInSuite} tests in it?`;
+    
+    if (!confirm(confirmMsg)) return;
+
+    try {
+      // First delete all tests in the suite
+      const { error: testsError } = await supabase
+        .from('generated_tests')
+        .delete()
+        .eq('test_suite_id', suiteId);
+
+      if (testsError) throw testsError;
+
+      // Then delete the suite itself
+      const { error: suiteError } = await supabase
+        .from('test_suites')
+        .delete()
+        .eq('id', suiteId);
+
+      if (suiteError) throw suiteError;
+
+      toast.success(i18n.language === 'cs' 
+        ? `Suite "${suite.name}" smazán`
+        : `Suite "${suite.name}" deleted`);
+      setSuiteFilter('all');
+      fetchData();
+    } catch (error) {
+      console.error('Error deleting suite:', error);
+      toast.error(t('common.error'));
+    }
+  };
+
   if (loading) {
     return (
       <div className="flex items-center justify-center h-64">
@@ -1112,6 +1183,34 @@ export default function TestsDashboard() {
                     ? t('tests.deselectAll')
                     : t('tests.selectAllFiltered', { count: sortedTests.length })}
                 </Button>
+                
+                {/* Delete selected tests */}
+                {selectedTests.size > 0 && (
+                  <Button
+                    variant="destructive"
+                    size="sm"
+                    onClick={deleteSelectedTests}
+                    disabled={bulkRunning}
+                    className="gap-1.5"
+                  >
+                    <Trash2 className="h-4 w-4" />
+                    {i18n.language === 'cs' ? `Smazat (${selectedTests.size})` : `Delete (${selectedTests.size})`}
+                  </Button>
+                )}
+                
+                {/* Delete entire suite */}
+                {suiteFilter !== 'all' && suiteFilter !== 'none' && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => deleteSuite(suiteFilter)}
+                    disabled={bulkRunning}
+                    className="gap-1.5 text-destructive border-destructive/50 hover:bg-destructive/10"
+                  >
+                    <FolderX className="h-4 w-4" />
+                    {i18n.language === 'cs' ? 'Smazat celý suite' : 'Delete entire suite'}
+                  </Button>
+                )}
               </div>
               
               <div className="flex items-center gap-4">
