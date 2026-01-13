@@ -9,6 +9,7 @@ import { Input } from '@/components/ui/input';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { toast } from 'sonner';
 import StructuredResult from '@/components/StructuredResult';
+import { ImageGalleryGrid } from '@/components/ImageGallery';
 import {
   ArrowLeft,
   CheckCircle2,
@@ -578,25 +579,12 @@ export default function TaskDetail() {
               </CardTitle>
             </CardHeader>
             <CardContent>
-              {task.screenshots && task.screenshots.length > 0 ? (
-                <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-                  {task.screenshots.map((url, index) => (
-                    <a key={index} href={url} target="_blank" rel="noopener noreferrer">
-                      <img
-                        src={url}
-                        alt={`Screenshot ${index + 1}`}
-                        className="rounded-lg border border-border hover:border-primary/50 transition-colors"
-                      />
-                    </a>
-                  ))}
-                </div>
-              ) : (
-                <div className="text-center py-8 text-muted-foreground">
-                  <ImageIcon className="w-12 h-12 mx-auto mb-4 opacity-50" />
-                  <p>{t('taskDetail.noScreenshots')}</p>
-                  <p className="text-sm mt-2">{t('taskDetail.screenshotsAppear')}</p>
-                </div>
-              )}
+              <ImageGalleryGrid
+                images={task.screenshots || []}
+                emptyMessage={t('taskDetail.noScreenshots')}
+                emptySubMessage={t('taskDetail.screenshotsAppear')}
+                EmptyIcon={ImageIcon}
+              />
             </CardContent>
           </Card>
         </TabsContent>
