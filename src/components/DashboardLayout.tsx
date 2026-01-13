@@ -191,10 +191,6 @@ export default function DashboardLayout() {
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="start" className="w-56">
-                <DropdownMenuItem onClick={toggleLanguage}>
-                  <Languages className="mr-2 h-4 w-4" />
-                  {i18n.language === 'cs' ? t('language.en') : t('language.cs')}
-                </DropdownMenuItem>
                 <DropdownMenuItem onClick={toggleTheme}>
                   {isDark ? <Sun className="mr-2 h-4 w-4" /> : <Moon className="mr-2 h-4 w-4" />}
                   {isDark ? t('theme.light') : t('theme.dark')}
@@ -215,9 +211,20 @@ export default function DashboardLayout() {
 
         <main className="flex-1 overflow-auto">
           <header className="sticky top-0 z-10 bg-background/80 backdrop-blur-sm border-b border-border px-6 py-4">
-            <div className="flex items-center gap-4">
-              <SidebarTrigger />
-              <h1 className="text-lg font-semibold">{getCurrentPageTitle()}</h1>
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-4">
+                <SidebarTrigger />
+                <h1 className="text-lg font-semibold">{getCurrentPageTitle()}</h1>
+              </div>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={toggleLanguage}
+                className="flex items-center gap-2"
+              >
+                <Languages className="h-4 w-4" />
+                <span className="font-medium">{i18n.language.toUpperCase()}</span>
+              </Button>
             </div>
           </header>
           
