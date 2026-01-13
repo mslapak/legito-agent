@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
+import { useTranslation } from 'react-i18next';
 import { supabase } from '@/integrations/supabase/client';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -43,6 +43,7 @@ interface ProjectTestHistoryProps {
 }
 
 export default function ProjectTestHistory({ projectId, projectName, setupPrompt, baseUrl }: ProjectTestHistoryProps) {
+  const { t, i18n } = useTranslation();
   const [tests, setTests] = useState<GeneratedTest[]>([]);
   const [loading, setLoading] = useState(true);
   const [runningTestId, setRunningTestId] = useState<string | null>(null);
@@ -212,20 +213,20 @@ export default function ProjectTestHistory({ projectId, projectName, setupPrompt
 
       // 1. Add base URL if available
       if (baseUrl) {
-        promptParts.push(`Otevři stránku: ${baseUrl}`);
+        promptParts.push(`${i18n.language === 'cs' ? 'Otevři stránku' : 'Open page'}: ${baseUrl}`);
       }
 
       // 2. Add setup prompt if available
       if (setupPrompt) {
-        promptParts.push(`Proveď tyto přípravné kroky:\n${setupPrompt}`);
+        promptParts.push(`${i18n.language === 'cs' ? 'Proveď tyto přípravné kroky' : 'Perform these setup steps'}:\n${setupPrompt}`);
       }
 
       // 3. Add the actual test
-      promptParts.push(`Nyní proveď test:\n${test.prompt}`);
+      promptParts.push(`${i18n.language === 'cs' ? 'Nyní proveď test' : 'Now run the test'}:\n${test.prompt}`);
 
       // 4. Add credentials at the end if available
       if (credentials) {
-        promptParts.push(`Přihlašovací údaje (použij když je potřeba):\n- Email/Username: ${credentials.username}\n- Heslo: ${credentials.password}`);
+        promptParts.push(`${i18n.language === 'cs' ? 'Přihlašovací údaje (použij když je potřeba)' : 'Login credentials (use when needed)'}:\n- Email/Username: ${credentials.username}\n- ${i18n.language === 'cs' ? 'Heslo' : 'Password'}: ${credentials.password}`);
       }
 
       const fullPrompt = promptParts.join('\n\n');
@@ -253,10 +254,10 @@ export default function ProjectTestHistory({ projectId, projectName, setupPrompt
         })
         .eq('id', test.id);
 
-      toast.success('Test byl spuštěn');
+      toast.success(t('testHistory.testStarted'));
     } catch (error) {
       console.error('Error running test:', error);
-      toast.error('Nepodařilo se spustit test');
+      toast.error(t('testHistory.testStartFailed'));
     } finally {
       setRunningTestId(null);
     }
@@ -270,10 +271,10 @@ export default function ProjectTestHistory({ projectId, projectName, setupPrompt
         .eq('id', testId);
 
       if (error) throw error;
-      toast.success('Test smazán');
+      toast.success(t('testHistory.testDeleted'));
     } catch (error) {
       console.error('Error deleting test:', error);
-      toast.error('Nepodařilo se smazat test');
+      toast.error(t('testHistory.deleteFailed'));
     }
   };
 
@@ -285,7 +286,7 @@ export default function ProjectTestHistory({ projectId, projectName, setupPrompt
         .eq('id', testId);
 
       if (error) throw error;
-      toast.success('Status resetován');
+      toast.success(t('testHistory.statusReset'));
     } catch (error) {
       console.error('Error resetting test:', error);
     }
@@ -310,7 +311,7 @@ export default function ProjectTestHistory({ projectId, projectName, setupPrompt
     if (!editingTest) return;
     
     if (!editForm.title.trim() || !editForm.prompt.trim()) {
-      toast.error('Název a prompt jsou povinné');
+      toast.error(t('testHistory.titlePromptRequired'));
       return;
     }
 
@@ -327,12 +328,12 @@ export default function ProjectTestHistory({ projectId, projectName, setupPrompt
         .eq('id', editingTest.id);
 
       if (error) throw error;
-      toast.success('Test upraven');
+      toast.success(t('testHistory.testUpdated'));
       closeEditDialog();
       fetchTests();
     } catch (error) {
       console.error('Error updating test:', error);
-      toast.error('Nepodařilo se upravit test');
+      toast.error(t('testHistory.updateFailed'));
     } finally {
       setIsSaving(false);
     }
@@ -341,13 +342,13 @@ export default function ProjectTestHistory({ projectId, projectName, setupPrompt
   const getStatusBadge = (status: string) => {
     switch (status) {
       case 'pending':
-        return <Badge variant="secondary"><Clock className="w-3 h-3 mr-1" />Čeká</Badge>;
+        return <Badge variant="secondary"><Clock className="w-3 h-3 mr-1" />{t('testHistory.statusPending')}</Badge>;
       case 'running':
-        return <Badge className="bg-warning text-warning-foreground"><Loader2 className="w-3 h-3 mr-1 animate-spin" />Běží</Badge>;
+        return <Badge className="bg-warning text-warning-foreground"><Loader2 className="w-3 h-3 mr-1 animate-spin" />{t('testHistory.statusRunning')}</Badge>;
       case 'passed':
-        return <Badge className="bg-success text-success-foreground"><CheckCircle2 className="w-3 h-3 mr-1" />Prošel</Badge>;
+        return <Badge className="bg-success text-success-foreground"><CheckCircle2 className="w-3 h-3 mr-1" />{t('testHistory.statusPassed')}</Badge>;
       case 'failed':
-        return <Badge variant="destructive"><XCircle className="w-3 h-3 mr-1" />Selhal</Badge>;
+        return <Badge variant="destructive"><XCircle className="w-3 h-3 mr-1" />{t('testHistory.statusFailed')}</Badge>;
       default:
         return <Badge variant="outline">{status}</Badge>;
     }
@@ -356,11 +357,11 @@ export default function ProjectTestHistory({ projectId, projectName, setupPrompt
   const getPriorityBadge = (priority: string) => {
     switch (priority) {
       case 'high':
-        return <Badge variant="destructive" className="text-xs">Vysoká</Badge>;
+        return <Badge variant="destructive" className="text-xs">{t('testHistory.priorityHigh')}</Badge>;
       case 'medium':
-        return <Badge className="bg-warning text-warning-foreground text-xs">Střední</Badge>;
+        return <Badge className="bg-warning text-warning-foreground text-xs">{t('testHistory.priorityMedium')}</Badge>;
       case 'low':
-        return <Badge variant="secondary" className="text-xs">Nízká</Badge>;
+        return <Badge variant="secondary" className="text-xs">{t('testHistory.priorityLow')}</Badge>;
       default:
         return null;
     }
@@ -377,8 +378,8 @@ export default function ProjectTestHistory({ projectId, projectName, setupPrompt
   if (tests.length === 0) {
     return (
       <div className="text-center py-8 text-muted-foreground">
-        <p>Žádné vygenerované testy pro tento projekt.</p>
-        <p className="text-sm mt-1">Přejděte do Generátoru testů a vyberte tento projekt.</p>
+        <p>{t('testHistory.noTests')}</p>
+        <p className="text-sm mt-1">{t('testHistory.goToGenerator')}</p>
       </div>
     );
   }
@@ -393,30 +394,30 @@ export default function ProjectTestHistory({ projectId, projectName, setupPrompt
       {/* Stats */}
       <div className="flex flex-wrap gap-3">
         <Badge variant="outline" className="text-sm py-1 px-3">
-          Celkem: {tests.length}
+          {t('testHistory.total')}: {tests.length}
         </Badge>
         {pendingCount > 0 && (
           <Badge variant="secondary" className="text-sm py-1 px-3">
             <Clock className="w-3 h-3 mr-1" />
-            Čeká: {pendingCount}
+            {t('testHistory.pending')}: {pendingCount}
           </Badge>
         )}
         {runningCount > 0 && (
           <Badge className="bg-warning text-warning-foreground text-sm py-1 px-3">
             <Loader2 className="w-3 h-3 mr-1 animate-spin" />
-            Běží: {runningCount}
+            {t('testHistory.running')}: {runningCount}
           </Badge>
         )}
         {passedCount > 0 && (
           <Badge className="bg-success text-success-foreground text-sm py-1 px-3">
             <CheckCircle2 className="w-3 h-3 mr-1" />
-            Prošlo: {passedCount}
+            {t('testHistory.passed')}: {passedCount}
           </Badge>
         )}
         {failedCount > 0 && (
           <Badge variant="destructive" className="text-sm py-1 px-3">
             <XCircle className="w-3 h-3 mr-1" />
-            Selhalo: {failedCount}
+            {t('testHistory.failed')}: {failedCount}
           </Badge>
         )}
       </div>
@@ -436,7 +437,7 @@ export default function ProjectTestHistory({ projectId, projectName, setupPrompt
                   {getPriorityBadge(test.priority)}
                 </div>
                 <p className="text-xs text-muted-foreground mt-1">
-                  {new Date(test.created_at).toLocaleString('cs-CZ')}
+                  {new Date(test.created_at).toLocaleString(i18n.language === 'cs' ? 'cs-CZ' : 'en-US')}
                 </p>
               </div>
               <div className="flex items-center gap-1">
@@ -446,7 +447,7 @@ export default function ProjectTestHistory({ projectId, projectName, setupPrompt
                     size="sm"
                     onClick={() => runTest(test)}
                     disabled={runningTestId === test.id}
-                    title="Spustit test"
+                    title={t('testHistory.runTest')}
                   >
                     {runningTestId === test.id ? (
                       <Loader2 className="h-4 w-4 animate-spin" />
@@ -459,7 +460,7 @@ export default function ProjectTestHistory({ projectId, projectName, setupPrompt
                   variant="ghost"
                   size="sm"
                   onClick={() => openEditDialog(test)}
-                  title="Upravit test"
+                  title={t('testHistory.editTest')}
                 >
                   <Pencil className="h-4 w-4" />
                 </Button>
@@ -468,7 +469,7 @@ export default function ProjectTestHistory({ projectId, projectName, setupPrompt
                     variant="ghost"
                     size="sm"
                     onClick={() => resetTestStatus(test.id)}
-                    title="Reset status"
+                    title={t('testHistory.resetStatus')}
                   >
                     <RotateCcw className="h-4 w-4" />
                   </Button>
@@ -478,7 +479,7 @@ export default function ProjectTestHistory({ projectId, projectName, setupPrompt
                   size="sm"
                   onClick={() => deleteTest(test.id)}
                   className="text-muted-foreground hover:text-destructive"
-                  title="Smazat test"
+                  title={t('testHistory.deleteTest')}
                 >
                   <Trash2 className="h-4 w-4" />
                 </Button>
@@ -491,7 +492,7 @@ export default function ProjectTestHistory({ projectId, projectName, setupPrompt
             
             {test.expected_result && (
               <div className="mt-2 text-xs text-muted-foreground">
-                <span className="font-medium">Očekáváno:</span> {test.expected_result}
+                <span className="font-medium">{t('testHistory.expected')}:</span> {test.expected_result}
               </div>
             )}
           </div>
@@ -502,48 +503,48 @@ export default function ProjectTestHistory({ projectId, projectName, setupPrompt
       <Dialog open={!!editingTest} onOpenChange={(open) => !open && closeEditDialog()}>
         <DialogContent className="max-w-2xl">
           <DialogHeader>
-            <DialogTitle>Upravit test</DialogTitle>
+            <DialogTitle>{t('testHistory.editTestTitle')}</DialogTitle>
             <DialogDescription>
-              Upravte název, prompt, očekávaný výsledek nebo prioritu testu.
+              {t('testHistory.editTestDescription')}
             </DialogDescription>
           </DialogHeader>
 
           <div className="space-y-4 py-4">
             <div className="space-y-2">
-              <Label htmlFor="edit-title">Název testu *</Label>
+              <Label htmlFor="edit-title">{t('testHistory.testName')} *</Label>
               <Input
                 id="edit-title"
                 value={editForm.title}
                 onChange={(e) => setEditForm(prev => ({ ...prev, title: e.target.value }))}
-                placeholder="Název testu"
+                placeholder={t('testHistory.testNamePlaceholder')}
               />
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="edit-prompt">Prompt (kroky testu) *</Label>
+              <Label htmlFor="edit-prompt">{t('testHistory.prompt')} *</Label>
               <Textarea
                 id="edit-prompt"
                 value={editForm.prompt}
                 onChange={(e) => setEditForm(prev => ({ ...prev, prompt: e.target.value }))}
-                placeholder="Kroky, které má test provést..."
+                placeholder={t('testHistory.promptPlaceholder')}
                 rows={6}
                 className="font-mono text-sm"
               />
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="edit-expected">Očekávaný výsledek</Label>
+              <Label htmlFor="edit-expected">{t('testHistory.expectedResult')}</Label>
               <Textarea
                 id="edit-expected"
                 value={editForm.expected_result}
                 onChange={(e) => setEditForm(prev => ({ ...prev, expected_result: e.target.value }))}
-                placeholder="Co by měl test ověřit..."
+                placeholder={t('testHistory.expectedPlaceholder')}
                 rows={3}
               />
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="edit-priority">Priorita</Label>
+              <Label htmlFor="edit-priority">{t('testHistory.priority')}</Label>
               <Select
                 value={editForm.priority}
                 onValueChange={(value) => setEditForm(prev => ({ ...prev, priority: value }))}
@@ -552,9 +553,9 @@ export default function ProjectTestHistory({ projectId, projectName, setupPrompt
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="high">Vysoká</SelectItem>
-                  <SelectItem value="medium">Střední</SelectItem>
-                  <SelectItem value="low">Nízká</SelectItem>
+                  <SelectItem value="high">{t('testHistory.priorityHigh')}</SelectItem>
+                  <SelectItem value="medium">{t('testHistory.priorityMedium')}</SelectItem>
+                  <SelectItem value="low">{t('testHistory.priorityLow')}</SelectItem>
                 </SelectContent>
               </Select>
             </div>
@@ -562,16 +563,16 @@ export default function ProjectTestHistory({ projectId, projectName, setupPrompt
 
           <DialogFooter>
             <Button type="button" variant="outline" onClick={closeEditDialog}>
-              Zrušit
+              {t('common.cancel')}
             </Button>
             <Button onClick={saveTestEdit} disabled={isSaving}>
               {isSaving ? (
                 <>
                   <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  Ukládám...
+                  {t('testHistory.saving')}
                 </>
               ) : (
-                'Uložit změny'
+                t('testHistory.saveChanges')
               )}
             </Button>
           </DialogFooter>

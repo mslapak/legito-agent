@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { useTranslation } from 'react-i18next';
 import { supabase } from '@/integrations/supabase/client';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -41,13 +42,14 @@ interface ProjectCredentialsProps {
 }
 
 export default function ProjectCredentials({ projectId }: ProjectCredentialsProps) {
+  const { t } = useTranslation();
   const [credentials, setCredentials] = useState<Credential[]>([]);
   const [loading, setLoading] = useState(true);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [editingCredential, setEditingCredential] = useState<Credential | null>(null);
   const [showPassword, setShowPassword] = useState<Record<string, boolean>>({});
   const [formData, setFormData] = useState({
-    name: 'Výchozí účet',
+    name: t('credentials.accountNamePlaceholder'),
     username: '',
     password: '',
     description: '',
@@ -77,7 +79,7 @@ export default function ProjectCredentials({ projectId }: ProjectCredentialsProp
 
   const openCreateDialog = () => {
     setEditingCredential(null);
-    setFormData({ name: 'Výchozí účet', username: '', password: '', description: '' });
+    setFormData({ name: t('credentials.accountNamePlaceholder'), username: '', password: '', description: '' });
     setIsDialogOpen(true);
   };
 
@@ -96,7 +98,7 @@ export default function ProjectCredentials({ projectId }: ProjectCredentialsProp
     e.preventDefault();
 
     if (!formData.username.trim() || !formData.password.trim()) {
-      toast.error('Vyplňte uživatelské jméno a heslo');
+      toast.error(t('credentials.fillUsernamePassword'));
       return;
     }
 
@@ -114,10 +116,10 @@ export default function ProjectCredentials({ projectId }: ProjectCredentialsProp
           .eq('id', editingCredential.id);
 
         if (error) throw error;
-        toast.success('Přihlašovací údaje aktualizovány');
+        toast.success(t('credentials.credentialsUpdated'));
       } else {
         const { data: { user } } = await supabase.auth.getUser();
-        if (!user) throw new Error('Uživatel není přihlášen');
+        if (!user) throw new Error(t('credentials.userNotLoggedIn'));
 
         const { error } = await supabase
           .from('project_credentials')
@@ -131,14 +133,14 @@ export default function ProjectCredentials({ projectId }: ProjectCredentialsProp
           });
 
         if (error) throw error;
-        toast.success('Přihlašovací údaje uloženy');
+        toast.success(t('credentials.credentialsSaved'));
       }
 
       setIsDialogOpen(false);
       fetchCredentials();
     } catch (error) {
       console.error('Error saving credentials:', error);
-      toast.error('Nepodařilo se uložit přihlašovací údaje');
+      toast.error(t('credentials.saveFailed'));
     } finally {
       setIsSaving(false);
     }
@@ -152,11 +154,11 @@ export default function ProjectCredentials({ projectId }: ProjectCredentialsProp
         .eq('id', credentialId);
 
       if (error) throw error;
-      toast.success('Přihlašovací údaje smazány');
+      toast.success(t('credentials.credentialsDeleted'));
       fetchCredentials();
     } catch (error) {
       console.error('Error deleting credentials:', error);
-      toast.error('Nepodařilo se smazat přihlašovací údaje');
+      toast.error(t('credentials.deleteFailed'));
     }
   };
 
@@ -177,63 +179,63 @@ export default function ProjectCredentials({ projectId }: ProjectCredentialsProp
       <div className="flex items-center justify-between">
         <h5 className="text-sm font-medium flex items-center gap-2">
           <Key className="w-4 h-4 text-primary" />
-          Přihlašovací údaje
+          {t('credentials.title')}
         </h5>
         <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
           <DialogTrigger asChild>
             <Button variant="outline" size="sm" onClick={openCreateDialog}>
               <Plus className="mr-1 h-3 w-3" />
-              Přidat
+              {t('credentials.add')}
             </Button>
           </DialogTrigger>
           <DialogContent>
             <form onSubmit={handleSubmit}>
               <DialogHeader>
                 <DialogTitle>
-                  {editingCredential ? 'Upravit přihlašovací údaje' : 'Nové přihlašovací údaje'}
+                  {editingCredential ? t('credentials.editCredentials') : t('credentials.newCredentials')}
                 </DialogTitle>
                 <DialogDescription>
-                  Tyto údaje budou automaticky použity při spouštění testů vyžadujících přihlášení.
+                  {t('credentials.credentialsHelp')}
                 </DialogDescription>
               </DialogHeader>
 
               <div className="space-y-4 py-4">
                 <div className="space-y-2">
-                  <Label htmlFor="cred-name">Název účtu</Label>
+                  <Label htmlFor="cred-name">{t('credentials.accountName')}</Label>
                   <Input
                     id="cred-name"
-                    placeholder="Výchozí účet"
+                    placeholder={t('credentials.accountNamePlaceholder')}
                     value={formData.name}
                     onChange={(e) => setFormData(prev => ({ ...prev, name: e.target.value }))}
                   />
                 </div>
 
                 <div className="space-y-2">
-                  <Label htmlFor="cred-username">Uživatelské jméno / Email *</Label>
+                  <Label htmlFor="cred-username">{t('credentials.usernameEmail')} *</Label>
                   <Input
                     id="cred-username"
-                    placeholder="user@example.com"
+                    placeholder={t('credentials.usernamePlaceholder')}
                     value={formData.username}
                     onChange={(e) => setFormData(prev => ({ ...prev, username: e.target.value }))}
                   />
                 </div>
 
                 <div className="space-y-2">
-                  <Label htmlFor="cred-password">Heslo *</Label>
+                  <Label htmlFor="cred-password">{t('credentials.password')} *</Label>
                   <Input
                     id="cred-password"
                     type="password"
-                    placeholder="••••••••"
+                    placeholder={t('credentials.passwordPlaceholder')}
                     value={formData.password}
                     onChange={(e) => setFormData(prev => ({ ...prev, password: e.target.value }))}
                   />
                 </div>
 
                 <div className="space-y-2">
-                  <Label htmlFor="cred-description">Popis (volitelně)</Label>
+                  <Label htmlFor="cred-description">{t('credentials.description')}</Label>
                   <Input
                     id="cred-description"
-                    placeholder="Admin účet pro testing"
+                    placeholder={t('credentials.descriptionPlaceholder')}
                     value={formData.description}
                     onChange={(e) => setFormData(prev => ({ ...prev, description: e.target.value }))}
                   />
@@ -242,16 +244,16 @@ export default function ProjectCredentials({ projectId }: ProjectCredentialsProp
 
               <DialogFooter>
                 <Button type="button" variant="outline" onClick={() => setIsDialogOpen(false)}>
-                  Zrušit
+                  {t('common.cancel')}
                 </Button>
                 <Button type="submit" disabled={isSaving}>
                   {isSaving ? (
                     <>
                       <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                      Ukládám...
+                      {t('credentials.saving')}
                     </>
                   ) : (
-                    editingCredential ? 'Uložit změny' : 'Uložit'
+                    editingCredential ? t('credentials.saveChanges') : t('common.save')
                   )}
                 </Button>
               </DialogFooter>
@@ -262,7 +264,7 @@ export default function ProjectCredentials({ projectId }: ProjectCredentialsProp
 
       {credentials.length === 0 ? (
         <p className="text-sm text-muted-foreground py-2">
-          Žádné uložené přihlašovací údaje. Pro automatické přihlášení při testech přidejte credentials.
+          {t('credentials.noCredentials')}
         </p>
       ) : (
         <div className="space-y-2">
@@ -277,11 +279,11 @@ export default function ProjectCredentials({ projectId }: ProjectCredentialsProp
                     </div>
                     <div className="text-xs text-muted-foreground mt-1 space-y-0.5">
                       <div className="flex items-center gap-2">
-                        <span>Login:</span>
+                        <span>{t('credentials.login')}:</span>
                         <code className="bg-background px-1 rounded">{cred.username}</code>
                       </div>
                       <div className="flex items-center gap-2">
-                        <span>Heslo:</span>
+                        <span>{t('credentials.password')}:</span>
                         <code className="bg-background px-1 rounded">
                           {showPassword[cred.id] ? cred.password : '••••••••'}
                         </code>
@@ -324,18 +326,18 @@ export default function ProjectCredentials({ projectId }: ProjectCredentialsProp
                       </AlertDialogTrigger>
                       <AlertDialogContent>
                         <AlertDialogHeader>
-                          <AlertDialogTitle>Smazat přihlašovací údaje?</AlertDialogTitle>
+                          <AlertDialogTitle>{t('credentials.deleteCredentials')}</AlertDialogTitle>
                           <AlertDialogDescription>
-                            Tato akce je nevratná. Přihlašovací údaje "{cred.name}" budou permanentně smazány.
+                            {t('credentials.deleteConfirm', { name: cred.name })}
                           </AlertDialogDescription>
                         </AlertDialogHeader>
                         <AlertDialogFooter>
-                          <AlertDialogCancel>Zrušit</AlertDialogCancel>
+                          <AlertDialogCancel>{t('common.cancel')}</AlertDialogCancel>
                           <AlertDialogAction
                             onClick={() => handleDelete(cred.id)}
                             className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
                           >
-                            Smazat
+                            {t('common.delete')}
                           </AlertDialogAction>
                         </AlertDialogFooter>
                       </AlertDialogContent>
