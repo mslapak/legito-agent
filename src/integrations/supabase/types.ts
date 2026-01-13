@@ -83,6 +83,7 @@ export type Database = {
           source_type: string | null
           status: string
           task_id: string | null
+          test_suite_id: string | null
           title: string
           updated_at: string
           user_id: string
@@ -102,6 +103,7 @@ export type Database = {
           source_type?: string | null
           status?: string
           task_id?: string | null
+          test_suite_id?: string | null
           title: string
           updated_at?: string
           user_id: string
@@ -121,6 +123,7 @@ export type Database = {
           source_type?: string | null
           status?: string
           task_id?: string | null
+          test_suite_id?: string | null
           title?: string
           updated_at?: string
           user_id?: string
@@ -138,6 +141,13 @@ export type Database = {
             columns: ["task_id"]
             isOneToOne: false
             referencedRelation: "tasks"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "generated_tests_test_suite_id_fkey"
+            columns: ["test_suite_id"]
+            isOneToOne: false
+            referencedRelation: "test_suites"
             referencedColumns: ["id"]
           },
         ]
