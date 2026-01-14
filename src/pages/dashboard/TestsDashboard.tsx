@@ -32,11 +32,18 @@ import {
   Square,
   Trash2,
   FolderX,
+  FileText,
+  Calendar,
+  Timer,
+  Hash,
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import { toast } from 'sonner';
 import { Checkbox } from '@/components/ui/checkbox';
 import { useTranslation } from 'react-i18next';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
+import { ScrollArea } from '@/components/ui/scroll-area';
+import StructuredResult from '@/components/StructuredResult';
 
 interface GeneratedTest {
   id: string;
@@ -130,6 +137,9 @@ export default function TestsDashboard() {
   
   // Batch size for execution
   const [batchSize, setBatchSize] = useState(50);
+
+  // Test detail modal
+  const [selectedTest, setSelectedTest] = useState<GeneratedTest | null>(null);
 
   const dateLocale = i18n.language === 'cs' ? 'cs-CZ' : 'en-US';
 
@@ -1356,10 +1366,10 @@ export default function TestsDashboard() {
                             disabled={bulkRunning}
                           />
                         </td>
-                        <td className="p-3 font-mono text-sm cursor-pointer" onClick={() => navigate(`/dashboard/projects`)}>
+                        <td className="p-3 font-mono text-sm cursor-pointer hover:text-primary" onClick={() => setSelectedTest(test)}>
                           {test.azure_devops_id || test.id.substring(0, 8)}
                         </td>
-                        <td className="p-3 cursor-pointer" onClick={() => navigate(`/dashboard/projects`)}>
+                        <td className="p-3 cursor-pointer hover:text-primary" onClick={() => setSelectedTest(test)}>
                           <div className="max-w-xs truncate font-medium">{test.title}</div>
                           {getSuiteName(test.test_suite_id) && (
                             <div className="text-xs text-muted-foreground mt-0.5">
@@ -1448,6 +1458,146 @@ export default function TestsDashboard() {
           )}
         </CardContent>
       </Card>
+
+      {/* Test Detail Modal */}
+      <Dialog open={!!selectedTest} onOpenChange={(open) => !open && setSelectedTest(null)}>
+        <DialogContent className="max-w-3xl max-h-[85vh] flex flex-col">
+          <DialogHeader>
+            <div className="flex items-start justify-between gap-4 pr-6">
+              <div className="flex-1">
+                <DialogTitle className="text-xl font-semibold leading-tight">
+                  {selectedTest?.title}
+                </DialogTitle>
+                <div className="flex items-center gap-2 mt-2 text-sm text-muted-foreground">
+                  <Hash className="w-3.5 h-3.5" />
+                  <span className="font-mono">{selectedTest?.azure_devops_id || selectedTest?.id.substring(0, 8)}</span>
+                </div>
+              </div>
+              <div className="flex items-center gap-2 flex-shrink-0">
+                {selectedTest && getPriorityBadge(selectedTest.priority)}
+                {selectedTest && getStatusBadge(selectedTest.status)}
+              </div>
+            </div>
+          </DialogHeader>
+
+          <ScrollArea className="flex-1 -mx-6 px-6">
+            <div className="space-y-6 pb-4">
+              {/* Metadata */}
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4 p-4 bg-muted/50 rounded-lg">
+                <div className="space-y-1">
+                  <p className="text-xs text-muted-foreground flex items-center gap-1.5">
+                    <FileText className="w-3 h-3" />
+                    {i18n.language === 'cs' ? 'Projekt' : 'Project'}
+                  </p>
+                  <p className="text-sm font-medium">{getProjectName(selectedTest?.project_id || null)}</p>
+                </div>
+                <div className="space-y-1">
+                  <p className="text-xs text-muted-foreground flex items-center gap-1.5">
+                    <TestTube className="w-3 h-3" />
+                    {i18n.language === 'cs' ? 'Test Suite' : 'Test Suite'}
+                  </p>
+                  <p className="text-sm font-medium">{getSuiteName(selectedTest?.test_suite_id || null) || '-'}</p>
+                </div>
+                <div className="space-y-1">
+                  <p className="text-xs text-muted-foreground flex items-center gap-1.5">
+                    <Calendar className="w-3 h-3" />
+                    {i18n.language === 'cs' ? 'Vytvořeno' : 'Created'}
+                  </p>
+                  <p className="text-sm font-medium">
+                    {selectedTest?.created_at 
+                      ? new Date(selectedTest.created_at).toLocaleDateString(dateLocale, {
+                          day: '2-digit',
+                          month: '2-digit',
+                          year: 'numeric'
+                        })
+                      : '-'}
+                  </p>
+                </div>
+                <div className="space-y-1">
+                  <p className="text-xs text-muted-foreground flex items-center gap-1.5">
+                    <Timer className="w-3 h-3" />
+                    {i18n.language === 'cs' ? 'Poslední běh' : 'Last Run'}
+                  </p>
+                  <p className="text-sm font-medium">
+                    {selectedTest?.last_run_at 
+                      ? new Date(selectedTest.last_run_at).toLocaleString(dateLocale, {
+                          day: '2-digit',
+                          month: '2-digit',
+                          hour: '2-digit',
+                          minute: '2-digit'
+                        })
+                      : '-'}
+                    {selectedTest?.execution_time_ms && (
+                      <span className="text-muted-foreground ml-1">
+                        ({formatDuration(selectedTest.execution_time_ms)})
+                      </span>
+                    )}
+                  </p>
+                </div>
+              </div>
+
+              {/* Prompt */}
+              <div className="space-y-2">
+                <h4 className="text-sm font-semibold flex items-center gap-2">
+                  <FileText className="w-4 h-4" />
+                  {i18n.language === 'cs' ? 'Testovací prompt' : 'Test Prompt'}
+                </h4>
+                <div className="p-4 bg-muted/30 rounded-lg border">
+                  <p className="text-sm whitespace-pre-wrap">{selectedTest?.prompt}</p>
+                </div>
+              </div>
+
+              {/* Expected Result */}
+              {selectedTest?.expected_result && (
+                <div className="space-y-2">
+                  <h4 className="text-sm font-semibold flex items-center gap-2">
+                    <CheckCircle2 className="w-4 h-4" />
+                    {i18n.language === 'cs' ? 'Očekávaný výsledek' : 'Expected Result'}
+                  </h4>
+                  <div className="p-4 bg-muted/30 rounded-lg border">
+                    <p className="text-sm whitespace-pre-wrap">{selectedTest.expected_result}</p>
+                  </div>
+                </div>
+              )}
+
+              {/* Result Summary */}
+              {selectedTest?.result_summary && (
+                <div className="space-y-2">
+                  <h4 className="text-sm font-semibold flex items-center gap-2">
+                    <TrendingUp className="w-4 h-4" />
+                    {i18n.language === 'cs' ? 'Výsledek posledního běhu' : 'Last Run Result'}
+                  </h4>
+                  <div className="p-4 bg-muted/30 rounded-lg border">
+                    <StructuredResult result={selectedTest.result_summary} />
+                  </div>
+                </div>
+              )}
+            </div>
+          </ScrollArea>
+
+          <DialogFooter className="flex-shrink-0 gap-2 sm:gap-2">
+            {selectedTest?.task_id && (
+              <Button
+                variant="outline"
+                onClick={() => {
+                  navigate(`/dashboard/tasks/${selectedTest.task_id}`);
+                  setSelectedTest(null);
+                }}
+                className="gap-2"
+              >
+                <ExternalLink className="w-4 h-4" />
+                {i18n.language === 'cs' ? 'Zobrazit Task Detail' : 'View Task Detail'}
+              </Button>
+            )}
+            <Button
+              onClick={() => setSelectedTest(null)}
+              variant="secondary"
+            >
+              {t('common.close')}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
