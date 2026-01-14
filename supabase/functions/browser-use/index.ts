@@ -112,8 +112,8 @@ serve(async (req) => {
       });
     }
 
-    const { action, taskId, prompt, title, projectId, keepBrowserOpen, followUpPrompt, taskType, fileName, fileBase64, contentType, includedFiles, dbTaskId } = await req.json();
-    console.log(`Action: ${action}, User: ${user.id}, TaskId: ${taskId || 'N/A'}, TaskType: ${taskType || 'test'}`);
+    const { action, taskId, prompt, title, projectId, keepBrowserOpen, followUpPrompt, taskType, fileName, fileBase64, contentType, includedFiles, dbTaskId, maxSteps } = await req.json();
+    console.log(`Action: ${action}, User: ${user.id}, TaskId: ${taskId || 'N/A'}, TaskType: ${taskType || 'test'}, MaxSteps: ${maxSteps || 20}`);
 
     // Browser-Use Cloud API base URL - v2 API
     const BROWSER_USE_API_URL = 'https://api.browser-use.com/api/v2';
@@ -375,6 +375,7 @@ serve(async (req) => {
           task: prompt,
           save_browser_data: true,
           record_video: true,
+          max_steps: maxSteps || 20, // Limit steps to prevent agent from getting stuck
         };
         
         if (keepBrowserOpen) {
