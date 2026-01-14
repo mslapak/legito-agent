@@ -163,6 +163,7 @@ async function runBatchInBackground(batchId: string, testIds: string[], userId: 
           task: fullPrompt,
           save_browser_data: true,
           record_video: true,
+          max_steps: 20, // Limit steps to prevent agent from getting stuck
         }),
       });
 
