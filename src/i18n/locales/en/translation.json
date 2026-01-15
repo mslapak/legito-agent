@@ -196,7 +196,8 @@
     "downloadFailed": "Failed to download media",
     "stepsPerformed": "Performed steps",
     "noSteps": "No steps recorded yet",
-    "step": "Step"
+    "step": "Step",
+    "sessionExpired": "Browser session has expired. Showing saved data."
   },
   "tests": {
     "title": "Tests Overview",

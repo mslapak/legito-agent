@@ -133,6 +133,14 @@ export default function TaskDetail() {
       
       const browserUseData = detailsResponse.data;
       
+      // Handle expired session - just use local data
+      if (browserUseData.expired || browserUseData.status === 'expired') {
+        console.log('Browser session expired, using local data only');
+        toast.info(t('taskDetail.sessionExpired', 'Browser session has expired. Showing saved data.'));
+        setActionLoading(false);
+        return;
+      }
+      
       // Get all media (screenshots + recordings)
       const mediaResponse = await supabase.functions.invoke('browser-use', {
         body: {
