@@ -293,6 +293,7 @@ export default function Projects() {
           prompt: fullPrompt,
           title: `[Setup Test] ${project.name}`,
           projectId: project.id,
+          profileId: project.browser_profile_id,
         },
       });
 
