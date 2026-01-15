@@ -432,17 +432,79 @@ serve(async (req) => {
 
       case 'create_task': {
         // Create task in Browser-Use Cloud
+        // Step 1: Determine effective profileId (from request or lookup from project)
+        let effectiveProfileId = profileId || null;
+        
+        if (!effectiveProfileId && projectId) {
+          console.log('No profileId provided, looking up from project:', projectId);
+          const { data: projectData } = await supabase
+            .from('projects')
+            .select('browser_profile_id')
+            .eq('id', projectId)
+            .single();
+          
+          if (projectData?.browser_profile_id) {
+            effectiveProfileId = projectData.browser_profile_id;
+            console.log('Found browser_profile_id from project:', effectiveProfileId);
+          }
+        }
+        
+        console.log('Effective profile ID:', effectiveProfileId || 'none');
+        
+        // Step 2: If we have a profile, create a session first with the profile
+        let sessionId: string | null = null;
+        
+        if (effectiveProfileId) {
+          console.log('Creating session with profile:', effectiveProfileId);
+          try {
+            const sessionPayload = { 
+              profileId: effectiveProfileId,
+              profile_id: effectiveProfileId, // Try both formats
+            };
+            console.log('Session create payload:', JSON.stringify(sessionPayload));
+            
+            const sessionRes = await fetch(`${BROWSER_USE_API_URL}/sessions`, {
+              method: 'POST',
+              headers: {
+                'X-Browser-Use-API-Key': BROWSER_USE_API_KEY,
+                'Content-Type': 'application/json',
+              },
+              body: JSON.stringify(sessionPayload),
+            });
+            
+            const sessionRaw = await sessionRes.text();
+            console.log('Session create response:', sessionRes.status, sessionRaw);
+            
+            if (sessionRes.ok) {
+              const sessionData = JSON.parse(sessionRaw);
+              sessionId = sessionData.id || sessionData.sessionId || sessionData.session_id;
+              console.log('Created session with profile, sessionId:', sessionId);
+            } else {
+              console.error('Failed to create session with profile:', sessionRes.status, sessionRaw);
+            }
+          } catch (e) {
+            console.error('Error creating session with profile:', e);
+          }
+        }
+        
+        // Step 3: Create the task
         const requestBody: Record<string, unknown> = {
           task: prompt,
           save_browser_data: true,
           record_video: true,
-          max_steps: maxSteps || 20, // Limit steps to prevent agent from getting stuck
+          max_steps: maxSteps || 20,
         };
         
-        // Use profile for persistent login state
-        if (profileId) {
-          requestBody.profile_id = profileId;
-          console.log('Using browser profile:', profileId);
+        // If we created a session with profile, use that sessionId
+        if (sessionId) {
+          requestBody.sessionId = sessionId;
+          requestBody.session_id = sessionId; // Try both formats
+          console.log('Creating task with session:', sessionId);
+        } else if (effectiveProfileId) {
+          // Fallback: try passing profileId directly to task (might work in some API versions)
+          requestBody.profile_id = effectiveProfileId;
+          requestBody.profileId = effectiveProfileId;
+          console.log('Creating task with direct profile (fallback):', effectiveProfileId);
         }
         
         if (keepBrowserOpen) {
@@ -478,10 +540,11 @@ serve(async (req) => {
         // V2 API: Try to get liveUrl from browser session endpoint
         let liveUrl = browserUseData.live_url || browserUseData.liveUrl || browserUseData.preview_url || browserUseData.previewUrl;
         
-        if (!liveUrl && browserUseData.sessionId) {
+        const taskSessionId = browserUseData.sessionId || sessionId;
+        if (!liveUrl && taskSessionId) {
           try {
-            console.log('Fetching session for liveUrl:', browserUseData.sessionId);
-            const sessionRes = await fetch(`${BROWSER_USE_API_URL}/sessions/${browserUseData.sessionId}`, {
+            console.log('Fetching session for liveUrl:', taskSessionId);
+            const sessionRes = await fetch(`${BROWSER_USE_API_URL}/sessions/${taskSessionId}`, {
               method: 'GET',
               headers: { 'X-Browser-Use-API-Key': BROWSER_USE_API_KEY },
             });
@@ -501,8 +564,8 @@ serve(async (req) => {
         
         // Fallback to constructed URL if no liveUrl from API
         if (!liveUrl) {
-          liveUrl = browserUseData.sessionId 
-            ? `https://live.browser-use.com/?sessionId=${browserUseData.sessionId}` 
+          liveUrl = taskSessionId 
+            ? `https://live.browser-use.com/?sessionId=${taskSessionId}` 
             : `https://live.browser-use.com/${browserUseData.id}`;
         }
         

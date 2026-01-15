@@ -156,16 +156,59 @@ async function runBatchInBackground(batchId: string, testIds: string[], userId: 
       // Create browser-use task first
       console.log(`[Batch ${batchId}] Creating browser-use task for test ${testId}${browserProfileId ? ` with profile ${browserProfileId}` : ''}`);
       
+      // Step 1: If we have a profile, create a session first
+      let sessionId: string | null = null;
+      
+      if (browserProfileId) {
+        console.log(`[Batch ${batchId}] Creating session with profile: ${browserProfileId}`);
+        try {
+          const sessionPayload = { 
+            profileId: browserProfileId,
+            profile_id: browserProfileId,
+          };
+          
+          const sessionRes = await fetch("https://api.browser-use.com/api/v2/sessions", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              "X-Browser-Use-API-Key": BROWSER_USE_API_KEY!,
+            },
+            body: JSON.stringify(sessionPayload),
+          });
+          
+          const sessionRaw = await sessionRes.text();
+          console.log(`[Batch ${batchId}] Session create response: ${sessionRes.status} ${sessionRaw.substring(0, 500)}`);
+          
+          if (sessionRes.ok) {
+            const sessionData = JSON.parse(sessionRaw);
+            sessionId = sessionData.id || sessionData.sessionId || sessionData.session_id;
+            console.log(`[Batch ${batchId}] Created session with profile, sessionId: ${sessionId}`);
+          } else {
+            console.error(`[Batch ${batchId}] Failed to create session with profile: ${sessionRes.status}`);
+          }
+        } catch (e) {
+          console.error(`[Batch ${batchId}] Error creating session with profile:`, e);
+        }
+      }
+      
+      // Step 2: Create the task
       const taskPayload: Record<string, unknown> = {
         task: fullPrompt,
         save_browser_data: true,
         record_video: true,
-        max_steps: 20, // Limit steps to prevent agent from getting stuck
+        max_steps: 20,
       };
       
-      // Use browser profile for persistent login if available
-      if (browserProfileId) {
+      // If we created a session with profile, use that sessionId
+      if (sessionId) {
+        taskPayload.sessionId = sessionId;
+        taskPayload.session_id = sessionId;
+        console.log(`[Batch ${batchId}] Creating task with session: ${sessionId}`);
+      } else if (browserProfileId) {
+        // Fallback: try passing profileId directly
         taskPayload.profile_id = browserProfileId;
+        taskPayload.profileId = browserProfileId;
+        console.log(`[Batch ${batchId}] Creating task with direct profile (fallback): ${browserProfileId}`);
       }
       
       const createResponse = await fetch("https://api.browser-use.com/api/v2/tasks", {
