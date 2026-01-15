@@ -48,6 +48,8 @@ import {
   Save,
   Info,
   Play,
+  User,
+  RotateCcw,
 } from 'lucide-react';
 import ProjectTestHistory from '@/components/ProjectTestHistory';
 import ProjectCredentials from '@/components/ProjectCredentials';
@@ -60,6 +62,7 @@ interface Project {
   description: string | null;
   base_url: string | null;
   setup_prompt: string | null;
+  browser_profile_id: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -85,6 +88,8 @@ export default function Projects() {
   const [setupPrompts, setSetupPrompts] = useState<Record<string, string>>({});
   const [savingSetupPrompt, setSavingSetupPrompt] = useState<string | null>(null);
   const [testingSetup, setTestingSetup] = useState<string | null>(null);
+  const [settingUpSession, setSettingUpSession] = useState<string | null>(null);
+  const [resettingSession, setResettingSession] = useState<string | null>(null);
 
   const dateLocale = i18n.language === 'cs' ? 'cs-CZ' : 'en-US';
 
@@ -299,6 +304,118 @@ export default function Projects() {
       toast.error(t('projects.setupTestFailed'));
     } finally {
       setTestingSetup(null);
+    }
+  };
+
+  const setupBrowserSession = async (project: Project) => {
+    if (!project.base_url) {
+      toast.error(t('projects.projectNoUrl'));
+      return;
+    }
+
+    setSettingUpSession(project.id);
+    try {
+      // 1. Create browser profile
+      const profileResponse = await supabase.functions.invoke('browser-use', {
+        body: {
+          action: 'create_profile',
+          profileName: `${project.name} - Session`,
+        },
+      });
+
+      if (profileResponse.error) {
+        throw new Error(profileResponse.error.message);
+      }
+
+      const { profileId } = profileResponse.data;
+      console.log('Created profile:', profileId);
+
+      // 2. Save profile ID to project
+      const { error: updateError } = await supabase
+        .from('projects')
+        .update({ browser_profile_id: profileId })
+        .eq('id', project.id);
+
+      if (updateError) throw updateError;
+
+      // 3. Fetch credentials
+      const { data: credentials } = await supabase
+        .from('project_credentials')
+        .select('username, password')
+        .eq('project_id', project.id)
+        .limit(1)
+        .maybeSingle();
+
+      // 4. Start a browser session for manual login
+      const loginPrompt = i18n.language === 'cs'
+        ? `Otevři stránku: ${project.base_url}
+
+Uživatel se nyní ručně přihlásí do aplikace (včetně případného 2FA).
+Počkej a umožni uživateli provést přihlášení.
+${credentials ? `\nPokud je potřeba, zde jsou přihlašovací údaje:\n- Email/Username: ${credentials.username}\n- Heslo: ${credentials.password}` : ''}`
+        : `Open page: ${project.base_url}
+
+The user will now manually log in to the application (including any 2FA).
+Wait and allow the user to complete the login.
+${credentials ? `\nIf needed, here are the credentials:\n- Email/Username: ${credentials.username}\n- Password: ${credentials.password}` : ''}`;
+
+      const taskResponse = await supabase.functions.invoke('browser-use', {
+        body: {
+          action: 'create_task',
+          prompt: loginPrompt,
+          title: `[Session Setup] ${project.name}`,
+          projectId: project.id,
+          keepBrowserOpen: true,
+          profileId: profileId,
+        },
+      });
+
+      if (taskResponse.error) {
+        throw new Error(taskResponse.error.message);
+      }
+
+      toast.success(i18n.language === 'cs' 
+        ? 'Browser session spuštěna. Přihlaste se v prohlížeči a pak session zavřete.'
+        : 'Browser session started. Log in using the browser and then close the session.');
+      fetchProjects();
+    } catch (error) {
+      console.error('Error setting up browser session:', error);
+      toast.error(i18n.language === 'cs' ? 'Nepodařilo se nastavit session' : 'Failed to setup session');
+    } finally {
+      setSettingUpSession(null);
+    }
+  };
+
+  const resetBrowserSession = async (project: Project) => {
+    if (!project.browser_profile_id) return;
+
+    setResettingSession(project.id);
+    try {
+      // 1. Delete profile from Browser-Use
+      await supabase.functions.invoke('browser-use', {
+        body: {
+          action: 'delete_profile',
+          profileId: project.browser_profile_id,
+        },
+      });
+
+      // 2. Clear profile ID from project
+      const { error: updateError } = await supabase
+        .from('projects')
+        .update({ browser_profile_id: null })
+        .eq('id', project.id);
+
+      if (updateError) throw updateError;
+
+      toast.success(i18n.language === 'cs' 
+        ? 'Browser session resetována'
+        : 'Browser session reset');
+      fetchProjects();
+    } catch (error) {
+      console.error('Error resetting browser session:', error);
+      toast.error(i18n.language === 'cs' ? 'Nepodařilo se resetovat session' : 'Failed to reset session');
+    } finally {
+      setResettingSession(null);
     }
   };
 
@@ -521,6 +638,67 @@ export default function Projects() {
                     <div className="pt-4 space-y-6">
                       {/* Credentials Section */}
                       <ProjectCredentials projectId={project.id} />
+                      
+                      {/* Browser Session Section */}
+                      <div className="space-y-3">
+                        <div className="flex items-center justify-between">
+                          <h4 className="font-medium flex items-center gap-2">
+                            <User className="w-4 h-4 text-primary" />
+                            {i18n.language === 'cs' ? 'Browser Session (2FA)' : 'Browser Session (2FA)'}
+                          </h4>
+                          <div className="flex items-center gap-2">
+                            {project.browser_profile_id ? (
+                              <>
+                                <Badge variant="default" className="bg-green-600 text-white">
+                                  {i18n.language === 'cs' ? 'Session aktivní' : 'Session active'}
+                                </Badge>
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  onClick={() => resetBrowserSession(project)}
+                                  disabled={resettingSession === project.id}
+                                >
+                                  {resettingSession === project.id ? (
+                                    <Loader2 className="h-4 w-4 animate-spin" />
+                                  ) : (
+                                    <>
+                                      <RotateCcw className="h-4 w-4 mr-1" />
+                                      {i18n.language === 'cs' ? 'Resetovat' : 'Reset'}
+                                    </>
+                                  )}
+                                </Button>
+                              </>
+                            ) : (
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={() => setupBrowserSession(project)}
+                                disabled={settingUpSession === project.id || !project.base_url}
+                                title={!project.base_url ? t('projects.projectNoUrl') : undefined}
+                              >
+                                {settingUpSession === project.id ? (
+                                  <Loader2 className="h-4 w-4 animate-spin" />
+                                ) : (
+                                  <>
+                                    <Play className="h-4 w-4 mr-1" />
+                                    {i18n.language === 'cs' ? 'Nastavit přihlášení' : 'Setup login'}
+                                  </>
+                                )}
+                              </Button>
+                            )}
+                          </div>
+                        </div>
+                        <div className="rounded-lg border border-border p-3 bg-muted/30">
+                          <div className="flex items-start gap-2 text-sm text-muted-foreground">
+                            <Info className="w-4 h-4 mt-0.5 flex-shrink-0" />
+                            <p>
+                              {i18n.language === 'cs' 
+                                ? 'Pro aplikace s dvoufázovým ověřením (2FA). Přihlaste se jednou ručně a prohlížeč si přihlášení zapamatuje pro všechny další testy.'
+                                : 'For apps with two-factor authentication (2FA). Log in once manually and the browser will remember your login for all future tests.'}
+                            </p>
+                          </div>
+                        </div>
+                      </div>
                       
                       {/* Setup Prompt Section */}
                       <div className="space-y-3">

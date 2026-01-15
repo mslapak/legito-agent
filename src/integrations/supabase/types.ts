@@ -298,6 +298,7 @@ export type Database = {
       projects: {
         Row: {
           base_url: string | null
+          browser_profile_id: string | null
           created_at: string
           description: string | null
           id: string
@@ -308,6 +309,7 @@ export type Database = {
         }
         Insert: {
           base_url?: string | null
+          browser_profile_id?: string | null
           created_at?: string
           description?: string | null
           id?: string
@@ -318,6 +320,7 @@ export type Database = {
         }
         Update: {
           base_url?: string | null
+          browser_profile_id?: string | null
           created_at?: string
           description?: string | null
           id?: string

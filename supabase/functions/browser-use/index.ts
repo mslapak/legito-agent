@@ -112,8 +112,8 @@ serve(async (req) => {
       });
     }
 
-    const { action, taskId, prompt, title, projectId, keepBrowserOpen, followUpPrompt, taskType, fileName, fileBase64, contentType, includedFiles, dbTaskId, maxSteps } = await req.json();
-    console.log(`Action: ${action}, User: ${user.id}, TaskId: ${taskId || 'N/A'}, TaskType: ${taskType || 'test'}, MaxSteps: ${maxSteps || 20}`);
+    const { action, taskId, prompt, title, projectId, keepBrowserOpen, followUpPrompt, taskType, fileName, fileBase64, contentType, includedFiles, dbTaskId, maxSteps, profileId, profileName } = await req.json();
+    console.log(`Action: ${action}, User: ${user.id}, TaskId: ${taskId || 'N/A'}, TaskType: ${taskType || 'test'}, MaxSteps: ${maxSteps || 20}, ProfileId: ${profileId || 'N/A'}`);
 
     // Browser-Use Cloud API base URL - v2 API
     const BROWSER_USE_API_URL = 'https://api.browser-use.com/api/v2';
@@ -369,6 +369,67 @@ serve(async (req) => {
         });
       }
 
+      case 'create_profile': {
+        // Create a new Browser-Use profile for persistent login state
+        console.log(`Creating browser profile: ${profileName || 'Default'}`);
+        
+        const profileResponse = await fetch(`${BROWSER_USE_API_URL}/profiles`, {
+          method: 'POST',
+          headers: {
+            'X-Browser-Use-API-Key': BROWSER_USE_API_KEY,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            name: profileName || `Project Profile ${new Date().toISOString()}`,
+          }),
+        });
+
+        if (!profileResponse.ok) {
+          const errorText = await profileResponse.text();
+          console.error('Browser-Use create profile error:', errorText);
+          throw new Error(`Failed to create profile: ${profileResponse.status}`);
+        }
+
+        const profileData = await profileResponse.json();
+        console.log('Created profile:', JSON.stringify(profileData));
+
+        return new Response(JSON.stringify({ 
+          success: true, 
+          profileId: profileData.id,
+          profileName: profileData.name,
+        }), {
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+
+      case 'delete_profile': {
+        // Delete a Browser-Use profile
+        console.log(`Deleting browser profile: ${profileId}`);
+        
+        if (!profileId) {
+          throw new Error('profileId is required for delete_profile action');
+        }
+
+        const deleteResponse = await fetch(`${BROWSER_USE_API_URL}/profiles/${profileId}`, {
+          method: 'DELETE',
+          headers: {
+            'X-Browser-Use-API-Key': BROWSER_USE_API_KEY,
+          },
+        });
+
+        // 404 is acceptable - profile may already be deleted
+        if (!deleteResponse.ok && deleteResponse.status !== 404) {
+          const errorText = await deleteResponse.text();
+          console.error('Browser-Use delete profile error:', errorText);
+          throw new Error(`Failed to delete profile: ${deleteResponse.status}`);
+        }
+
+        console.log('Profile deleted successfully');
+        return new Response(JSON.stringify({ success: true }), {
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+
       case 'create_task': {
         // Create task in Browser-Use Cloud
         const requestBody: Record<string, unknown> = {
@@ -377,6 +438,12 @@ serve(async (req) => {
           record_video: true,
           max_steps: maxSteps || 20, // Limit steps to prevent agent from getting stuck
         };
+        
+        // Use profile for persistent login state
+        if (profileId) {
+          requestBody.profile_id = profileId;
+          console.log('Using browser profile:', profileId);
+        }
         
         if (keepBrowserOpen) {
           requestBody.keep_browser_open = true;
