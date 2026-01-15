@@ -104,21 +104,23 @@ async function runBatchInBackground(batchId: string, testIds: string[], userId: 
         continue;
       }
 
-      // Get project info for setup_prompt and credentials
+      // Get project info for setup_prompt, credentials, and browser profile
       let setupPrompt = "";
       let baseUrl = "";
       let credentials = "";
+      let browserProfileId: string | null = null;
 
       if (test.project_id) {
         const { data: project } = await supabase
           .from("projects")
-          .select("setup_prompt, base_url")
+          .select("setup_prompt, base_url, browser_profile_id")
           .eq("id", test.project_id)
           .single();
 
         if (project) {
           setupPrompt = project.setup_prompt || "";
           baseUrl = project.base_url || "";
+          browserProfileId = project.browser_profile_id || null;
         }
 
         // Get credentials
@@ -152,19 +154,27 @@ async function runBatchInBackground(batchId: string, testIds: string[], userId: 
       }
 
       // Create browser-use task first
-      console.log(`[Batch ${batchId}] Creating browser-use task for test ${testId}`);
+      console.log(`[Batch ${batchId}] Creating browser-use task for test ${testId}${browserProfileId ? ` with profile ${browserProfileId}` : ''}`);
+      
+      const taskPayload: Record<string, unknown> = {
+        task: fullPrompt,
+        save_browser_data: true,
+        record_video: true,
+        max_steps: 20, // Limit steps to prevent agent from getting stuck
+      };
+      
+      // Use browser profile for persistent login if available
+      if (browserProfileId) {
+        taskPayload.profile_id = browserProfileId;
+      }
+      
       const createResponse = await fetch("https://api.browser-use.com/api/v2/tasks", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
           "X-Browser-Use-API-Key": BROWSER_USE_API_KEY!,
         },
-        body: JSON.stringify({
-          task: fullPrompt,
-          save_browser_data: true,
-          record_video: true,
-          max_steps: 20, // Limit steps to prevent agent from getting stuck
-        }),
+        body: JSON.stringify(taskPayload),
       });
 
       if (!createResponse.ok) {
