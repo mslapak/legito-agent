@@ -112,8 +112,27 @@ serve(async (req) => {
       });
     }
 
-    const { action, taskId, prompt, title, projectId, keepBrowserOpen, followUpPrompt, taskType, fileName, fileBase64, contentType, includedFiles, dbTaskId, maxSteps, profileId, profileName } = await req.json();
-    console.log(`Action: ${action}, User: ${user.id}, TaskId: ${taskId || 'N/A'}, TaskType: ${taskType || 'test'}, MaxSteps: ${maxSteps || 20}, ProfileId: ${profileId || 'N/A'}`);
+    const body = await req.json();
+    const action = body.action;
+    const taskId = body.taskId ?? body.task_id;
+    const prompt = body.prompt;
+    const title = body.title;
+    const projectId = body.projectId ?? body.project_id;
+    const keepBrowserOpen = body.keepBrowserOpen ?? body.keep_browser_open;
+    const followUpPrompt = body.followUpPrompt ?? body.follow_up_prompt;
+    const taskType = body.taskType ?? body.task_type;
+    const fileName = body.fileName ?? body.file_name;
+    const fileBase64 = body.fileBase64 ?? body.file_base64;
+    const contentType = body.contentType ?? body.content_type;
+    const includedFiles = body.includedFiles ?? body.included_files;
+    const dbTaskId = body.dbTaskId ?? body.db_task_id;
+    const maxSteps = body.maxSteps ?? body.max_steps;
+    const profileId = body.profileId ?? body.profile_id;
+    const profileName = body.profileName ?? body.profile_name;
+
+    console.log(
+      `Action: ${action}, User: ${user.id}, TaskId: ${taskId || 'N/A'}, ProjectId: ${projectId || 'N/A'}, TaskType: ${taskType || 'test'}, MaxSteps: ${maxSteps || 20}, ProfileId: ${profileId || 'N/A'}`
+    );
 
     // Browser-Use Cloud API base URL - v2 API
     const BROWSER_USE_API_URL = 'https://api.browser-use.com/api/v2';
