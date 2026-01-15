@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/hooks/useAuth';
 import { Button } from '@/components/ui/button';
@@ -74,6 +75,7 @@ interface ProjectWithTestCount extends Project {
 export default function Projects() {
   const { t, i18n } = useTranslation();
   const { user } = useAuth();
+  const navigate = useNavigate();
   const [projects, setProjects] = useState<ProjectWithTestCount[]>([]);
   const [loading, setLoading] = useState(true);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
@@ -374,10 +376,17 @@ ${credentials ? `\nIf needed, here are the credentials:\n- Email/Username: ${cre
         throw new Error(taskResponse.error.message);
       }
 
+      const { task } = taskResponse.data;
+      
       toast.success(i18n.language === 'cs' 
         ? 'Browser session spuštěna. Přihlaste se v prohlížeči a pak session zavřete.'
         : 'Browser session started. Log in using the browser and then close the session.');
       fetchProjects();
+      
+      // Navigate to task detail to show live browser
+      if (task?.id) {
+        navigate(`/dashboard/task/${task.id}`);
+      }
     } catch (error) {
       console.error('Error setting up browser session:', error);
       toast.error(i18n.language === 'cs' ? 'Nepodařilo se nastavit session' : 'Failed to setup session');
