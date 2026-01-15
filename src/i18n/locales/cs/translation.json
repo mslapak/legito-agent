@@ -196,7 +196,8 @@
     "downloadFailed": "Nepodařilo se stáhnout média",
     "stepsPerformed": "Provedené kroky",
     "noSteps": "Žádné kroky zatím nebyly zaznamenány",
-    "step": "Krok"
+    "step": "Krok",
+    "sessionExpired": "Browser session vypršela. Zobrazuji uložená data."
   },
   "tests": {
     "title": "Přehled testů",

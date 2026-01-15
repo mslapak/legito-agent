@@ -686,6 +686,19 @@ serve(async (req) => {
           },
         });
 
+        // Handle 404 - task session no longer exists (expired)
+        if (browserUseResponse.status === 404) {
+          console.log(`Task ${taskId} not found in Browser-Use (session expired)`);
+          return new Response(JSON.stringify({ 
+            status: 'expired', 
+            expired: true,
+            mapped_status: 'expired',
+            message: 'Browser session has expired. Task data is only available from local database.'
+          }), {
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          });
+        }
+
         if (!browserUseResponse.ok) {
           const errorText = await browserUseResponse.text();
           console.error('Browser-Use API error:', errorText);
