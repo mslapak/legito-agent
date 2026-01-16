@@ -568,6 +568,23 @@ export default function TestsDashboard() {
     // Background mode - create batch and let edge function handle it
     if (backgroundMode) {
       try {
+        // Check if there's already a running batch
+        const { data: existingRunning } = await supabase
+          .from('test_batch_runs')
+          .select('id')
+          .eq('user_id', user?.id)
+          .eq('status', 'running')
+          .limit(1);
+
+        if (existingRunning && existingRunning.length > 0) {
+          toast.error(
+            i18n.language === 'cs' 
+              ? 'Již běží jiný batch run. Počkejte na jeho dokončení nebo ho zrušte.' 
+              : 'Another batch run is already running. Wait for it to complete or cancel it.'
+          );
+          return;
+        }
+
         // Create batch record with batch_size
         const { data: batch, error: batchError } = await supabase
           .from('test_batch_runs')
@@ -596,6 +613,18 @@ export default function TestsDashboard() {
         });
 
         if (response.error) {
+          // Check if it's a 409 conflict (already running batch)
+          const errorData = response.data;
+          if (errorData?.runningBatchId) {
+            toast.error(
+              i18n.language === 'cs' 
+                ? 'Již běží jiný batch run. Počkejte na jeho dokončení nebo ho zrušte.' 
+                : 'Another batch run is already running. Wait for it to complete or cancel it.'
+            );
+            // Clean up the pending batch we just created
+            await supabase.from('test_batch_runs').delete().eq('id', batch.id);
+            return;
+          }
           throw new Error(response.error.message);
         }
 

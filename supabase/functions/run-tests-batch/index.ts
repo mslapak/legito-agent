@@ -685,6 +685,29 @@ serve(async (req) => {
       );
     }
 
+    // Check for already running batches for this user
+    const supabaseCheck = createClient(SUPABASE_URL!, SUPABASE_SERVICE_ROLE_KEY!);
+    const { data: runningBatches, error: checkError } = await supabaseCheck
+      .from("test_batch_runs")
+      .select("id")
+      .eq("user_id", userId)
+      .eq("status", "running");
+
+    if (checkError) {
+      console.error("[run-tests-batch] Error checking running batches:", checkError);
+    }
+
+    if (runningBatches && runningBatches.length > 0) {
+      console.log(`[run-tests-batch] User ${userId} already has running batch: ${runningBatches[0].id}`);
+      return new Response(
+        JSON.stringify({ 
+          error: "Již běží jiný batch run. Počkejte na jeho dokončení nebo ho zrušte.",
+          runningBatchId: runningBatches[0].id 
+        }),
+        { status: 409, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
     console.log(`[run-tests-batch] Starting batch ${batchId} with ${testIds.length} tests${batchDelaySeconds ? `, delay: ${batchDelaySeconds}s` : ''}`);
 
     // Start background task using global EdgeRuntime
