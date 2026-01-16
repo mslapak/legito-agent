@@ -39,6 +39,7 @@ import {
   AlertTriangle,
   DollarSign,
   Layers,
+  Clock as ClockIcon,
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import { toast } from 'sonner';
@@ -143,8 +144,9 @@ export default function TestsDashboard() {
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(50);
   
-  // Batch size for execution
+  // Batch size and delay for execution
   const [batchSize, setBatchSize] = useState(50);
+  const [batchDelay, setBatchDelay] = useState(10);
 
   // Test detail modal
   const [selectedTest, setSelectedTest] = useState<GeneratedTest | null>(null);
@@ -589,6 +591,7 @@ export default function TestsDashboard() {
             batchId: batch.id,
             testIds: testIds,
             userId: user?.id,
+            batchDelaySeconds: batchDelay,
           },
         });
 
@@ -1285,6 +1288,28 @@ export default function TestsDashboard() {
                     </SelectContent>
                   </Select>
                 </div>
+                
+                {/* Batch delay selector */}
+                {backgroundMode && (
+                  <div className="flex items-center gap-2">
+                    <Label className="text-sm text-muted-foreground whitespace-nowrap flex items-center gap-1">
+                      <ClockIcon className="h-3 w-3" />
+                      {i18n.language === 'cs' ? 'Prodleva:' : 'Delay:'}
+                    </Label>
+                    <Select value={batchDelay.toString()} onValueChange={(v) => setBatchDelay(Number(v))}>
+                      <SelectTrigger className="w-20">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="5">5s</SelectItem>
+                        <SelectItem value="10">10s</SelectItem>
+                        <SelectItem value="15">15s</SelectItem>
+                        <SelectItem value="20">20s</SelectItem>
+                        <SelectItem value="30">30s</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                )}
                 
                 {/* Background mode toggle */}
                 <div className="flex items-center gap-2">

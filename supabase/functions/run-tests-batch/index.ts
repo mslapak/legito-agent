@@ -85,8 +85,8 @@ function evaluateTestResult(resultSummary: string, expectedResult: string | null
   };
 }
 
-async function runBatchInBackground(batchId: string, testIds: string[], userId: string) {
-  console.log(`[Batch ${batchId}] Starting background execution for ${testIds.length} tests`);
+async function runBatchInBackground(batchId: string, testIds: string[], userId: string, overrideDelaySeconds?: number) {
+  console.log(`[Batch ${batchId}] Starting background execution for ${testIds.length} tests${overrideDelaySeconds ? `, delay override: ${overrideDelaySeconds}s` : ''}`);
 
   // Create admin client with service role
   const supabase = createClient(SUPABASE_URL!, SUPABASE_SERVICE_ROLE_KEY!);
@@ -188,7 +188,7 @@ async function runBatchInBackground(batchId: string, testIds: string[], userId: 
           browserProfileId = project.browser_profile_id || null;
           maxSteps = project.max_steps ?? 10;
           recordVideo = project.record_video ?? true;
-          batchDelaySeconds = project.batch_delay_seconds ?? 10;
+          batchDelaySeconds = overrideDelaySeconds ?? project.batch_delay_seconds ?? 10;
         }
 
         // Get credentials
@@ -662,7 +662,7 @@ serve(async (req) => {
   }
 
   try {
-    const { batchId, testIds, userId } = await req.json();
+    const { batchId, testIds, userId, batchDelaySeconds } = await req.json();
 
     if (!batchId || !testIds || !userId) {
       return new Response(
@@ -685,10 +685,10 @@ serve(async (req) => {
       );
     }
 
-    console.log(`[run-tests-batch] Starting batch ${batchId} with ${testIds.length} tests`);
+    console.log(`[run-tests-batch] Starting batch ${batchId} with ${testIds.length} tests${batchDelaySeconds ? `, delay: ${batchDelaySeconds}s` : ''}`);
 
     // Start background task using global EdgeRuntime
-    (globalThis as any).EdgeRuntime.waitUntil(runBatchInBackground(batchId, testIds, userId));
+    (globalThis as any).EdgeRuntime.waitUntil(runBatchInBackground(batchId, testIds, userId, batchDelaySeconds));
 
     return new Response(
       JSON.stringify({
