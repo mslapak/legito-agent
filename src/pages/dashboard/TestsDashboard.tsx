@@ -1587,6 +1587,31 @@ export default function TestsDashboard() {
                   </div>
                 </div>
               )}
+
+              {/* Result Reasoning */}
+              {selectedTest?.result_reasoning && (
+                <div className="space-y-2">
+                  <h4 className="text-sm font-semibold flex items-center gap-2">
+                    {selectedTest.status === 'passed' ? (
+                      <CheckCircle2 className="w-4 h-4 text-green-500" />
+                    ) : selectedTest.status === 'not_passed' ? (
+                      <AlertTriangle className="w-4 h-4 text-orange-500" />
+                    ) : (
+                      <XCircle className="w-4 h-4 text-red-500" />
+                    )}
+                    {i18n.language === 'cs' ? 'Vyhodnocení testu' : 'Test Evaluation'}
+                  </h4>
+                  <div className={`p-4 rounded-lg border ${
+                    selectedTest.status === 'passed' 
+                      ? 'bg-green-500/10 border-green-500/30' 
+                      : selectedTest.status === 'not_passed'
+                      ? 'bg-orange-500/10 border-orange-500/30'
+                      : 'bg-red-500/10 border-red-500/30'
+                  }`}>
+                    <p className="text-sm whitespace-pre-wrap">{selectedTest.result_reasoning}</p>
+                  </div>
+                </div>
+              )}
             </div>
           </ScrollArea>
 
