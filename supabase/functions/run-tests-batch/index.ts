@@ -167,11 +167,13 @@ async function runBatchInBackground(batchId: string, testIds: string[], userId: 
       let baseUrl = "";
       let credentials = "";
       let browserProfileId: string | null = null;
+      let maxSteps = 10; // Default to 10 for cost optimization
+      let recordVideo = true;
 
       if (test.project_id) {
         const { data: project } = await supabase
           .from("projects")
-          .select("setup_prompt, base_url, browser_profile_id")
+          .select("setup_prompt, base_url, browser_profile_id, max_steps, record_video")
           .eq("id", test.project_id)
           .single();
 
@@ -179,6 +181,8 @@ async function runBatchInBackground(batchId: string, testIds: string[], userId: 
           setupPrompt = project.setup_prompt || "";
           baseUrl = project.base_url || "";
           browserProfileId = project.browser_profile_id || null;
+          maxSteps = project.max_steps ?? 10;
+          recordVideo = project.record_video ?? true;
         }
 
         // Get credentials
@@ -211,8 +215,7 @@ async function runBatchInBackground(batchId: string, testIds: string[], userId: 
         fullPrompt = `${fullPrompt}\n\nOčekávaný výsledek: ${test.expected_result}`;
       }
 
-      // Create browser-use task first
-      console.log(`[Batch ${batchId}] Creating browser-use task for test ${testId}${browserProfileId ? ` with profile ${browserProfileId}` : ''}`);
+      console.log(`[Batch ${batchId}] Creating browser-use task for test ${testId}${browserProfileId ? ` with profile ${browserProfileId}` : ''}, maxSteps: ${maxSteps}, recordVideo: ${recordVideo}`);
       
       // Step 1: If we have a profile, create a session first
       let sessionId: string | null = null;
@@ -249,12 +252,12 @@ async function runBatchInBackground(batchId: string, testIds: string[], userId: 
         }
       }
       
-      // Step 2: Create the task
+      // Step 2: Create the task with project cost settings
       const taskPayload: Record<string, unknown> = {
         task: fullPrompt,
         save_browser_data: true,
-        record_video: true,
-        max_steps: 20,
+        record_video: recordVideo,
+        max_steps: maxSteps,
       };
       
       // If we created a session with profile, use that sessionId

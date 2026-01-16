@@ -451,24 +451,35 @@ serve(async (req) => {
 
       case 'create_task': {
         // Create task in Browser-Use Cloud
-        // Step 1: Determine effective profileId (from request or lookup from project)
+        // Step 1: Determine effective profileId and cost settings from project
         let effectiveProfileId = profileId || null;
+        let effectiveMaxSteps = maxSteps || 10;
+        let effectiveRecordVideo = true;
         
-        if (!effectiveProfileId && projectId) {
-          console.log('No profileId provided, looking up from project:', projectId);
+        if (projectId) {
+          console.log('Looking up project settings:', projectId);
           const { data: projectData } = await supabase
             .from('projects')
-            .select('browser_profile_id')
+            .select('browser_profile_id, max_steps, record_video')
             .eq('id', projectId)
             .single();
           
-          if (projectData?.browser_profile_id) {
-            effectiveProfileId = projectData.browser_profile_id;
-            console.log('Found browser_profile_id from project:', effectiveProfileId);
+          if (projectData) {
+            if (!effectiveProfileId && projectData.browser_profile_id) {
+              effectiveProfileId = projectData.browser_profile_id;
+              console.log('Found browser_profile_id from project:', effectiveProfileId);
+            }
+            // Use project settings if not explicitly provided
+            if (!maxSteps && projectData.max_steps) {
+              effectiveMaxSteps = projectData.max_steps;
+            }
+            if (projectData.record_video !== undefined && projectData.record_video !== null) {
+              effectiveRecordVideo = projectData.record_video;
+            }
           }
         }
         
-        console.log('Effective profile ID:', effectiveProfileId || 'none');
+        console.log('Effective settings - profileId:', effectiveProfileId || 'none', 'maxSteps:', effectiveMaxSteps, 'recordVideo:', effectiveRecordVideo);
         
         // Step 2: If we have a profile, create a session first with the profile
         let sessionId: string | null = null;
@@ -506,12 +517,12 @@ serve(async (req) => {
           }
         }
         
-        // Step 3: Create the task
+        // Step 3: Create the task with project cost settings
         const requestBody: Record<string, unknown> = {
           task: prompt,
           save_browser_data: true,
-          record_video: true,
-          max_steps: maxSteps || 20,
+          record_video: effectiveRecordVideo,
+          max_steps: effectiveMaxSteps,
         };
         
         // If we created a session with profile, use that sessionId

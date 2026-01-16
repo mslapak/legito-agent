@@ -302,7 +302,9 @@ export type Database = {
           created_at: string
           description: string | null
           id: string
+          max_steps: number
           name: string
+          record_video: boolean
           setup_prompt: string | null
           updated_at: string
           user_id: string
@@ -313,7 +315,9 @@ export type Database = {
           created_at?: string
           description?: string | null
           id?: string
+          max_steps?: number
           name: string
+          record_video?: boolean
           setup_prompt?: string | null
           updated_at?: string
           user_id: string
@@ -324,7 +328,9 @@ export type Database = {
           created_at?: string
           description?: string | null
           id?: string
+          max_steps?: number
           name?: string
+          record_video?: boolean
           setup_prompt?: string | null
           updated_at?: string
           user_id?: string

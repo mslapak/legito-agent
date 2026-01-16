@@ -51,7 +51,12 @@ import {
   Play,
   User,
   RotateCcw,
+  DollarSign,
+  Video,
+  Footprints,
 } from 'lucide-react';
+import { Slider } from '@/components/ui/slider';
+import { Switch } from '@/components/ui/switch';
 import ProjectTestHistory from '@/components/ProjectTestHistory';
 import ProjectCredentials from '@/components/ProjectCredentials';
 import DocumentationVerification from '@/components/DocumentationVerification';
@@ -64,6 +69,8 @@ interface Project {
   base_url: string | null;
   setup_prompt: string | null;
   browser_profile_id: string | null;
+  max_steps: number;
+  record_video: boolean;
   created_at: string;
   updated_at: string;
 }
@@ -92,6 +99,8 @@ export default function Projects() {
   const [testingSetup, setTestingSetup] = useState<string | null>(null);
   const [settingUpSession, setSettingUpSession] = useState<string | null>(null);
   const [resettingSession, setResettingSession] = useState<string | null>(null);
+  const [savingCostSettings, setSavingCostSettings] = useState<string | null>(null);
+  const [costSettings, setCostSettings] = useState<Record<string, { max_steps: number; record_video: boolean }>>({});
 
   const dateLocale = i18n.language === 'cs' ? 'cs-CZ' : 'en-US';
 
@@ -429,6 +438,48 @@ ${credentials ? `\nIf needed, here are the credentials:\n- Email/Username: ${cre
     }
   };
 
+  const getCostSettings = (project: Project) => {
+    return costSettings[project.id] ?? { 
+      max_steps: project.max_steps ?? 10, 
+      record_video: project.record_video ?? true 
+    };
+  };
+
+  const handleCostSettingsChange = (projectId: string, field: 'max_steps' | 'record_video', value: number | boolean) => {
+    setCostSettings(prev => ({
+      ...prev,
+      [projectId]: {
+        ...prev[projectId],
+        max_steps: prev[projectId]?.max_steps ?? 10,
+        record_video: prev[projectId]?.record_video ?? true,
+        [field]: value,
+      }
+    }));
+  };
+
+  const saveCostSettings = async (project: Project) => {
+    setSavingCostSettings(project.id);
+    try {
+      const settings = getCostSettings(project);
+      const { error } = await supabase
+        .from('projects')
+        .update({ 
+          max_steps: settings.max_steps,
+          record_video: settings.record_video 
+        })
+        .eq('id', project.id);
+
+      if (error) throw error;
+      toast.success(i18n.language === 'cs' ? 'Nastavení nákladů uloženo' : 'Cost settings saved');
+      fetchProjects();
+    } catch (error) {
+      console.error('Error saving cost settings:', error);
+      toast.error(i18n.language === 'cs' ? 'Nepodařilo se uložit nastavení' : 'Failed to save settings');
+    } finally {
+      setSavingCostSettings(null);
+    }
+  };
+
   if (loading) {
     return (
       <div className="flex items-center justify-center h-64">
@@ -705,6 +756,80 @@ ${credentials ? `\nIf needed, here are the credentials:\n- Email/Username: ${cre
                               {i18n.language === 'cs' 
                                 ? 'Pro aplikace s dvoufázovým ověřením (2FA). Přihlaste se jednou ručně a prohlížeč si přihlášení zapamatuje pro všechny další testy.'
                                 : 'For apps with two-factor authentication (2FA). Log in once manually and the browser will remember your login for all future tests.'}
+                            </p>
+                          </div>
+                        </div>
+                      </div>
+                      
+                      {/* Cost Optimization Section */}
+                      <div className="space-y-3">
+                        <div className="flex items-center justify-between">
+                          <h4 className="font-medium flex items-center gap-2">
+                            <DollarSign className="w-4 h-4 text-primary" />
+                            {i18n.language === 'cs' ? 'Optimalizace nákladů' : 'Cost Optimization'}
+                          </h4>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => saveCostSettings(project)}
+                            disabled={savingCostSettings === project.id}
+                          >
+                            {savingCostSettings === project.id ? (
+                              <Loader2 className="h-4 w-4 animate-spin" />
+                            ) : (
+                              <>
+                                <Save className="h-4 w-4 mr-1" />
+                                {i18n.language === 'cs' ? 'Uložit' : 'Save'}
+                              </>
+                            )}
+                          </Button>
+                        </div>
+                        <div className="rounded-lg border border-border p-4 bg-muted/30 space-y-4">
+                          {/* Max Steps Slider */}
+                          <div className="space-y-2">
+                            <div className="flex items-center justify-between">
+                              <Label className="flex items-center gap-2">
+                                <Footprints className="w-4 h-4" />
+                                {i18n.language === 'cs' ? 'Maximální počet kroků' : 'Maximum steps'}
+                              </Label>
+                              <span className="text-sm font-medium">
+                                {getCostSettings(project).max_steps}
+                              </span>
+                            </div>
+                            <Slider
+                              value={[getCostSettings(project).max_steps]}
+                              onValueChange={(value) => handleCostSettingsChange(project.id, 'max_steps', value[0])}
+                              min={5}
+                              max={25}
+                              step={1}
+                              className="w-full"
+                            />
+                            <div className="flex justify-between text-xs text-muted-foreground">
+                              <span>{i18n.language === 'cs' ? '5 (rychlé)' : '5 (fast)'}</span>
+                              <span>{i18n.language === 'cs' ? '10 (standard)' : '10 (standard)'}</span>
+                              <span>{i18n.language === 'cs' ? '25 (komplexní)' : '25 (complex)'}</span>
+                            </div>
+                          </div>
+                          
+                          {/* Record Video Toggle */}
+                          <div className="flex items-center justify-between">
+                            <Label className="flex items-center gap-2">
+                              <Video className="w-4 h-4" />
+                              {i18n.language === 'cs' ? 'Nahrávat video' : 'Record video'}
+                            </Label>
+                            <Switch
+                              checked={getCostSettings(project).record_video}
+                              onCheckedChange={(checked) => handleCostSettingsChange(project.id, 'record_video', checked)}
+                            />
+                          </div>
+                          
+                          {/* Info */}
+                          <div className="flex items-start gap-2 text-xs text-muted-foreground pt-2 border-t">
+                            <Info className="w-4 h-4 mt-0.5 flex-shrink-0" />
+                            <p>
+                              {i18n.language === 'cs' 
+                                ? 'Snížení kroků na 5-10 ušetří ~50% nákladů pro jednoduché testy. Vypnutí videa ušetří ~20-30% dalších nákladů.'
+                                : 'Reducing steps to 5-10 saves ~50% costs for simple tests. Disabling video saves an additional ~20-30%.'}
                             </p>
                           </div>
                         </div>
