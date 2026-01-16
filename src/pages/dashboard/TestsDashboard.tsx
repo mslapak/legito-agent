@@ -1729,8 +1729,33 @@ export default function TestsDashboard() {
                 </div>
               )}
 
-              {/* Result Summary */}
+              {/* Error Alert - show prominently if result contains error */}
               {selectedTest?.result_summary && (
+                selectedTest.result_summary.toLowerCase().includes('error') ||
+                selectedTest.result_summary.toLowerCase().includes('chyba') ||
+                selectedTest.result_summary.toLowerCase().includes('failed') ||
+                selectedTest.status === 'failed'
+              ) && (
+                <div className="p-4 bg-destructive/10 border border-destructive/30 rounded-lg flex items-start gap-3">
+                  <AlertTriangle className="w-5 h-5 text-destructive flex-shrink-0 mt-0.5" />
+                  <div>
+                    <h4 className="text-sm font-semibold text-destructive mb-1">
+                      {i18n.language === 'cs' ? 'Chyba při běhu testu' : 'Test Execution Error'}
+                    </h4>
+                    <p className="text-sm text-destructive/90 whitespace-pre-wrap">
+                      {selectedTest?.result_summary}
+                    </p>
+                  </div>
+                </div>
+              )}
+
+              {/* Result Summary - show only if no prominent error */}
+              {selectedTest?.result_summary && !(
+                selectedTest.result_summary.toLowerCase().includes('error') ||
+                selectedTest.result_summary.toLowerCase().includes('chyba') ||
+                selectedTest.result_summary.toLowerCase().includes('failed') ||
+                selectedTest.status === 'failed'
+              ) && (
                 <div className="space-y-2">
                   <h4 className="text-sm font-semibold flex items-center gap-2">
                     <TrendingUp className="w-4 h-4" />
@@ -1770,11 +1795,11 @@ export default function TestsDashboard() {
           </ScrollArea>
 
           <DialogFooter className="flex-shrink-0 gap-2 sm:gap-2">
-            {selectedTest?.task_id && (
+              {selectedTest?.task_id && (
               <Button
                 variant="outline"
                 onClick={() => {
-                  navigate(`/dashboard/tasks/${selectedTest.task_id}`);
+                  navigate(`/dashboard/task/${selectedTest.task_id}`);
                   setSelectedTest(null);
                 }}
                 className="gap-2"
