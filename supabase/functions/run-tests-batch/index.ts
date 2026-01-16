@@ -522,29 +522,57 @@ async function runBatchInBackground(batchId: string, testIds: string[], userId: 
       console.error(`[Batch ${batchId}] Error running test ${testId}:`, error);
 
       // Update test as failed
-      await supabase
-        .from("generated_tests")
-        .update({
-          status: "failed",
-          last_run_at: new Date().toISOString(),
-          result_summary: `Chyba: ${error instanceof Error ? error.message : "Neznámá chyba"}`,
-        })
-        .eq("id", testId);
+      try {
+        await supabase
+          .from("generated_tests")
+          .update({
+            status: "failed",
+            last_run_at: new Date().toISOString(),
+            result_summary: `Chyba: ${error instanceof Error ? error.message : "Neznámá chyba"}`,
+          })
+          .eq("id", testId);
+      } catch (updateError) {
+        console.error(`[Batch ${batchId}] Failed to update test status:`, updateError);
+      }
 
       failedTests++;
     }
 
+    // Always increment completed tests and update batch progress
     completedTests++;
+    console.log(`[Batch ${batchId}] Updating batch progress: ${completedTests}/${testIds.length} completed, ${passedTests} passed, ${failedTests} failed`);
 
-    // Update batch progress
-    await supabase
+    try {
+      const { error: progressError } = await supabase
+        .from("test_batch_runs")
+        .update({
+          completed_tests: completedTests,
+          passed_tests: passedTests,
+          failed_tests: failedTests,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", batchId);
+      
+      if (progressError) {
+        console.error(`[Batch ${batchId}] Failed to update batch progress:`, progressError);
+      } else {
+        console.log(`[Batch ${batchId}] Batch progress updated successfully`);
+      }
+    } catch (progressUpdateError) {
+      console.error(`[Batch ${batchId}] Critical error updating batch progress:`, progressUpdateError);
+    }
+
+    // Re-check batch state before continuing to next test
+    const { data: continueCheck } = await supabase
       .from("test_batch_runs")
-      .update({
-        completed_tests: completedTests,
-        passed_tests: passedTests,
-        failed_tests: failedTests,
-      })
-      .eq("id", batchId);
+      .select("status, paused")
+      .eq("id", batchId)
+      .single();
+    
+    if (continueCheck?.status === "cancelled") {
+      console.log(`[Batch ${batchId}] Batch cancelled after test completion, stopping`);
+      break;
+    }
   }
 
   // Mark batch as completed
