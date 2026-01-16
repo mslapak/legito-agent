@@ -649,11 +649,12 @@ export default function TestsDashboard() {
           .update({ status: 'running' })
           .eq('id', testId);
 
-        // Create browser-use task
+        // Create browser-use task - pass projectId so edge function can look up browser_profile_id
         const response = await supabase.functions.invoke('browser-use', {
           body: {
             action: 'create_task',
             prompt: fullPrompt,
+            projectId: test.project_id,
             keepBrowserOpen: false,
           },
         });
