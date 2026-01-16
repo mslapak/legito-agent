@@ -567,21 +567,29 @@ export default function TestsDashboard() {
 
     // Background mode - create batch and let edge function handle it
     if (backgroundMode) {
+      // Prevent double-clicks - check if we're already starting a batch
+      if (bulkRunning) {
+        return;
+      }
+      
+      setBulkRunning(true); // Use as "starting batch" flag
+      
       try {
-        // Check if there's already a running batch
-        const { data: existingRunning } = await supabase
+        // Check if there's already an active batch (pending OR running)
+        const { data: existingActive } = await supabase
           .from('test_batch_runs')
-          .select('id')
+          .select('id, status')
           .eq('user_id', user?.id)
-          .eq('status', 'running')
+          .in('status', ['pending', 'running'])
           .limit(1);
 
-        if (existingRunning && existingRunning.length > 0) {
+        if (existingActive && existingActive.length > 0) {
           toast.error(
             i18n.language === 'cs' 
               ? 'Již běží jiný batch run. Počkejte na jeho dokončení nebo ho zrušte.' 
               : 'Another batch run is already running. Wait for it to complete or cancel it.'
           );
+          setBulkRunning(false);
           return;
         }
 
@@ -599,6 +607,16 @@ export default function TestsDashboard() {
           .single();
 
         if (batchError || !batch) {
+          // Check if it's a unique constraint violation (another batch exists)
+          if (batchError?.code === '23505') {
+            toast.error(
+              i18n.language === 'cs' 
+                ? 'Již existuje aktivní batch run. Počkejte na jeho dokončení nebo ho zrušte.' 
+                : 'An active batch run already exists. Wait for it to complete or cancel it.'
+            );
+            setBulkRunning(false);
+            return;
+          }
           throw new Error(batchError?.message || 'Failed to create batch');
         }
 
@@ -623,6 +641,7 @@ export default function TestsDashboard() {
             );
             // Clean up the pending batch we just created
             await supabase.from('test_batch_runs').delete().eq('id', batch.id);
+            setBulkRunning(false);
             return;
           }
           throw new Error(response.error.message);
@@ -635,6 +654,8 @@ export default function TestsDashboard() {
       } catch (error) {
         console.error('Error starting background batch:', error);
         toast.error(`${t('common.error')}: ${error instanceof Error ? error.message : t('toast.unknownError')}`);
+      } finally {
+        setBulkRunning(false);
       }
       return;
     }
