@@ -54,6 +54,7 @@ import {
   DollarSign,
   Video,
   Footprints,
+  Clock,
 } from 'lucide-react';
 import { Slider } from '@/components/ui/slider';
 import { Switch } from '@/components/ui/switch';
@@ -71,6 +72,7 @@ interface Project {
   browser_profile_id: string | null;
   max_steps: number;
   record_video: boolean;
+  batch_delay_seconds: number;
   created_at: string;
   updated_at: string;
 }
@@ -100,7 +102,7 @@ export default function Projects() {
   const [settingUpSession, setSettingUpSession] = useState<string | null>(null);
   const [resettingSession, setResettingSession] = useState<string | null>(null);
   const [savingCostSettings, setSavingCostSettings] = useState<string | null>(null);
-  const [costSettings, setCostSettings] = useState<Record<string, { max_steps: number; record_video: boolean }>>({});
+  const [costSettings, setCostSettings] = useState<Record<string, { max_steps: number; record_video: boolean; batch_delay_seconds: number }>>({});
 
   const dateLocale = i18n.language === 'cs' ? 'cs-CZ' : 'en-US';
 
@@ -441,17 +443,19 @@ ${credentials ? `\nIf needed, here are the credentials:\n- Email/Username: ${cre
   const getCostSettings = (project: Project) => {
     return costSettings[project.id] ?? { 
       max_steps: project.max_steps ?? 10, 
-      record_video: project.record_video ?? true 
+      record_video: project.record_video ?? true,
+      batch_delay_seconds: project.batch_delay_seconds ?? 10,
     };
   };
 
-  const handleCostSettingsChange = (projectId: string, field: 'max_steps' | 'record_video', value: number | boolean) => {
+  const handleCostSettingsChange = (projectId: string, field: 'max_steps' | 'record_video' | 'batch_delay_seconds', value: number | boolean) => {
     setCostSettings(prev => ({
       ...prev,
       [projectId]: {
         ...prev[projectId],
         max_steps: prev[projectId]?.max_steps ?? 10,
         record_video: prev[projectId]?.record_video ?? true,
+        batch_delay_seconds: prev[projectId]?.batch_delay_seconds ?? 10,
         [field]: value,
       }
     }));
@@ -465,7 +469,8 @@ ${credentials ? `\nIf needed, here are the credentials:\n- Email/Username: ${cre
         .from('projects')
         .update({ 
           max_steps: settings.max_steps,
-          record_video: settings.record_video 
+          record_video: settings.record_video,
+          batch_delay_seconds: settings.batch_delay_seconds,
         })
         .eq('id', project.id);
 
@@ -823,13 +828,39 @@ ${credentials ? `\nIf needed, here are the credentials:\n- Email/Username: ${cre
                             />
                           </div>
                           
+                          {/* Batch Delay Slider */}
+                          <div className="space-y-2 pt-2 border-t">
+                            <div className="flex items-center justify-between">
+                              <Label className="flex items-center gap-2">
+                                <Clock className="w-4 h-4" />
+                                {i18n.language === 'cs' ? 'Prodleva mezi testy' : 'Delay between tests'}
+                              </Label>
+                              <span className="text-sm font-medium">
+                                {getCostSettings(project).batch_delay_seconds}s
+                              </span>
+                            </div>
+                            <Slider
+                              value={[getCostSettings(project).batch_delay_seconds]}
+                              onValueChange={(value) => handleCostSettingsChange(project.id, 'batch_delay_seconds', value[0])}
+                              min={5}
+                              max={30}
+                              step={5}
+                              className="w-full"
+                            />
+                            <div className="flex justify-between text-xs text-muted-foreground">
+                              <span>5s</span>
+                              <span>15s</span>
+                              <span>30s</span>
+                            </div>
+                          </div>
+                          
                           {/* Info */}
                           <div className="flex items-start gap-2 text-xs text-muted-foreground pt-2 border-t">
                             <Info className="w-4 h-4 mt-0.5 flex-shrink-0" />
                             <p>
                               {i18n.language === 'cs' 
-                                ? 'Snížení kroků na 5-10 ušetří ~50% nákladů pro jednoduché testy. Vypnutí videa ušetří ~20-30% dalších nákladů.'
-                                : 'Reducing steps to 5-10 saves ~50% costs for simple tests. Disabling video saves an additional ~20-30%.'}
+                                ? 'Snížení kroků na 5-10 ušetří ~50% nákladů. Vypnutí videa ušetří ~20-30%. Prodleva mezi testy zabraňuje překročení limitu paralelních sessions.'
+                                : 'Reducing steps to 5-10 saves ~50% costs. Disabling video saves ~20-30%. Delay between tests prevents exceeding concurrent session limits.'}
                             </p>
                           </div>
                         </div>

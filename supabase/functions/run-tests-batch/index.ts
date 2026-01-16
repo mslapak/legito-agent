@@ -147,6 +147,10 @@ async function runBatchInBackground(batchId: string, testIds: string[], userId: 
       .update({ current_test_id: testId })
       .eq("id", batchId);
 
+    // Variables needed for cleanup after the try block
+    let sessionIdForCleanup: string | null = null;
+    let batchDelaySecondsForCleanup = 10;
+
     try {
       // Get test details
       const { data: test, error: testError } = await supabase
@@ -169,11 +173,12 @@ async function runBatchInBackground(batchId: string, testIds: string[], userId: 
       let browserProfileId: string | null = null;
       let maxSteps = 10; // Default to 10 for cost optimization
       let recordVideo = true;
+      let batchDelaySeconds = 10; // Default delay between tests
 
       if (test.project_id) {
         const { data: project } = await supabase
           .from("projects")
-          .select("setup_prompt, base_url, browser_profile_id, max_steps, record_video")
+          .select("setup_prompt, base_url, browser_profile_id, max_steps, record_video, batch_delay_seconds")
           .eq("id", test.project_id)
           .single();
 
@@ -183,6 +188,7 @@ async function runBatchInBackground(batchId: string, testIds: string[], userId: 
           browserProfileId = project.browser_profile_id || null;
           maxSteps = project.max_steps ?? 10;
           recordVideo = project.record_video ?? true;
+          batchDelaySeconds = project.batch_delay_seconds ?? 10;
         }
 
         // Get credentials
@@ -217,16 +223,18 @@ async function runBatchInBackground(batchId: string, testIds: string[], userId: 
 
       console.log(`[Batch ${batchId}] Creating browser-use task for test ${testId}${browserProfileId ? ` with profile ${browserProfileId}` : ''}, maxSteps: ${maxSteps}, recordVideo: ${recordVideo}`);
       
-      // Step 1: If we have a profile, create a session first
+      // Step 1: Create a session (with or without profile)
       let sessionId: string | null = null;
       
-      if (browserProfileId) {
-        console.log(`[Batch ${batchId}] Creating session with profile: ${browserProfileId}`);
+      // Always try to create a session to track it for cleanup
+      {
+        console.log(`[Batch ${batchId}] Creating session${browserProfileId ? ` with profile: ${browserProfileId}` : ''}`);
         try {
-          const sessionPayload = { 
-            profileId: browserProfileId,
-            profile_id: browserProfileId,
-          };
+          const sessionPayload: Record<string, unknown> = {};
+          if (browserProfileId) {
+            sessionPayload.profileId = browserProfileId;
+            sessionPayload.profile_id = browserProfileId;
+          }
           
           const sessionRes = await fetch("https://api.browser-use.com/api/v2/sessions", {
             method: "POST",
@@ -243,14 +251,18 @@ async function runBatchInBackground(batchId: string, testIds: string[], userId: 
           if (sessionRes.ok) {
             const sessionData = JSON.parse(sessionRaw);
             sessionId = sessionData.id || sessionData.sessionId || sessionData.session_id;
-            console.log(`[Batch ${batchId}] Created session with profile, sessionId: ${sessionId}`);
+            sessionIdForCleanup = sessionId; // Store for cleanup after try block
+            console.log(`[Batch ${batchId}] Created session, sessionId: ${sessionId}`);
           } else {
-            console.error(`[Batch ${batchId}] Failed to create session with profile: ${sessionRes.status}`);
+            console.error(`[Batch ${batchId}] Failed to create session: ${sessionRes.status}`);
           }
         } catch (e) {
-          console.error(`[Batch ${batchId}] Error creating session with profile:`, e);
+          console.error(`[Batch ${batchId}] Error creating session:`, e);
         }
       }
+      
+      // Store delay for cleanup outside try block
+      batchDelaySecondsForCleanup = batchDelaySeconds;
       
       // Step 2: Create the task with project cost settings
       const taskPayload: Record<string, unknown> = {
@@ -603,6 +615,30 @@ async function runBatchInBackground(batchId: string, testIds: string[], userId: 
       console.log(`[Batch ${batchId}] Batch cancelled after test completion, stopping`);
       break;
     }
+
+    // Explicitly close the browser session to free up concurrent slot
+    if (sessionIdForCleanup) {
+      console.log(`[Batch ${batchId}] Closing browser session: ${sessionIdForCleanup}`);
+      try {
+        await fetch(`https://api.browser-use.com/api/v2/sessions/${sessionIdForCleanup}`, {
+          method: "PATCH",
+          headers: {
+            "Content-Type": "application/json",
+            "X-Browser-Use-API-Key": BROWSER_USE_API_KEY!,
+          },
+          body: JSON.stringify({ action: "stop" }),
+        });
+        console.log(`[Batch ${batchId}] Session ${sessionIdForCleanup} closed`);
+      } catch (closeError) {
+        console.error(`[Batch ${batchId}] Error closing session:`, closeError);
+      }
+    }
+
+    // Wait between tests to ensure session is fully released
+    // Use project-specific delay or default to 10 seconds
+    const delayBetweenTests = batchDelaySecondsForCleanup * 1000;
+    console.log(`[Batch ${batchId}] Waiting ${batchDelaySecondsForCleanup}s before next test...`);
+    await delay(delayBetweenTests);
   }
 
   // Mark batch as completed
