@@ -685,24 +685,26 @@ serve(async (req) => {
       );
     }
 
-    // Check for already running batches for this user
+    // Check for already active batches for this user (pending OR running)
+    // This prevents race conditions when two requests come in simultaneously
     const supabaseCheck = createClient(SUPABASE_URL!, SUPABASE_SERVICE_ROLE_KEY!);
-    const { data: runningBatches, error: checkError } = await supabaseCheck
+    const { data: activeBatches, error: checkError } = await supabaseCheck
       .from("test_batch_runs")
-      .select("id")
+      .select("id, status")
       .eq("user_id", userId)
-      .eq("status", "running");
+      .in("status", ["pending", "running"])
+      .neq("id", batchId); // Exclude the current batch being started
 
     if (checkError) {
-      console.error("[run-tests-batch] Error checking running batches:", checkError);
+      console.error("[run-tests-batch] Error checking active batches:", checkError);
     }
 
-    if (runningBatches && runningBatches.length > 0) {
-      console.log(`[run-tests-batch] User ${userId} already has running batch: ${runningBatches[0].id}`);
+    if (activeBatches && activeBatches.length > 0) {
+      console.log(`[run-tests-batch] User ${userId} already has active batch: ${activeBatches[0].id} (status: ${activeBatches[0].status})`);
       return new Response(
         JSON.stringify({ 
           error: "Již běží jiný batch run. Počkejte na jeho dokončení nebo ho zrušte.",
-          runningBatchId: runningBatches[0].id 
+          runningBatchId: activeBatches[0].id 
         }),
         { status: 409, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
