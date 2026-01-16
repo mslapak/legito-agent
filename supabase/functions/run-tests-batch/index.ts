@@ -27,6 +27,64 @@ async function delay(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+// Evaluate test result against expected result
+function evaluateTestResult(resultSummary: string, expectedResult: string | null): { status: 'passed' | 'not_passed', reasoning: string } {
+  // If no expected result is defined, default to passed (test completed)
+  if (!expectedResult || expectedResult.trim() === '') {
+    return { status: 'passed', reasoning: 'Test dokončen bez definovaného očekávaného výsledku.' };
+  }
+
+  const result = resultSummary.toLowerCase().trim();
+  const expected = expectedResult.toLowerCase().trim();
+
+  // Check for explicit failure indicators in result
+  const failureIndicators = ['error', 'failed', 'not found', 'timeout', 'exception', 'chyba', 'selhalo', 'nenalezeno'];
+  const hasFailureIndicator = failureIndicators.some(ind => result.includes(ind));
+
+  // Check for explicit success indicators in result
+  const successIndicators = ['success', 'passed', 'completed', 'verified', 'confirmed', 'ok', 'úspěch', 'ověřeno', 'potvrzeno'];
+  const hasSuccessIndicator = successIndicators.some(ind => result.includes(ind));
+
+  // Extract keywords from expected result (words longer than 3 chars)
+  const keywords = expected
+    .split(/[\s,;.!?]+/)
+    .filter(word => word.length > 3)
+    .filter(word => !['should', 'must', 'will', 'that', 'this', 'with', 'from', 'have', 'been', 'mělo', 'musí', 'bude', 'tento', 'tato', 'které'].includes(word));
+
+  // Count how many keywords appear in the result
+  const matchedKeywords = keywords.filter(kw => result.includes(kw));
+  const matchRatio = keywords.length > 0 ? matchedKeywords.length / keywords.length : 0;
+
+  // Decision logic
+  if (hasFailureIndicator && !hasSuccessIndicator) {
+    return { 
+      status: 'not_passed', 
+      reasoning: `Výsledek obsahuje indikátor selhání. Očekáváno: "${expectedResult.substring(0, 100)}". Skutečný výsledek: "${resultSummary.substring(0, 100)}".` 
+    };
+  }
+
+  if (hasSuccessIndicator && matchRatio >= 0.3) {
+    return { 
+      status: 'passed', 
+      reasoning: `Výsledek obsahuje indikátor úspěchu a ${Math.round(matchRatio * 100)}% klíčových slov.` 
+    };
+  }
+
+  // If at least 50% of keywords match, consider it passed
+  if (matchRatio >= 0.5) {
+    return { 
+      status: 'passed', 
+      reasoning: `${Math.round(matchRatio * 100)}% klíčových slov z očekávaného výsledku nalezeno ve výsledku testu.` 
+    };
+  }
+
+  // Otherwise, not passed
+  return { 
+    status: 'not_passed', 
+    reasoning: `Pouze ${Math.round(matchRatio * 100)}% klíčových slov z očekávaného výsledku nalezeno. Očekáváno: "${expectedResult.substring(0, 100)}". Skutečný výsledek: "${resultSummary.substring(0, 100)}".` 
+  };
+}
+
 async function runBatchInBackground(batchId: string, testIds: string[], userId: string) {
   console.log(`[Batch ${batchId}] Starting background execution for ${testIds.length} tests`);
 
@@ -273,6 +331,7 @@ async function runBatchInBackground(batchId: string, testIds: string[], userId: 
       const maxAttempts = 100; // 100 * 3s = 5 minutes
       let finalStatus = "passed";
       let resultSummary = "";
+      let resultReasoning = "";
       let executionTimeMs: number | null = null;
 
       while (!taskCompleted && attempts < maxAttempts) {
@@ -318,6 +377,14 @@ async function runBatchInBackground(batchId: string, testIds: string[], userId: 
             const output = statusData.output || statusData.result || "";
             resultSummary =
               typeof output === "string" ? output.substring(0, 500) : JSON.stringify(output).substring(0, 500);
+            
+            // Evaluate result against expected result (only if not already failed)
+            if (finalStatus !== "failed") {
+              const evaluation = evaluateTestResult(resultSummary, test.expected_result);
+              finalStatus = evaluation.status;
+              resultReasoning = evaluation.reasoning;
+              console.log(`[Batch ${batchId}] Test evaluation: ${finalStatus} - ${resultReasoning}`);
+            }
           }
         } catch (pollError) {
           console.error(`[Batch ${batchId}] Poll error:`, pollError);
@@ -424,11 +491,11 @@ async function runBatchInBackground(batchId: string, testIds: string[], userId: 
       await supabase
         .from("tasks")
         .update({
-          status: finalStatus === "passed" ? "completed" : "failed",
+          status: finalStatus === "passed" ? "completed" : (finalStatus === "not_passed" ? "completed" : "failed"),
           completed_at: new Date().toISOString(),
           screenshots: screenshots.length > 0 ? screenshots : null,
           recordings: recordings.length > 0 ? recordings : null,
-          result: { output: resultSummary },
+          result: { output: resultSummary, reasoning: resultReasoning },
         })
         .eq("id", taskRecord.id);
 
@@ -440,6 +507,7 @@ async function runBatchInBackground(batchId: string, testIds: string[], userId: 
           last_run_at: new Date().toISOString(),
           execution_time_ms: executionTimeMs,
           result_summary: resultSummary || null,
+          result_reasoning: resultReasoning || null,
         })
         .eq("id", testId);
 

@@ -89,7 +89,8 @@
     "completed": "Dokončeno",
     "failed": "Selhalo",
     "cancelled": "Zrušeno",
-    "passed": "Prošel"
+    "passed": "Prošel",
+    "notPassed": "Nesplněno"
   },
   "priority": {
     "high": "Vysoká",
@@ -220,6 +221,8 @@
     "pending": "Čeká",
     "running": "Běží",
     "passed": "Prošel",
+    "notPassed": "Nesplněno",
+    "notPassedTooltip": "Test doběhl, ale nesplnil očekávaný výsledek",
     "failed": "Selhal",
     "successRate": "Úspěšnost",
     "exportExcel": "Exportovat do Excelu",

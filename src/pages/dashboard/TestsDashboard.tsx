@@ -36,6 +36,7 @@ import {
   Calendar,
   Timer,
   Hash,
+  AlertTriangle,
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import { toast } from 'sonner';
@@ -80,6 +81,7 @@ interface Stats {
   pending: number;
   running: number;
   passed: number;
+  notPassed: number;
   failed: number;
   successRate: number;
 }
@@ -362,11 +364,12 @@ export default function TestsDashboard() {
     const pending = tests.filter(t => t.status === 'pending').length;
     const running = tests.filter(t => t.status === 'running').length;
     const passed = tests.filter(t => t.status === 'passed').length;
+    const notPassed = tests.filter(t => t.status === 'not_passed').length;
     const failed = tests.filter(t => t.status === 'failed').length;
-    const executed = passed + failed;
+    const executed = passed + notPassed + failed;
     const successRate = executed > 0 ? Math.round((passed / executed) * 100) : 0;
 
-    return { total, pending, running, passed, failed, successRate };
+    return { total, pending, running, passed, notPassed, failed, successRate };
   }, [tests]);
 
   const filteredTests = useMemo(() => {
@@ -449,6 +452,8 @@ export default function TestsDashboard() {
         return <Badge className="bg-warning text-warning-foreground"><Loader2 className="w-3 h-3 mr-1 animate-spin" />{t('tests.running')}</Badge>;
       case 'passed':
         return <Badge className="bg-success text-success-foreground"><CheckCircle2 className="w-3 h-3 mr-1" />{t('tests.passed')}</Badge>;
+      case 'not_passed':
+        return <Badge className="bg-orange-500 text-white"><AlertTriangle className="w-3 h-3 mr-1" />{t('tests.notPassed')}</Badge>;
       case 'failed':
         return <Badge variant="destructive"><XCircle className="w-3 h-3 mr-1" />{t('tests.failed')}</Badge>;
       default:
@@ -1011,7 +1016,7 @@ export default function TestsDashboard() {
       )}
 
       {/* Stats Cards */}
-      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-5">
+      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-6">
         <Card>
           <CardHeader className="flex flex-row items-center justify-between pb-2">
             <CardTitle className="text-sm font-medium text-muted-foreground">{t('tests.total')}</CardTitle>
@@ -1037,6 +1042,15 @@ export default function TestsDashboard() {
           </CardHeader>
           <CardContent>
             <div className="text-3xl font-bold text-success">{stats.passed}</div>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between pb-2">
+            <CardTitle className="text-sm font-medium text-muted-foreground">{t('tests.notPassed')}</CardTitle>
+            <AlertTriangle className="h-5 w-5 text-orange-500" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-3xl font-bold text-orange-500">{stats.notPassed}</div>
           </CardContent>
         </Card>
         <Card>
@@ -1125,6 +1139,7 @@ export default function TestsDashboard() {
                 <SelectItem value="pending">{t('tests.pending')}</SelectItem>
                 <SelectItem value="running">{t('tests.running')}</SelectItem>
                 <SelectItem value="passed">{t('tests.passed')}</SelectItem>
+                <SelectItem value="not_passed">{t('tests.notPassed')}</SelectItem>
                 <SelectItem value="failed">{t('tests.failed')}</SelectItem>
               </SelectContent>
             </Select>
