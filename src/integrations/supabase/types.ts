@@ -304,6 +304,7 @@ export type Database = {
       projects: {
         Row: {
           base_url: string | null
+          batch_delay_seconds: number | null
           browser_profile_id: string | null
           created_at: string
           description: string | null
@@ -317,6 +318,7 @@ export type Database = {
         }
         Insert: {
           base_url?: string | null
+          batch_delay_seconds?: number | null
           browser_profile_id?: string | null
           created_at?: string
           description?: string | null
@@ -330,6 +332,7 @@ export type Database = {
         }
         Update: {
           base_url?: string | null
+          batch_delay_seconds?: number | null
           browser_profile_id?: string | null
           created_at?: string
           description?: string | null
