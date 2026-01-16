@@ -37,6 +37,8 @@ import {
   Timer,
   Hash,
   AlertTriangle,
+  DollarSign,
+  Layers,
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import { toast } from 'sonner';
@@ -62,6 +64,8 @@ interface GeneratedTest {
   execution_time_ms: number | null;
   result_summary: string | null;
   result_reasoning: string | null;
+  step_count: number | null;
+  estimated_cost: number | null;
 }
 
 interface Project {
@@ -84,6 +88,8 @@ interface Stats {
   notPassed: number;
   failed: number;
   successRate: number;
+  totalCost: number;
+  avgCost: number;
 }
 
 interface BatchRun {
@@ -368,8 +374,13 @@ export default function TestsDashboard() {
     const failed = tests.filter(t => t.status === 'failed').length;
     const executed = passed + notPassed + failed;
     const successRate = executed > 0 ? Math.round((passed / executed) * 100) : 0;
+    
+    // Calculate costs
+    const testsWithCost = tests.filter(t => t.estimated_cost !== null && t.estimated_cost > 0);
+    const totalCost = testsWithCost.reduce((sum, t) => sum + (t.estimated_cost || 0), 0);
+    const avgCost = testsWithCost.length > 0 ? totalCost / testsWithCost.length : 0;
 
-    return { total, pending, running, passed, notPassed, failed, successRate };
+    return { total, pending, running, passed, notPassed, failed, successRate, totalCost, avgCost };
   }, [tests]);
 
   const filteredTests = useMemo(() => {
@@ -479,6 +490,11 @@ export default function TestsDashboard() {
     if (ms < 1000) return `${ms}ms`;
     if (ms < 60000) return `${(ms / 1000).toFixed(1)}s`;
     return `${Math.floor(ms / 60000)}m ${Math.round((ms % 60000) / 1000)}s`;
+  };
+
+  const formatCost = (cost: number | null) => {
+    if (!cost) return '-';
+    return `$${cost.toFixed(4)}`;
   };
 
   const handleSort = (field: SortField) => {
@@ -827,6 +843,8 @@ export default function TestsDashboard() {
         'Status': test.status === 'passed' ? t('tests.passed') : test.status === 'failed' ? t('tests.failed') : test.status === 'running' ? t('tests.running') : t('tests.pending'),
         'Last Run': test.last_run_at ? new Date(test.last_run_at).toLocaleString(dateLocale) : 'N/A',
         'Duration': formatDuration(test.execution_time_ms),
+        'Steps': test.step_count || '',
+        'Cost (USD)': test.estimated_cost ? test.estimated_cost.toFixed(4) : '',
         'Result': test.result_summary || '',
         'Reasoning': test.result_reasoning || '',
         'Project': getProjectName(test.project_id),
@@ -1017,7 +1035,7 @@ export default function TestsDashboard() {
       )}
 
       {/* Stats Cards */}
-      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-6">
+      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-7">
         <Card>
           <CardHeader className="flex flex-row items-center justify-between pb-2">
             <CardTitle className="text-sm font-medium text-muted-foreground">{t('tests.total')}</CardTitle>
@@ -1071,6 +1089,18 @@ export default function TestsDashboard() {
           <CardContent>
             <div className="text-3xl font-bold">{stats.successRate}%</div>
             <Progress value={stats.successRate} className="mt-2 h-2" />
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between pb-2">
+            <CardTitle className="text-sm font-medium text-muted-foreground">{i18n.language === 'cs' ? 'Náklady' : 'Cost'}</CardTitle>
+            <DollarSign className="h-5 w-5 text-primary" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">${stats.totalCost.toFixed(2)}</div>
+            <p className="text-xs text-muted-foreground mt-1">
+              {i18n.language === 'cs' ? 'Ø' : 'Avg'} ${stats.avgCost.toFixed(3)}/{i18n.language === 'cs' ? 'test' : 'test'}
+            </p>
           </CardContent>
         </Card>
       </div>
@@ -1361,6 +1391,18 @@ export default function TestsDashboard() {
                         </div>
                       </th>
                       <th className="text-left p-3 font-medium text-muted-foreground">{t('tests.runTime')}</th>
+                      <th className="text-left p-3 font-medium text-muted-foreground">
+                        <div className="flex items-center gap-1">
+                          <Layers className="h-3.5 w-3.5" />
+                          {i18n.language === 'cs' ? 'Kroky' : 'Steps'}
+                        </div>
+                      </th>
+                      <th className="text-left p-3 font-medium text-muted-foreground">
+                        <div className="flex items-center gap-1">
+                          <DollarSign className="h-3.5 w-3.5" />
+                          {i18n.language === 'cs' ? 'Náklady' : 'Cost'}
+                        </div>
+                      </th>
                       <th className="text-left p-3 font-medium text-muted-foreground">{t('tests.result')}</th>
                       <th className="text-left p-3 font-medium text-muted-foreground w-20">Detail</th>
                     </tr>
@@ -1411,6 +1453,20 @@ export default function TestsDashboard() {
                         </td>
                         <td className="p-3 text-sm">
                           {formatDuration(test.execution_time_ms)}
+                        </td>
+                        <td className="p-3 text-sm text-muted-foreground">
+                          {test.step_count || '-'}
+                        </td>
+                        <td className="p-3 text-sm">
+                          {test.estimated_cost ? (
+                            <span className={`font-medium ${
+                              test.estimated_cost < 0.05 ? 'text-success' : 
+                              test.estimated_cost < 0.15 ? 'text-warning' : 
+                              'text-destructive'
+                            }`}>
+                              ${test.estimated_cost.toFixed(3)}
+                            </span>
+                          ) : '-'}
                         </td>
                         <td className="p-3">
                           <div className="max-w-xs truncate text-sm text-muted-foreground">
@@ -1499,7 +1555,7 @@ export default function TestsDashboard() {
           <ScrollArea className="flex-1 -mx-6 px-6">
             <div className="space-y-6 pb-4">
               {/* Metadata */}
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-4 p-4 bg-muted/50 rounded-lg">
+              <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4 p-4 bg-muted/50 rounded-lg">
                 <div className="space-y-1">
                   <p className="text-xs text-muted-foreground flex items-center gap-1.5">
                     <FileText className="w-3 h-3" />
@@ -1548,6 +1604,28 @@ export default function TestsDashboard() {
                         ({formatDuration(selectedTest.execution_time_ms)})
                       </span>
                     )}
+                  </p>
+                </div>
+                <div className="space-y-1">
+                  <p className="text-xs text-muted-foreground flex items-center gap-1.5">
+                    <Layers className="w-3 h-3" />
+                    {i18n.language === 'cs' ? 'Kroky' : 'Steps'}
+                  </p>
+                  <p className="text-sm font-medium">{selectedTest?.step_count || '-'}</p>
+                </div>
+                <div className="space-y-1">
+                  <p className="text-xs text-muted-foreground flex items-center gap-1.5">
+                    <DollarSign className="w-3 h-3" />
+                    {i18n.language === 'cs' ? 'Náklady' : 'Cost'}
+                  </p>
+                  <p className={`text-sm font-medium ${
+                    selectedTest?.estimated_cost 
+                      ? selectedTest.estimated_cost < 0.05 ? 'text-success' 
+                        : selectedTest.estimated_cost < 0.15 ? 'text-warning' 
+                        : 'text-destructive'
+                      : ''
+                  }`}>
+                    {selectedTest?.estimated_cost ? `$${selectedTest.estimated_cost.toFixed(4)}` : '-'}
                   </p>
                 </div>
               </div>

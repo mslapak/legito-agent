@@ -71,6 +71,7 @@ export type Database = {
         Row: {
           azure_devops_id: string | null
           created_at: string
+          estimated_cost: number | null
           execution_time_ms: number | null
           expected_result: string | null
           id: string
@@ -82,6 +83,7 @@ export type Database = {
           result_summary: string | null
           source_type: string | null
           status: string
+          step_count: number | null
           task_id: string | null
           test_suite_id: string | null
           title: string
@@ -91,6 +93,7 @@ export type Database = {
         Insert: {
           azure_devops_id?: string | null
           created_at?: string
+          estimated_cost?: number | null
           execution_time_ms?: number | null
           expected_result?: string | null
           id?: string
@@ -102,6 +105,7 @@ export type Database = {
           result_summary?: string | null
           source_type?: string | null
           status?: string
+          step_count?: number | null
           task_id?: string | null
           test_suite_id?: string | null
           title: string
@@ -111,6 +115,7 @@ export type Database = {
         Update: {
           azure_devops_id?: string | null
           created_at?: string
+          estimated_cost?: number | null
           execution_time_ms?: number | null
           expected_result?: string | null
           id?: string
@@ -122,6 +127,7 @@ export type Database = {
           result_summary?: string | null
           source_type?: string | null
           status?: string
+          step_count?: number | null
           task_id?: string | null
           test_suite_id?: string | null
           title?: string
@@ -353,6 +359,7 @@ export type Database = {
           screenshots: string[] | null
           started_at: string | null
           status: Database["public"]["Enums"]["task_status"]
+          step_count: number | null
           steps: Json | null
           task_type: string
           title: string
@@ -374,6 +381,7 @@ export type Database = {
           screenshots?: string[] | null
           started_at?: string | null
           status?: Database["public"]["Enums"]["task_status"]
+          step_count?: number | null
           steps?: Json | null
           task_type?: string
           title: string
@@ -395,6 +403,7 @@ export type Database = {
           screenshots?: string[] | null
           started_at?: string | null
           status?: Database["public"]["Enums"]["task_status"]
+          step_count?: number | null
           steps?: Json | null
           task_type?: string
           title?: string
