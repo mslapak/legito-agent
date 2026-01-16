@@ -616,7 +616,8 @@ async function runBatchInBackground(batchId: string, testIds: string[], userId: 
         })
         .eq("id", taskRecord.id);
 
-      await supabase
+      // Reset all metrics and update with new values
+      const updateResult = await supabase
         .from("generated_tests")
         .update({
           status: finalStatus,
@@ -626,8 +627,15 @@ async function runBatchInBackground(batchId: string, testIds: string[], userId: 
           result_reasoning: resultReasoning || null,
           step_count: stepCount,
           estimated_cost: estimatedCost,
+          task_id: taskRecord.id, // Always update to latest task
         })
         .eq("id", testId);
+      
+      if (updateResult.error) {
+        console.error(`[Batch ${batchId}] Failed to update generated_test ${testId}:`, updateResult.error);
+      } else {
+        console.log(`[Batch ${batchId}] Updated generated_test ${testId}: status=${finalStatus}, steps=${stepCount}, cost=$${estimatedCost.toFixed(4)}`);
+      }
 
       if (finalStatus === "passed") {
         passedTests++;
@@ -640,14 +648,23 @@ async function runBatchInBackground(batchId: string, testIds: string[], userId: 
       console.error(`[Batch ${batchId}] Error running test ${testId}:`, error);
 
       try {
-        await supabase
+        // Reset all metrics when test fails with error
+        const errorUpdateResult = await supabase
           .from("generated_tests")
           .update({
             status: "failed",
             last_run_at: new Date().toISOString(),
             result_summary: `Chyba: ${error instanceof Error ? error.message : "Neznámá chyba"}`,
+            result_reasoning: null,
+            execution_time_ms: null,
+            step_count: null,
+            estimated_cost: null,
           })
           .eq("id", testId);
+        
+        if (errorUpdateResult.error) {
+          console.error(`[Batch ${batchId}] Failed to update test status:`, errorUpdateResult.error);
+        }
       } catch (updateError) {
         console.error(`[Batch ${batchId}] Failed to update test status:`, updateError);
       }
