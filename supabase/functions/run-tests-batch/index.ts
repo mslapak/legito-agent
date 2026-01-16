@@ -490,6 +490,30 @@ async function runBatchInBackground(batchId: string, testIds: string[], userId: 
       
       console.log(`[Batch ${batchId}] Final media: ${screenshots.length} screenshots, ${recordings.length} recordings`);
 
+      // Calculate step count and estimated cost
+      let stepCount = 0;
+      try {
+        const detailsForSteps = await fetch(
+          `https://api.browser-use.com/api/v2/tasks/${browserTaskId}`,
+          { headers: { "X-Browser-Use-API-Key": BROWSER_USE_API_KEY! } }
+        );
+        if (detailsForSteps.ok) {
+          const stepsData = await detailsForSteps.json();
+          stepCount = Array.isArray(stepsData.steps) ? stepsData.steps.length : 0;
+        }
+      } catch (e) {
+        console.error(`[Batch ${batchId}] Error fetching step count:`, e);
+      }
+
+      // Cost calculation formula:
+      // $0.01 (task init) + (steps * $0.01) + (execution_minutes * proxy_rate)
+      // proxy_rate = $0.008/min with video, $0.004/min without video
+      const execMinutes = (executionTimeMs || 0) / 60000;
+      const proxyRate = recordVideo ? 0.008 : 0.004;
+      const estimatedCost = 0.01 + (stepCount * 0.01) + (execMinutes * proxyRate);
+      
+      console.log(`[Batch ${batchId}] Cost: ${stepCount} steps, ${execMinutes.toFixed(2)} min, $${estimatedCost.toFixed(4)}`);
+
       // Update tasks table with final status and media
       await supabase
         .from("tasks")
@@ -499,6 +523,7 @@ async function runBatchInBackground(batchId: string, testIds: string[], userId: 
           screenshots: screenshots.length > 0 ? screenshots : null,
           recordings: recordings.length > 0 ? recordings : null,
           result: { output: resultSummary, reasoning: resultReasoning },
+          step_count: stepCount,
         })
         .eq("id", taskRecord.id);
 
@@ -511,6 +536,8 @@ async function runBatchInBackground(batchId: string, testIds: string[], userId: 
           execution_time_ms: executionTimeMs,
           result_summary: resultSummary || null,
           result_reasoning: resultReasoning || null,
+          step_count: stepCount,
+          estimated_cost: estimatedCost,
         })
         .eq("id", testId);
 
