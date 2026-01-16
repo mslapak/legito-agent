@@ -22,7 +22,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { toast } from 'sonner';
-import { Play, Trash2, Loader2, CheckCircle2, XCircle, Clock, RotateCcw, Pencil } from 'lucide-react';
+import { Play, Trash2, Loader2, CheckCircle2, XCircle, Clock, RotateCcw, Pencil, AlertTriangle } from 'lucide-react';
 
 interface GeneratedTest {
   id: string;
@@ -347,6 +347,8 @@ export default function ProjectTestHistory({ projectId, projectName, setupPrompt
         return <Badge className="bg-warning text-warning-foreground"><Loader2 className="w-3 h-3 mr-1 animate-spin" />{t('testHistory.statusRunning')}</Badge>;
       case 'passed':
         return <Badge className="bg-success text-success-foreground"><CheckCircle2 className="w-3 h-3 mr-1" />{t('testHistory.statusPassed')}</Badge>;
+      case 'not_passed':
+        return <Badge className="bg-orange-500 text-white"><AlertTriangle className="w-3 h-3 mr-1" />{t('status.notPassed')}</Badge>;
       case 'failed':
         return <Badge variant="destructive"><XCircle className="w-3 h-3 mr-1" />{t('testHistory.statusFailed')}</Badge>;
       default:
@@ -387,6 +389,7 @@ export default function ProjectTestHistory({ projectId, projectName, setupPrompt
   const pendingCount = tests.filter(t => t.status === 'pending').length;
   const runningCount = tests.filter(t => t.status === 'running').length;
   const passedCount = tests.filter(t => t.status === 'passed').length;
+  const notPassedCount = tests.filter(t => t.status === 'not_passed').length;
   const failedCount = tests.filter(t => t.status === 'failed').length;
 
   return (
@@ -412,6 +415,12 @@ export default function ProjectTestHistory({ projectId, projectName, setupPrompt
           <Badge className="bg-success text-success-foreground text-sm py-1 px-3">
             <CheckCircle2 className="w-3 h-3 mr-1" />
             {t('testHistory.passed')}: {passedCount}
+          </Badge>
+        )}
+        {notPassedCount > 0 && (
+          <Badge className="bg-orange-500 text-white text-sm py-1 px-3">
+            <AlertTriangle className="w-3 h-3 mr-1" />
+            {t('status.notPassed')}: {notPassedCount}
           </Badge>
         )}
         {failedCount > 0 && (
@@ -464,7 +473,7 @@ export default function ProjectTestHistory({ projectId, projectName, setupPrompt
                 >
                   <Pencil className="h-4 w-4" />
                 </Button>
-                {(test.status === 'passed' || test.status === 'failed') && (
+                {(test.status === 'passed' || test.status === 'failed' || test.status === 'not_passed') && (
                   <Button
                     variant="ghost"
                     size="sm"
