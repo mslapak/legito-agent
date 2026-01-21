@@ -60,7 +60,7 @@ import { Slider } from '@/components/ui/slider';
 import { Switch } from '@/components/ui/switch';
 import ProjectTestHistory from '@/components/ProjectTestHistory';
 import ProjectCredentials from '@/components/ProjectCredentials';
-import DocumentationVerification from '@/components/DocumentationVerification';
+
 import { useTranslation } from 'react-i18next';
 
 interface Project {
@@ -924,12 +924,6 @@ ${credentials ? `\nIf needed, here are the credentials:\n- Email/Username: ${cre
                         </div>
                       </div>
                       
-                      {/* Documentation Verification Section */}
-                      <DocumentationVerification
-                        projectId={project.id}
-                        projectName={project.name}
-                        baseUrl={project.base_url}
-                      />
                       
                       {/* Test History Section */}
                       <div>
