@@ -364,8 +364,12 @@
     "testHistory": "Test History",
     "docVerification": "Doc Verification"
   },
-"docVerify": {
+  "docVerify": {
     "title": "Documentation Verification",
+    "description": "Verify that your application's documentation is still up-to-date",
+    "selectProject": "Select project",
+    "selectProjectPlaceholder": "Select project for verification",
+    "createProjectFirst": "First create a project in the \"Projects\" section",
     "subtitle": "Verify that the application matches documentation",
     "verification": "Documentation Verification",
     "source": "Documentation Source",
