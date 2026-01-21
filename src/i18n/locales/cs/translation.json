@@ -364,8 +364,12 @@
     "testHistory": "Historie testů",
     "docVerification": "Verifikace dokumentace"
   },
-"docVerify": {
+  "docVerify": {
     "title": "Ověření dokumentace",
+    "description": "Ověřte, zda je dokumentace vaší aplikace stále aktuální",
+    "selectProject": "Vyberte projekt",
+    "selectProjectPlaceholder": "Vyberte projekt pro ověření",
+    "createProjectFirst": "Nejdříve vytvořte projekt v sekci \"Projekty\"",
     "subtitle": "Ověřte, že aplikace odpovídá dokumentaci",
     "verification": "Ověření dokumentace",
     "source": "Zdroj dokumentace",

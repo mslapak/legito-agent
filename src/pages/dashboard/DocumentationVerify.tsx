@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { useTranslation } from 'react-i18next';
 import { supabase } from '@/integrations/supabase/client';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Label } from '@/components/ui/label';
@@ -19,6 +20,7 @@ interface Project {
 }
 
 export default function DocumentationVerify() {
+  const { t } = useTranslation();
   const [projects, setProjects] = useState<Project[]>([]);
   const [selectedProjectId, setSelectedProjectId] = useState<string>('');
   const [selectedProject, setSelectedProject] = useState<Project | null>(null);
@@ -53,19 +55,19 @@ export default function DocumentationVerify() {
               <FileCheck className="w-6 h-6 text-accent-foreground" />
             </div>
             <div>
-              <CardTitle>Ověření dokumentace</CardTitle>
+              <CardTitle>{t('docVerify.title')}</CardTitle>
               <CardDescription>
-                Ověřte, zda je dokumentace vaší aplikace stále aktuální
+                {t('docVerify.description')}
               </CardDescription>
             </div>
           </div>
         </CardHeader>
         <CardContent className="space-y-6">
           <div className="space-y-2">
-            <Label>Vyberte projekt *</Label>
+            <Label>{t('docVerify.selectProject')} *</Label>
             <Select value={selectedProjectId} onValueChange={handleProjectChange}>
               <SelectTrigger>
-                <SelectValue placeholder="Vyberte projekt pro ověření" />
+                <SelectValue placeholder={t('docVerify.selectProjectPlaceholder')} />
               </SelectTrigger>
               <SelectContent>
                 {projects.map((project) => (
@@ -77,7 +79,7 @@ export default function DocumentationVerify() {
             </Select>
             {projects.length === 0 && (
               <p className="text-sm text-muted-foreground">
-                Nejdříve vytvořte projekt v sekci "Projekty"
+                {t('docVerify.createProjectFirst')}
               </p>
             )}
           </div>
