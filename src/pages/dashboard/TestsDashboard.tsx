@@ -723,6 +723,7 @@ export default function TestsDashboard() {
           body: {
             action: 'create_task',
             prompt: fullPrompt,
+            title: test.title,
             projectId: test.project_id,
             keepBrowserOpen: false,
           },
