@@ -88,9 +88,9 @@
     "pending": "Pending",
     "completed": "Completed",
     "failed": "Failed",
+    "error": "Error",
     "cancelled": "Cancelled",
-    "passed": "Passed",
-    "notPassed": "Not Passed"
+    "passed": "Passed"
   },
   "priority": {
     "high": "High",
@@ -221,9 +221,10 @@
     "pending": "Pending",
     "running": "Running",
     "passed": "Passed",
-    "notPassed": "Not Passed",
-    "notPassedTooltip": "Test completed but did not meet expected result",
     "failed": "Failed",
+    "failedTooltip": "Test completed but did not meet expected result",
+    "error": "Error",
+    "errorTooltip": "Test did not complete due to technical issues",
     "successRate": "Success Rate",
     "exportExcel": "Export to Excel",
     "runSelected": "Run Selected",

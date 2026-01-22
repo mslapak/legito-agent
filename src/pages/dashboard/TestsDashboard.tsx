@@ -86,8 +86,8 @@ interface Stats {
   pending: number;
   running: number;
   passed: number;
-  notPassed: number;
-  failed: number;
+  failed: number;  // functional failure (test ran but didn't meet expectations)
+  error: number;   // technical error (API, timeout, etc.)
   successRate: number;
   totalCost: number;
   avgCost: number;
@@ -372,9 +372,9 @@ export default function TestsDashboard() {
     const pending = tests.filter(t => t.status === 'pending').length;
     const running = tests.filter(t => t.status === 'running').length;
     const passed = tests.filter(t => t.status === 'passed').length;
-    const notPassed = tests.filter(t => t.status === 'not_passed').length;
-    const failed = tests.filter(t => t.status === 'failed').length;
-    const executed = passed + notPassed + failed;
+    const failed = tests.filter(t => t.status === 'failed').length; // functional failure
+    const error = tests.filter(t => t.status === 'error').length; // technical error
+    const executed = passed + failed + error;
     const successRate = executed > 0 ? Math.round((passed / executed) * 100) : 0;
     
     // Calculate costs
@@ -382,7 +382,7 @@ export default function TestsDashboard() {
     const totalCost = testsWithCost.reduce((sum, t) => sum + (t.estimated_cost || 0), 0);
     const avgCost = testsWithCost.length > 0 ? totalCost / testsWithCost.length : 0;
 
-    return { total, pending, running, passed, notPassed, failed, successRate, totalCost, avgCost };
+    return { total, pending, running, passed, failed, error, successRate, totalCost, avgCost };
   }, [tests]);
 
   const filteredTests = useMemo(() => {
@@ -465,10 +465,10 @@ export default function TestsDashboard() {
         return <Badge className="bg-warning text-warning-foreground"><Loader2 className="w-3 h-3 mr-1 animate-spin" />{t('tests.running')}</Badge>;
       case 'passed':
         return <Badge className="bg-success text-success-foreground"><CheckCircle2 className="w-3 h-3 mr-1" />{t('tests.passed')}</Badge>;
-      case 'not_passed':
-        return <Badge className="bg-orange-500 text-white"><AlertTriangle className="w-3 h-3 mr-1" />{t('tests.notPassed')}</Badge>;
       case 'failed':
-        return <Badge variant="destructive"><XCircle className="w-3 h-3 mr-1" />{t('tests.failed')}</Badge>;
+        return <Badge className="bg-orange-500 text-white"><AlertTriangle className="w-3 h-3 mr-1" />{t('tests.failed')}</Badge>;
+      case 'error':
+        return <Badge variant="destructive"><XCircle className="w-3 h-3 mr-1" />{t('tests.error')}</Badge>;
       default:
         return <Badge variant="outline">{status}</Badge>;
     }
@@ -1119,20 +1119,20 @@ export default function TestsDashboard() {
         </Card>
         <Card>
           <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">{t('tests.notPassed')}</CardTitle>
+            <CardTitle className="text-sm font-medium text-muted-foreground">{t('tests.failed')}</CardTitle>
             <AlertTriangle className="h-5 w-5 text-orange-500" />
           </CardHeader>
           <CardContent>
-            <div className="text-3xl font-bold text-orange-500">{stats.notPassed}</div>
+            <div className="text-3xl font-bold text-orange-500">{stats.failed}</div>
           </CardContent>
         </Card>
         <Card>
           <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">{t('tests.failed')}</CardTitle>
+            <CardTitle className="text-sm font-medium text-muted-foreground">{t('tests.error')}</CardTitle>
             <XCircle className="h-5 w-5 text-destructive" />
           </CardHeader>
           <CardContent>
-            <div className="text-3xl font-bold text-destructive">{stats.failed}</div>
+            <div className="text-3xl font-bold text-destructive">{stats.error}</div>
           </CardContent>
         </Card>
         <Card>
@@ -1224,8 +1224,8 @@ export default function TestsDashboard() {
                 <SelectItem value="pending">{t('tests.pending')}</SelectItem>
                 <SelectItem value="running">{t('tests.running')}</SelectItem>
                 <SelectItem value="passed">{t('tests.passed')}</SelectItem>
-                <SelectItem value="not_passed">{t('tests.notPassed')}</SelectItem>
                 <SelectItem value="failed">{t('tests.failed')}</SelectItem>
+                <SelectItem value="error">{t('tests.error')}</SelectItem>
               </SelectContent>
             </Select>
             <Select value={priorityFilter} onValueChange={(v) => { setPriorityFilter(v); setPage(1); }}>

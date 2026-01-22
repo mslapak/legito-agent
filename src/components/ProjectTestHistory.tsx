@@ -347,10 +347,10 @@ export default function ProjectTestHistory({ projectId, projectName, setupPrompt
         return <Badge className="bg-warning text-warning-foreground"><Loader2 className="w-3 h-3 mr-1 animate-spin" />{t('testHistory.statusRunning')}</Badge>;
       case 'passed':
         return <Badge className="bg-success text-success-foreground"><CheckCircle2 className="w-3 h-3 mr-1" />{t('testHistory.statusPassed')}</Badge>;
-      case 'not_passed':
-        return <Badge className="bg-orange-500 text-white"><AlertTriangle className="w-3 h-3 mr-1" />{t('status.notPassed')}</Badge>;
       case 'failed':
-        return <Badge variant="destructive"><XCircle className="w-3 h-3 mr-1" />{t('testHistory.statusFailed')}</Badge>;
+        return <Badge className="bg-orange-500 text-white"><AlertTriangle className="w-3 h-3 mr-1" />{t('status.failed')}</Badge>;
+      case 'error':
+        return <Badge variant="destructive"><XCircle className="w-3 h-3 mr-1" />{t('status.error')}</Badge>;
       default:
         return <Badge variant="outline">{status}</Badge>;
     }
@@ -389,8 +389,8 @@ export default function ProjectTestHistory({ projectId, projectName, setupPrompt
   const pendingCount = tests.filter(t => t.status === 'pending').length;
   const runningCount = tests.filter(t => t.status === 'running').length;
   const passedCount = tests.filter(t => t.status === 'passed').length;
-  const notPassedCount = tests.filter(t => t.status === 'not_passed').length;
   const failedCount = tests.filter(t => t.status === 'failed').length;
+  const errorCount = tests.filter(t => t.status === 'error').length;
 
   return (
     <div className="space-y-4">
@@ -417,16 +417,16 @@ export default function ProjectTestHistory({ projectId, projectName, setupPrompt
             {t('testHistory.passed')}: {passedCount}
           </Badge>
         )}
-        {notPassedCount > 0 && (
+        {failedCount > 0 && (
           <Badge className="bg-orange-500 text-white text-sm py-1 px-3">
             <AlertTriangle className="w-3 h-3 mr-1" />
-            {t('status.notPassed')}: {notPassedCount}
+            {t('status.failed')}: {failedCount}
           </Badge>
         )}
-        {failedCount > 0 && (
+        {errorCount > 0 && (
           <Badge variant="destructive" className="text-sm py-1 px-3">
             <XCircle className="w-3 h-3 mr-1" />
-            {t('testHistory.failed')}: {failedCount}
+            {t('status.error')}: {errorCount}
           </Badge>
         )}
       </div>
@@ -473,7 +473,7 @@ export default function ProjectTestHistory({ projectId, projectName, setupPrompt
                 >
                   <Pencil className="h-4 w-4" />
                 </Button>
-                {(test.status === 'passed' || test.status === 'failed' || test.status === 'not_passed') && (
+                {(test.status === 'passed' || test.status === 'failed' || test.status === 'error') && (
                   <Button
                     variant="ghost"
                     size="sm"
