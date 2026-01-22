@@ -733,12 +733,20 @@ export default function TestsDashboard() {
           throw new Error(response.error?.message || 'Failed to create task');
         }
 
-        const browserTaskId = response.data.task.id;
+        // IMPORTANT: response.data.task.id is our DB task id (FK in generated_tests.task_id)
+        // while response.data.browserUseTaskId is the provider task id used for status polling.
+        const dbTaskId = response.data.task.id;
+        const browserUseTaskId: string | undefined =
+          response.data.browserUseTaskId ?? response.data.task?.browser_use_task_id;
 
-        // Save task_id to generated_tests
+        if (!browserUseTaskId) {
+          throw new Error('Missing browser task id (browserUseTaskId)');
+        }
+
+        // Save DB task id (FK) to generated_tests
         await supabase
           .from('generated_tests')
-          .update({ task_id: browserTaskId })
+          .update({ task_id: dbTaskId })
           .eq('id', testId);
 
         // Wait for task to complete (poll every 3 seconds, max 5 minutes)
@@ -753,17 +761,24 @@ export default function TestsDashboard() {
           const statusResponse = await supabase.functions.invoke('browser-use', {
             body: {
               action: 'get_task_status',
-              taskId: browserTaskId,
+              taskId: browserUseTaskId,
             },
           });
 
           const apiStatus = statusResponse.data?.status;
-          if (['finished', 'completed', 'done', 'failed', 'error', 'stopped'].includes(apiStatus)) {
+          if (['finished', 'completed', 'done', 'failed', 'error', 'stopped', 'not_found', 'expired'].includes(apiStatus)) {
             taskCompleted = true;
             
-            let newStatus = 'passed';
-            if (apiStatus === 'failed' || apiStatus === 'error') {
-              newStatus = 'failed';
+            // NOTE: Foreground mode doesn't evaluate expected_result; it only distinguishes technical errors.
+            let newStatus: 'passed' | 'error' = 'passed';
+            if (
+              apiStatus === 'failed' ||
+              apiStatus === 'error' ||
+              apiStatus === 'not_found' ||
+              apiStatus === 'expired' ||
+              statusResponse.data?.expired
+            ) {
+              newStatus = 'error';
             }
 
             const startedAt = statusResponse.data?.started_at || statusResponse.data?.startedAt;
@@ -785,22 +800,56 @@ export default function TestsDashboard() {
                 status: newStatus,
                 last_run_at: new Date().toISOString(),
                 execution_time_ms: executionTimeMs,
-                result_summary: resultSummary || null,
+                result_summary: (apiStatus === 'not_found' || apiStatus === 'expired' || statusResponse.data?.expired)
+                  ? (i18n.language === 'cs'
+                      ? 'Session vypršela / task nebyl nalezen'
+                      : 'Session expired / task not found')
+                  : (resultSummary || null),
               })
               .eq('id', testId);
           }
         }
 
         if (!taskCompleted) {
-          // Timeout - mark as failed
+          // Timeout - before writing a timeout, verify whether the DB task has already completed.
+          const { data: dbTask } = await supabase
+            .from('tasks')
+            .select('status, started_at, completed_at, updated_at, result')
+            .eq('id', dbTaskId)
+            .maybeSingle();
+
+          if (dbTask?.status === 'completed') {
+            const startedAt = dbTask.started_at;
+            const finishedAt = dbTask.completed_at || dbTask.updated_at;
+            const executionTimeMs = startedAt && finishedAt
+              ? new Date(finishedAt).getTime() - new Date(startedAt).getTime()
+              : null;
+
+            const output = dbTask.result ?? '';
+            const resultSummary = typeof output === 'string'
+              ? output.substring(0, 500)
+              : JSON.stringify(output).substring(0, 500);
+
+            await supabase
+              .from('generated_tests')
+              .update({
+                status: 'passed',
+                last_run_at: new Date().toISOString(),
+                execution_time_ms: executionTimeMs,
+                result_summary: resultSummary || null,
+              })
+              .eq('id', testId);
+          } else {
+            // Real timeout
           await supabase
             .from('generated_tests')
             .update({ 
-              status: 'failed',
+              status: 'error',
               last_run_at: new Date().toISOString(),
               result_summary: i18n.language === 'cs' ? 'Timeout - test nedoběhl do 5 minut' : 'Timeout - test did not complete within 5 minutes',
             })
             .eq('id', testId);
+          }
         }
 
         // Refresh data after each test
