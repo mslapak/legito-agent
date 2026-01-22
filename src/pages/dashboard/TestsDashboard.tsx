@@ -1609,8 +1609,8 @@ export default function TestsDashboard() {
 
       {/* Test Detail Modal */}
       <Dialog open={!!selectedTest} onOpenChange={(open) => !open && setSelectedTest(null)}>
-        <DialogContent className="max-w-3xl max-h-[85vh] flex flex-col">
-          <DialogHeader>
+        <DialogContent className="max-w-3xl max-h-[85vh] flex flex-col overflow-hidden">
+          <DialogHeader className="flex-shrink-0">
             <div className="flex items-start justify-between gap-4 pr-6">
               <div className="flex-1">
                 <DialogTitle className="text-xl font-semibold leading-tight">
@@ -1628,7 +1628,7 @@ export default function TestsDashboard() {
             </div>
           </DialogHeader>
 
-          <ScrollArea className="flex-1 -mx-6 px-6">
+          <ScrollArea className="flex-1 min-h-0 -mx-6 px-6">
             <div className="space-y-6 pb-4">
               {/* Metadata */}
               <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4 p-4 bg-muted/50 rounded-lg">
