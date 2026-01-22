@@ -487,9 +487,10 @@ async function processSingleTest(
               
               console.log(`[Batch ${batchId}] OutputFiles raw:`, JSON.stringify(outputFiles));
               
-              const videoFiles = outputFiles.filter((f: { name?: string }) => 
-                f.name && (f.name.endsWith('.webm') || f.name.endsWith('.mp4'))
-              );
+              const videoFiles = outputFiles.filter((f: { id?: string; fileName?: string }) => {
+                const fileName = f?.fileName || '';
+                return fileName.endsWith('.webm') || fileName.endsWith('.mp4');
+              });
               console.log(`[Batch ${batchId}] Video files found: ${videoFiles.length}`);
               
               // Get new screenshots from steps
