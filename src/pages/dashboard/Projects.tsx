@@ -55,7 +55,15 @@ import {
   Video,
   Footprints,
   Clock,
+  Copy,
 } from 'lucide-react';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 import { Slider } from '@/components/ui/slider';
 import { Switch } from '@/components/ui/switch';
 import ProjectTestHistory from '@/components/ProjectTestHistory';
@@ -103,8 +111,14 @@ export default function Projects() {
   const [resettingSession, setResettingSession] = useState<string | null>(null);
   const [savingCostSettings, setSavingCostSettings] = useState<string | null>(null);
   const [costSettings, setCostSettings] = useState<Record<string, { max_steps: number; record_video: boolean; batch_delay_seconds: number }>>({});
+  const [copyProfileDialogOpen, setCopyProfileDialogOpen] = useState<string | null>(null);
+  const [selectedSourceProjectId, setSelectedSourceProjectId] = useState<string>('');
+  const [copyingProfile, setCopyingProfile] = useState(false);
 
   const dateLocale = i18n.language === 'cs' ? 'cs-CZ' : 'en-US';
+
+  // Get projects that have a browser profile (for copying)
+  const projectsWithProfile = projects.filter(p => p.browser_profile_id);
 
   useEffect(() => {
     if (user) {
@@ -485,6 +499,42 @@ ${credentials ? `\nIf needed, here are the credentials:\n- Email/Username: ${cre
     }
   };
 
+  const copyBrowserProfile = async (targetProjectId: string) => {
+    if (!selectedSourceProjectId) {
+      toast.error(i18n.language === 'cs' ? 'Vyberte zdrojový projekt' : 'Select source project');
+      return;
+    }
+
+    const sourceProject = projects.find(p => p.id === selectedSourceProjectId);
+    if (!sourceProject?.browser_profile_id) {
+      toast.error(i18n.language === 'cs' ? 'Zdrojový projekt nemá aktivní profil' : 'Source project has no active profile');
+      return;
+    }
+
+    setCopyingProfile(true);
+    try {
+      const { error } = await supabase
+        .from('projects')
+        .update({ browser_profile_id: sourceProject.browser_profile_id })
+        .eq('id', targetProjectId);
+
+      if (error) throw error;
+
+      toast.success(i18n.language === 'cs' 
+        ? `Profil zkopírován z projektu "${sourceProject.name}"`
+        : `Profile copied from project "${sourceProject.name}"`);
+      
+      setCopyProfileDialogOpen(null);
+      setSelectedSourceProjectId('');
+      fetchProjects();
+    } catch (error) {
+      console.error('Error copying browser profile:', error);
+      toast.error(i18n.language === 'cs' ? 'Nepodařilo se zkopírovat profil' : 'Failed to copy profile');
+    } finally {
+      setCopyingProfile(false);
+    }
+  };
+
   if (loading) {
     return (
       <div className="flex items-center justify-center h-64">
@@ -735,22 +785,103 @@ ${credentials ? `\nIf needed, here are the credentials:\n- Email/Username: ${cre
                                 </Button>
                               </>
                             ) : (
-                              <Button
-                                variant="outline"
-                                size="sm"
-                                onClick={() => setupBrowserSession(project)}
-                                disabled={settingUpSession === project.id || !project.base_url}
-                                title={!project.base_url ? t('projects.projectNoUrl') : undefined}
-                              >
-                                {settingUpSession === project.id ? (
-                                  <Loader2 className="h-4 w-4 animate-spin" />
-                                ) : (
-                                  <>
-                                    <Play className="h-4 w-4 mr-1" />
-                                    {i18n.language === 'cs' ? 'Nastavit přihlášení' : 'Setup login'}
-                                  </>
+                              <div className="flex items-center gap-2">
+                                {/* Copy existing profile button - only show if other projects have profiles */}
+                                {projectsWithProfile.length > 0 && (
+                                  <Dialog 
+                                    open={copyProfileDialogOpen === project.id} 
+                                    onOpenChange={(open) => {
+                                      setCopyProfileDialogOpen(open ? project.id : null);
+                                      if (!open) setSelectedSourceProjectId('');
+                                    }}
+                                  >
+                                    <DialogTrigger asChild>
+                                      <Button
+                                        variant="outline"
+                                        size="sm"
+                                        title={i18n.language === 'cs' ? 'Použít existující profil z jiného projektu' : 'Use existing profile from another project'}
+                                      >
+                                        <Copy className="h-4 w-4 mr-1" />
+                                        {i18n.language === 'cs' ? 'Použít existující' : 'Use existing'}
+                                      </Button>
+                                    </DialogTrigger>
+                                    <DialogContent>
+                                      <DialogHeader>
+                                        <DialogTitle>
+                                          {i18n.language === 'cs' ? 'Použít existující profil' : 'Use existing profile'}
+                                        </DialogTitle>
+                                        <DialogDescription>
+                                          {i18n.language === 'cs' 
+                                            ? 'Vyberte projekt, ze kterého chcete zkopírovat browser profil. Toto je užitečné, pokud oba projekty testují stejnou aplikaci.'
+                                            : 'Select a project to copy the browser profile from. This is useful when both projects test the same application.'}
+                                        </DialogDescription>
+                                      </DialogHeader>
+                                      <div className="py-4">
+                                        <Label className="mb-2 block">
+                                          {i18n.language === 'cs' ? 'Zdrojový projekt' : 'Source project'}
+                                        </Label>
+                                        <Select
+                                          value={selectedSourceProjectId}
+                                          onValueChange={setSelectedSourceProjectId}
+                                        >
+                                          <SelectTrigger>
+                                            <SelectValue placeholder={i18n.language === 'cs' ? 'Vyberte projekt...' : 'Select project...'} />
+                                          </SelectTrigger>
+                                          <SelectContent>
+                                            {projectsWithProfile
+                                              .filter(p => p.id !== project.id)
+                                              .map(p => (
+                                                <SelectItem key={p.id} value={p.id}>
+                                                  {p.name}
+                                                </SelectItem>
+                                              ))}
+                                          </SelectContent>
+                                        </Select>
+                                      </div>
+                                      <DialogFooter>
+                                        <Button
+                                          variant="outline"
+                                          onClick={() => {
+                                            setCopyProfileDialogOpen(null);
+                                            setSelectedSourceProjectId('');
+                                          }}
+                                        >
+                                          {t('common.cancel')}
+                                        </Button>
+                                        <Button
+                                          onClick={() => copyBrowserProfile(project.id)}
+                                          disabled={!selectedSourceProjectId || copyingProfile}
+                                        >
+                                          {copyingProfile ? (
+                                            <Loader2 className="h-4 w-4 animate-spin mr-1" />
+                                          ) : (
+                                            <Copy className="h-4 w-4 mr-1" />
+                                          )}
+                                          {i18n.language === 'cs' ? 'Zkopírovat profil' : 'Copy profile'}
+                                        </Button>
+                                      </DialogFooter>
+                                    </DialogContent>
+                                  </Dialog>
                                 )}
-                              </Button>
+                                
+                                {/* Setup new login button */}
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  onClick={() => setupBrowserSession(project)}
+                                  disabled={settingUpSession === project.id || !project.base_url}
+                                  title={!project.base_url ? t('projects.projectNoUrl') : undefined}
+                                >
+                                  {settingUpSession === project.id ? (
+                                    <Loader2 className="h-4 w-4 animate-spin" />
+                                  ) : (
+                                    <>
+                                      <Play className="h-4 w-4 mr-1" />
+                                      {i18n.language === 'cs' ? 'Nastavit nové' : 'Setup new'}
+                                    </>
+                                  )}
+                                </Button>
+                              </div>
                             )}
                           </div>
                         </div>
