@@ -87,10 +87,10 @@
     "running": "Běží",
     "pending": "Čeká",
     "completed": "Dokončeno",
-    "failed": "Selhalo",
+    "failed": "Neprošel",
+    "error": "Chyba",
     "cancelled": "Zrušeno",
-    "passed": "Prošel",
-    "notPassed": "Nesplněno"
+    "passed": "Prošel"
   },
   "priority": {
     "high": "Vysoká",
@@ -221,9 +221,10 @@
     "pending": "Čeká",
     "running": "Běží",
     "passed": "Prošel",
-    "notPassed": "Nesplněno",
-    "notPassedTooltip": "Test doběhl, ale nesplnil očekávaný výsledek",
-    "failed": "Selhal",
+    "failed": "Neprošel",
+    "failedTooltip": "Test doběhl, ale nesplnil očekávaný výsledek",
+    "error": "Chyba",
+    "errorTooltip": "Test nedokončen z technických důvodů",
     "successRate": "Úspěšnost",
     "exportExcel": "Exportovat do Excelu",
     "runSelected": "Spustit vybrané",

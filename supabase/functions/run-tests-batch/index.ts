@@ -64,7 +64,9 @@ async function stopSessionResilient(sessionId: string, batchId: string): Promise
 }
 
 // Evaluate test result against expected result
-function evaluateTestResult(resultSummary: string, expectedResult: string | null): { status: 'passed' | 'not_passed', reasoning: string } {
+// Evaluate test result against expected result
+// Returns 'passed' or 'failed' (functional failure - test ran but didn't meet expectations)
+function evaluateTestResult(resultSummary: string, expectedResult: string | null): { status: 'passed' | 'failed', reasoning: string } {
   if (!expectedResult || expectedResult.trim() === '') {
     return { status: 'passed', reasoning: 'Test dokončen bez definovaného očekávaného výsledku.' };
   }
@@ -88,7 +90,7 @@ function evaluateTestResult(resultSummary: string, expectedResult: string | null
 
   if (hasFailureIndicator && !hasSuccessIndicator) {
     return { 
-      status: 'not_passed', 
+      status: 'failed', 
       reasoning: `Výsledek obsahuje indikátor selhání. Očekáváno: "${expectedResult.substring(0, 100)}". Skutečný výsledek: "${resultSummary.substring(0, 100)}".` 
     };
   }
@@ -108,7 +110,7 @@ function evaluateTestResult(resultSummary: string, expectedResult: string | null
   }
 
   return { 
-    status: 'not_passed', 
+    status: 'failed', 
     reasoning: `Pouze ${Math.round(matchRatio * 100)}% klíčových slov z očekávaného výsledku nalezeno. Očekáváno: "${expectedResult.substring(0, 100)}". Skutečný výsledek: "${resultSummary.substring(0, 100)}".` 
   };
 }
@@ -538,8 +540,10 @@ async function processSingleTest(
     const stepCount = Array.isArray(steps) ? steps.length : 0;
 
     // Evaluate test result
+    // taskStatus === "failed" means technical error → status = 'error'
+    // evaluation.status === "failed" means functional failure → status = 'failed'
     const evaluation = evaluateTestResult(resultSummary, test.expected_result);
-    const finalStatus = taskStatus === "failed" ? "failed" : evaluation.status;
+    const finalStatus = taskStatus === "failed" ? "error" : evaluation.status;
     const resultReasoning = evaluation.reasoning;
 
     console.log(`[Batch ${batchId}] Test evaluation: ${finalStatus} - ${resultReasoning}`);
@@ -552,10 +556,12 @@ async function processSingleTest(
     console.log(`[Batch ${batchId}] Cost: ${stepCount} steps, ${execMinutes.toFixed(2)} min, $${estimatedCost.toFixed(4)}`);
 
     // Update task record
+    // 'error' (technical) → tasks.status = 'failed'
+    // 'failed' (functional) → tasks.status = 'completed' (test ran successfully, just didn't pass)
     await supabase
       .from("tasks")
       .update({
-        status: finalStatus === "passed" ? "completed" : (finalStatus === "not_passed" ? "completed" : "failed"),
+        status: finalStatus === "error" ? "failed" : "completed",
         completed_at: new Date().toISOString(),
         screenshots: screenshots.length > 0 ? screenshots : null,
         recordings: recordings.length > 0 ? recordings : null,
@@ -598,10 +604,11 @@ async function processSingleTest(
     const supabase = createClient(SUPABASE_URL!, SUPABASE_SERVICE_ROLE_KEY!);
     
     try {
+      // Technical error → status = 'error'
       await supabase
         .from("generated_tests")
         .update({
-          status: "failed",
+          status: "error",
           last_run_at: new Date().toISOString(),
           result_summary: `Chyba: ${error instanceof Error ? error.message : "Neznámá chyba"}`,
           result_reasoning: null,
