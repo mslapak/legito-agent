@@ -40,6 +40,10 @@ import {
   DollarSign,
   Layers,
   Clock as ClockIcon,
+  ChevronDown,
+  ChevronRight,
+  Image as ImageIcon,
+  Video,
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import { toast } from 'sonner';
@@ -47,7 +51,9 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { useTranslation } from 'react-i18next';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { ScrollArea } from '@/components/ui/scroll-area';
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import StructuredResult from '@/components/StructuredResult';
+import { ImageGalleryLightbox, ImageGalleryGrid } from '@/components/ImageGallery';
 
 interface GeneratedTest {
   id: string;
@@ -150,8 +156,50 @@ export default function TestsDashboard() {
 
   // Test detail modal
   const [selectedTest, setSelectedTest] = useState<GeneratedTest | null>(null);
+  const [linkedTask, setLinkedTask] = useState<{
+    result: unknown;
+    screenshots: string[] | null;
+    recordings: string[] | null;
+    steps: unknown;
+    error_message: string | null;
+    started_at: string | null;
+    completed_at: string | null;
+    step_count: number | null;
+  } | null>(null);
+  const [linkedTaskLoading, setLinkedTaskLoading] = useState(false);
+  const [stepsExpanded, setStepsExpanded] = useState(false);
 
   const dateLocale = i18n.language === 'cs' ? 'cs-CZ' : 'en-US';
+
+  // Fetch linked task when selectedTest changes
+  useEffect(() => {
+    const fetchLinkedTask = async () => {
+      if (!selectedTest?.task_id) {
+        setLinkedTask(null);
+        return;
+      }
+      
+      setLinkedTaskLoading(true);
+      try {
+        const { data, error } = await supabase
+          .from('tasks')
+          .select('result, screenshots, recordings, steps, error_message, started_at, completed_at, step_count')
+          .eq('id', selectedTest.task_id)
+          .single();
+        
+        if (error) throw error;
+        setLinkedTask(data as typeof linkedTask);
+      } catch (error) {
+        console.error('Error fetching linked task:', error);
+        setLinkedTask(null);
+      } finally {
+        setLinkedTaskLoading(false);
+      }
+    };
+
+    fetchLinkedTask();
+    setStepsExpanded(false);
+  }, [selectedTest?.task_id]);
 
   useEffect(() => {
     if (user) {
@@ -1878,6 +1926,147 @@ export default function TestsDashboard() {
                     <p className="text-sm whitespace-pre-wrap">{selectedTest.result_reasoning}</p>
                   </div>
                 </div>
+              )}
+
+              {/* Linked Task Data */}
+              {linkedTaskLoading ? (
+                <div className="flex items-center justify-center py-8">
+                  <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
+                  <span className="ml-2 text-sm text-muted-foreground">
+                    {i18n.language === 'cs' ? 'Načítání detailů tasku...' : 'Loading task details...'}
+                  </span>
+                </div>
+              ) : linkedTask && (
+                <>
+                  {/* Full Result from Task */}
+                  {linkedTask.result && (
+                    <div className="space-y-2">
+                      <h4 className="text-sm font-semibold flex items-center gap-2">
+                        <TrendingUp className="w-4 h-4" />
+                        {i18n.language === 'cs' ? 'Kompletní výsledek automatizace' : 'Full Automation Result'}
+                      </h4>
+                      <div className="p-4 bg-muted/30 rounded-lg border max-h-64 overflow-y-auto">
+                        <StructuredResult result={linkedTask.result} />
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Error Message from Task */}
+                  {linkedTask.error_message && (
+                    <div className="p-4 bg-destructive/10 border border-destructive/30 rounded-lg flex items-start gap-3">
+                      <AlertTriangle className="w-5 h-5 text-destructive flex-shrink-0 mt-0.5" />
+                      <div>
+                        <h4 className="text-sm font-semibold text-destructive mb-1">
+                          {i18n.language === 'cs' ? 'Chybová zpráva' : 'Error Message'}
+                        </h4>
+                        <p className="text-sm text-destructive/90 whitespace-pre-wrap">
+                          {linkedTask.error_message}
+                        </p>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Screenshots */}
+                  {linkedTask.screenshots && linkedTask.screenshots.length > 0 && (
+                    <div className="space-y-2">
+                      <h4 className="text-sm font-semibold flex items-center gap-2">
+                        <ImageIcon className="w-4 h-4" />
+                        {i18n.language === 'cs' ? 'Screenshoty' : 'Screenshots'} ({linkedTask.screenshots.length})
+                      </h4>
+                      <ImageGalleryGrid images={linkedTask.screenshots} />
+                    </div>
+                  )}
+
+                  {/* Recordings */}
+                  {linkedTask.recordings && linkedTask.recordings.length > 0 && (
+                    <div className="space-y-2">
+                      <h4 className="text-sm font-semibold flex items-center gap-2">
+                        <Video className="w-4 h-4" />
+                        {i18n.language === 'cs' ? 'Nahrávky' : 'Recordings'} ({linkedTask.recordings.length})
+                      </h4>
+                      <div className="grid grid-cols-1 gap-3">
+                        {linkedTask.recordings.map((url, idx) => (
+                          <video 
+                            key={idx}
+                            src={url} 
+                            controls 
+                            className="w-full rounded-lg border bg-black max-h-64"
+                          />
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Automation Steps */}
+                  {linkedTask.steps && Array.isArray(linkedTask.steps) && linkedTask.steps.length > 0 && (
+                    <Collapsible open={stepsExpanded} onOpenChange={setStepsExpanded}>
+                      <CollapsibleTrigger asChild>
+                        <Button variant="ghost" className="w-full justify-between p-4 h-auto bg-muted/30 rounded-lg border hover:bg-muted/50">
+                          <div className="flex items-center gap-2">
+                            <Layers className="w-4 h-4" />
+                            <span className="text-sm font-semibold">
+                              {i18n.language === 'cs' ? 'Kroky automatizace' : 'Automation Steps'} ({linkedTask.steps.length})
+                            </span>
+                          </div>
+                          {stepsExpanded ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
+                        </Button>
+                      </CollapsibleTrigger>
+                      <CollapsibleContent className="mt-2">
+                        <div className="space-y-2 pl-2 border-l-2 border-muted ml-2">
+                          {linkedTask.steps.map((step: unknown, idx: number) => {
+                            const s = step as { step?: number; next_goal?: string; evaluation_previous_goal?: string; url?: string };
+                            return (
+                              <div key={idx} className="p-3 bg-muted/20 rounded-lg border text-sm">
+                                <div className="flex items-start gap-2">
+                                  <span className="flex-shrink-0 w-6 h-6 rounded-full bg-primary/20 text-primary text-xs flex items-center justify-center font-medium">
+                                    {s.step || idx + 1}
+                                  </span>
+                                  <div className="flex-1 space-y-1">
+                                    {s.next_goal && (
+                                      <p className="font-medium">{s.next_goal}</p>
+                                    )}
+                                    {s.evaluation_previous_goal && (
+                                      <p className="text-muted-foreground text-xs">{s.evaluation_previous_goal}</p>
+                                    )}
+                                    {s.url && (
+                                      <p className="text-xs text-muted-foreground truncate">{s.url}</p>
+                                    )}
+                                  </div>
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </CollapsibleContent>
+                    </Collapsible>
+                  )}
+
+                  {/* Task Timestamps */}
+                  {(linkedTask.started_at || linkedTask.completed_at) && (
+                    <div className="grid grid-cols-2 gap-4 p-3 bg-muted/20 rounded-lg border">
+                      {linkedTask.started_at && (
+                        <div className="space-y-1">
+                          <p className="text-xs text-muted-foreground">
+                            {i18n.language === 'cs' ? 'Zahájeno' : 'Started At'}
+                          </p>
+                          <p className="text-sm font-medium">
+                            {new Date(linkedTask.started_at).toLocaleString(dateLocale)}
+                          </p>
+                        </div>
+                      )}
+                      {linkedTask.completed_at && (
+                        <div className="space-y-1">
+                          <p className="text-xs text-muted-foreground">
+                            {i18n.language === 'cs' ? 'Dokončeno' : 'Completed At'}
+                          </p>
+                          <p className="text-sm font-medium">
+                            {new Date(linkedTask.completed_at).toLocaleString(dateLocale)}
+                          </p>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </>
               )}
             </div>
           </ScrollArea>
