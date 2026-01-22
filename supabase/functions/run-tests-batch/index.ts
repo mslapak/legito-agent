@@ -467,11 +467,12 @@ async function processSingleTest(
           console.log(`[Batch ${batchId}] Waiting for video processing...`);
           await delay(5000);
 
-          // Fetch media files
+          // Fetch media files - try both task and session endpoints
           const maxMediaRetries = 6;
           for (let mediaAttempt = 1; mediaAttempt <= maxMediaRetries; mediaAttempt++) {
             console.log(`[Batch ${batchId}] Media fetch attempt ${mediaAttempt}/${maxMediaRetries}...`);
             
+            // First try task endpoint
             const mediaRes = await fetch(
               `https://api.browser-use.com/api/v2/tasks/${browserTaskId}`,
               {
@@ -485,7 +486,8 @@ async function processSingleTest(
               const mediaData = await mediaRes.json();
               const outputFiles = mediaData.outputFiles || mediaData.output_files || [];
               
-              console.log(`[Batch ${batchId}] OutputFiles raw:`, JSON.stringify(outputFiles));
+              console.log(`[Batch ${batchId}] Attempt ${mediaAttempt} - Status: ${mediaData.status}, OutputFiles: ${JSON.stringify(outputFiles)}`);
+              console.log(`[Batch ${batchId}] Attempt ${mediaAttempt} - OutputFiles raw:`, JSON.stringify(outputFiles));
               
               const videoFiles = outputFiles.filter((f: { id?: string; fileName?: string }) => {
                 const fileName = f?.fileName || '';
@@ -508,10 +510,7 @@ async function processSingleTest(
                 }
               }
               
-              console.log(`[Batch ${batchId}] Attempt ${mediaAttempt}: ${screenshots.length} screenshots, ${recordings.length} recordings`);
-              console.log(`[Batch ${batchId}] Attempt ${mediaAttempt} - OutputFiles:`, JSON.stringify(outputFiles));
-              
-              // Process video files
+              // Process video files from task
               for (const file of videoFiles) {
                 if (file.id) {
                   try {
@@ -527,7 +526,7 @@ async function processSingleTest(
                       const downloadData = await downloadRes.json();
                       if (downloadData.url) {
                         recordings.push(downloadData.url);
-                        console.log(`[Batch ${batchId}] Got recording URL: ${downloadData.url.substring(0, 50)}...`);
+                        console.log(`[Batch ${batchId}] Got recording URL from task: ${downloadData.url.substring(0, 50)}...`);
                       }
                     }
                   } catch (e) {
@@ -536,12 +535,89 @@ async function processSingleTest(
                 }
               }
               
+              // If no videos from task, try session endpoint (v2 API may store recordings there)
+              if (recordings.length === 0 && sessionId) {
+                console.log(`[Batch ${batchId}] No recordings from task, trying session endpoint: ${sessionId}`);
+                try {
+                  const sessionRes = await fetch(
+                    `https://api.browser-use.com/api/v2/sessions/${sessionId}`,
+                    {
+                      headers: {
+                        "X-Browser-Use-API-Key": BROWSER_USE_API_KEY!,
+                      },
+                    }
+                  );
+                  if (sessionRes.ok) {
+                    const sessionData = await sessionRes.json();
+                    console.log(`[Batch ${batchId}] Session data keys:`, Object.keys(sessionData));
+                    
+                    // Check for recordings in various possible fields
+                    const sessionRecordings = sessionData.recordings || sessionData.recording || sessionData.videos || [];
+                    const sessionOutputFiles = sessionData.outputFiles || sessionData.output_files || [];
+                    
+                    console.log(`[Batch ${batchId}] Session recordings: ${JSON.stringify(sessionRecordings)}`);
+                    console.log(`[Batch ${batchId}] Session outputFiles: ${JSON.stringify(sessionOutputFiles)}`);
+                    
+                    // Process session recordings if they're URLs
+                    if (Array.isArray(sessionRecordings)) {
+                      for (const rec of sessionRecordings) {
+                        if (typeof rec === 'string' && rec.startsWith('http')) {
+                          recordings.push(rec);
+                        } else if (typeof rec === 'object' && rec !== null) {
+                          const url = rec.url || rec.downloadUrl || rec.download_url;
+                          if (url) recordings.push(url);
+                        }
+                      }
+                    }
+                    
+                    // Process session output files for videos
+                    if (Array.isArray(sessionOutputFiles)) {
+                      const sessionVideoFiles = sessionOutputFiles.filter((f: { id?: string; fileName?: string }) => {
+                        const fileName = f?.fileName || '';
+                        return fileName.endsWith('.webm') || fileName.endsWith('.mp4');
+                      });
+                      
+                      for (const file of sessionVideoFiles) {
+                        if (file.id) {
+                          try {
+                            const downloadRes = await fetch(
+                              `https://api.browser-use.com/api/v2/files/${file.id}/download`,
+                              {
+                                headers: {
+                                  "X-Browser-Use-API-Key": BROWSER_USE_API_KEY!,
+                                },
+                              }
+                            );
+                            if (downloadRes.ok) {
+                              const downloadData = await downloadRes.json();
+                              if (downloadData.url) {
+                                recordings.push(downloadData.url);
+                                console.log(`[Batch ${batchId}] Got recording URL from session: ${downloadData.url.substring(0, 50)}...`);
+                              }
+                            }
+                          } catch (e) {
+                            console.log(`[Batch ${batchId}] Error fetching session video download URL:`, e);
+                          }
+                        }
+                      }
+                    }
+                  }
+                } catch (e) {
+                  console.log(`[Batch ${batchId}] Error fetching session for recordings:`, e);
+                }
+              }
+              
+              console.log(`[Batch ${batchId}] Final media: ${screenshots.length} screenshots, ${recordings.length} recordings`);
+              
               if (recordings.length > 0 || mediaAttempt === maxMediaRetries) {
                 break;
               }
             }
             
-            await delay(5000);
+            if (mediaAttempt < maxMediaRetries) {
+              console.log(`[Batch ${batchId}] Waiting 5s for video processing...`);
+              await delay(5000);
+            }
           }
         }
       } catch (e) {
