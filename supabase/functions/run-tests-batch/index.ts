@@ -64,7 +64,6 @@ async function stopSessionResilient(sessionId: string, batchId: string): Promise
 }
 
 // Evaluate test result against expected result
-// Evaluate test result against expected result
 // Returns 'passed' or 'failed' (functional failure - test ran but didn't meet expectations)
 function evaluateTestResult(resultSummary: string, expectedResult: string | null): { status: 'passed' | 'failed', reasoning: string } {
   if (!expectedResult || expectedResult.trim() === '') {
@@ -74,21 +73,36 @@ function evaluateTestResult(resultSummary: string, expectedResult: string | null
   const result = resultSummary.toLowerCase().trim();
   const expected = expectedResult.toLowerCase().trim();
 
-  const failureIndicators = ['error', 'failed', 'not found', 'timeout', 'exception', 'chyba', 'selhalo', 'nenalezeno'];
+  // Failure indicators - these ALWAYS indicate failure, even if success indicators are present
+  const criticalFailureIndicators = ['timeout', 'failure', 'was not displayed', 'not displayed', 'was not shown', 'nebyl zobrazen', 'nebyla zobrazena', 'did not complete', 'nedokončen'];
+  const hasCriticalFailure = criticalFailureIndicators.some(ind => result.includes(ind));
+
+  // Regular failure indicators
+  const failureIndicators = ['error', 'failed', 'not found', 'exception', 'chyba', 'selhalo', 'nenalezeno', 'neúspěch'];
   const hasFailureIndicator = failureIndicators.some(ind => result.includes(ind));
 
-  const successIndicators = ['success', 'passed', 'completed', 'verified', 'confirmed', 'ok', 'úspěch', 'ověřeno', 'potvrzeno'];
+  const successIndicators = ['success', 'passed', 'verified', 'confirmed', 'úspěch', 'ověřeno', 'potvrzeno'];
+  // Remove 'completed' and 'ok' from success - they're too generic and cause false positives
   const hasSuccessIndicator = successIndicators.some(ind => result.includes(ind));
+
+  // Critical failures always result in 'failed' status
+  if (hasCriticalFailure) {
+    return { 
+      status: 'failed', 
+      reasoning: `Výsledek obsahuje kritický indikátor selhání. Očekáváno: "${expectedResult.substring(0, 100)}". Skutečný výsledek: "${resultSummary.substring(0, 100)}".` 
+    };
+  }
 
   const keywords = expected
     .split(/[\s,;.!?]+/)
     .filter(word => word.length > 3)
-    .filter(word => !['should', 'must', 'will', 'that', 'this', 'with', 'from', 'have', 'been', 'mělo', 'musí', 'bude', 'tento', 'tato', 'které'].includes(word));
+    .filter(word => !['should', 'must', 'will', 'that', 'this', 'with', 'from', 'have', 'been', 'mělo', 'musí', 'bude', 'tento', 'tato', 'které', 'result', 'expected', 'displayed'].includes(word));
 
   const matchedKeywords = keywords.filter(kw => result.includes(kw));
   const matchRatio = keywords.length > 0 ? matchedKeywords.length / keywords.length : 0;
 
-  if (hasFailureIndicator && !hasSuccessIndicator) {
+  // If there's a failure indicator, it takes precedence over success indicators
+  if (hasFailureIndicator) {
     return { 
       status: 'failed', 
       reasoning: `Výsledek obsahuje indikátor selhání. Očekáváno: "${expectedResult.substring(0, 100)}". Skutečný výsledek: "${resultSummary.substring(0, 100)}".` 
