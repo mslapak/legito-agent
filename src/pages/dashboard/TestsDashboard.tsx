@@ -769,44 +769,82 @@ export default function TestsDashboard() {
           if (['finished', 'completed', 'done', 'failed', 'error', 'stopped', 'not_found', 'expired'].includes(apiStatus)) {
             taskCompleted = true;
             
-            // NOTE: Foreground mode doesn't evaluate expected_result; it only distinguishes technical errors.
-            let newStatus: 'passed' | 'error' = 'passed';
-            if (
-              apiStatus === 'failed' ||
-              apiStatus === 'error' ||
-              apiStatus === 'not_found' ||
-              apiStatus === 'expired' ||
-              statusResponse.data?.expired
-            ) {
-              newStatus = 'error';
-            }
-
-            const startedAt = statusResponse.data?.started_at || statusResponse.data?.startedAt;
-            const finishedAt = statusResponse.data?.finished_at || statusResponse.data?.finishedAt || new Date().toISOString();
-            let executionTimeMs: number | null = null;
+            // When session expired/not_found, check DB task first – it may have completed successfully
+            const isExpiredOrNotFound = apiStatus === 'not_found' || apiStatus === 'expired' || statusResponse.data?.expired;
             
-            if (startedAt) {
-              executionTimeMs = new Date(finishedAt).getTime() - new Date(startedAt).getTime();
-            }
+            if (isExpiredOrNotFound) {
+              // Verify DB task before marking as error
+              const { data: dbTask } = await supabase
+                .from('tasks')
+                .select('status, started_at, completed_at, updated_at, result')
+                .eq('id', dbTaskId)
+                .maybeSingle();
 
-            const output = statusResponse.data?.output || statusResponse.data?.result || '';
-            const resultSummary = typeof output === 'string' 
-              ? output.substring(0, 500) 
-              : JSON.stringify(output).substring(0, 500);
+              if (dbTask?.status === 'completed') {
+                // Task actually completed – use DB data
+                const startedAt = dbTask.started_at;
+                const finishedAt = dbTask.completed_at || dbTask.updated_at;
+                const executionTimeMs = startedAt && finishedAt
+                  ? new Date(finishedAt).getTime() - new Date(startedAt).getTime()
+                  : null;
 
-            await supabase
-              .from('generated_tests')
-              .update({ 
-                status: newStatus,
-                last_run_at: new Date().toISOString(),
-                execution_time_ms: executionTimeMs,
-                result_summary: (apiStatus === 'not_found' || apiStatus === 'expired' || statusResponse.data?.expired)
-                  ? (i18n.language === 'cs'
+                const output = dbTask.result ?? '';
+                const resultSummary = typeof output === 'string'
+                  ? output.substring(0, 500)
+                  : JSON.stringify(output).substring(0, 500);
+
+                await supabase
+                  .from('generated_tests')
+                  .update({
+                    status: 'passed',
+                    last_run_at: new Date().toISOString(),
+                    execution_time_ms: executionTimeMs,
+                    result_summary: resultSummary || null,
+                  })
+                  .eq('id', testId);
+              } else {
+                // Session truly expired before completion
+                await supabase
+                  .from('generated_tests')
+                  .update({ 
+                    status: 'error',
+                    last_run_at: new Date().toISOString(),
+                    result_summary: i18n.language === 'cs'
                       ? 'Session vypršela / task nebyl nalezen'
-                      : 'Session expired / task not found')
-                  : (resultSummary || null),
-              })
-              .eq('id', testId);
+                      : 'Session expired / task not found',
+                  })
+                  .eq('id', testId);
+              }
+            } else {
+              // Normal completion (finished, failed, etc.)
+              let newStatus: 'passed' | 'error' = 'passed';
+              if (apiStatus === 'failed' || apiStatus === 'error') {
+                newStatus = 'error';
+              }
+
+              const startedAt = statusResponse.data?.started_at || statusResponse.data?.startedAt;
+              const finishedAt = statusResponse.data?.finished_at || statusResponse.data?.finishedAt || new Date().toISOString();
+              let executionTimeMs: number | null = null;
+              
+              if (startedAt) {
+                executionTimeMs = new Date(finishedAt).getTime() - new Date(startedAt).getTime();
+              }
+
+              const output = statusResponse.data?.output || statusResponse.data?.result || '';
+              const resultSummary = typeof output === 'string' 
+                ? output.substring(0, 500) 
+                : JSON.stringify(output).substring(0, 500);
+
+              await supabase
+                .from('generated_tests')
+                .update({ 
+                  status: newStatus,
+                  last_run_at: new Date().toISOString(),
+                  execution_time_ms: executionTimeMs,
+                  result_summary: resultSummary || null,
+                })
+                .eq('id', testId);
+            }
           }
         }
 
