@@ -292,10 +292,18 @@ export default function TestsDashboard() {
     const runningTests = tests.filter(t => t.status === 'running');
     if (runningTests.length === 0) return;
 
+    // Helper to map DB task status to test status
+    const mapDbTaskToTestStatus = (taskStatus: string | null | undefined): 'passed' | 'failed' | 'error' | 'pending' => {
+      if (taskStatus === 'completed') return 'passed';
+      if (taskStatus === 'failed') return 'error';
+      if (taskStatus === 'cancelled') return 'pending';
+      return 'pending';
+    };
+
     const checkRunningTests = async () => {
       for (const test of runningTests) {
         try {
-          // Fetch task_id from database if needed
+          // Always fetch task from DB first to get browser_use_task_id and current status
           const { data: testData } = await supabase
             .from('generated_tests')
             .select('task_id')
@@ -311,22 +319,84 @@ export default function TestsDashboard() {
             continue;
           }
 
-          const response = await supabase.functions.invoke('browser-use', {
-            body: {
-              action: 'get_task_status',
-              taskId: testData.task_id,
-            },
-          });
+          // Always prefer DB task state first (provider tasks can expire while DB already has results)
+          const { data: dbTask } = await supabase
+            .from('tasks')
+            .select('status, browser_use_task_id, started_at, completed_at, updated_at, result')
+            .eq('id', testData.task_id)
+            .maybeSingle();
 
-          // Handle expired/not found task
-          if (response.data?.expired || response.data?.status === 'not_found') {
+          // If DB task is already finalized, finalize the test without calling provider
+          if (dbTask?.status && ['completed', 'failed', 'cancelled'].includes(dbTask.status)) {
+            const finalStatus = mapDbTaskToTestStatus(dbTask.status);
+            let executionTimeMs: number | null = null;
+            
+            if (dbTask.started_at && dbTask.completed_at) {
+              executionTimeMs = new Date(dbTask.completed_at).getTime() - new Date(dbTask.started_at).getTime();
+            }
+
+            const resultSummary = dbTask.result 
+              ? (typeof dbTask.result === 'string' ? dbTask.result.substring(0, 500) : JSON.stringify(dbTask.result).substring(0, 500))
+              : null;
+
             await supabase
               .from('generated_tests')
               .update({ 
-                status: 'passed',
-                last_run_at: new Date().toISOString(),
+                status: finalStatus,
+                last_run_at: dbTask.completed_at || new Date().toISOString(),
+                execution_time_ms: executionTimeMs,
+                result_summary: resultSummary,
               })
               .eq('id', test.id);
+            continue;
+          }
+
+          // Use browser_use_task_id for provider calls (not task_id)
+          const providerTaskId = dbTask?.browser_use_task_id;
+          if (!providerTaskId) {
+            // Can't check provider; keep running until DB updates
+            continue;
+          }
+
+          const response = await supabase.functions.invoke('browser-use', {
+            body: {
+              action: 'get_task_status',
+              taskId: providerTaskId,
+            },
+          });
+
+          // Handle expired/not found task - re-check DB before giving up
+          if (response.data?.expired || response.data?.status === 'not_found') {
+            // Re-fetch DB task status in case it was updated
+            const { data: recheckTask } = await supabase
+              .from('tasks')
+              .select('status, started_at, completed_at, result')
+              .eq('id', testData.task_id)
+              .maybeSingle();
+
+            if (recheckTask?.status && ['completed', 'failed', 'cancelled'].includes(recheckTask.status)) {
+              const finalStatus = mapDbTaskToTestStatus(recheckTask.status);
+              let executionTimeMs: number | null = null;
+              
+              if (recheckTask.started_at && recheckTask.completed_at) {
+                executionTimeMs = new Date(recheckTask.completed_at).getTime() - new Date(recheckTask.started_at).getTime();
+              }
+
+              const resultSummary = recheckTask.result 
+                ? (typeof recheckTask.result === 'string' ? recheckTask.result.substring(0, 500) : JSON.stringify(recheckTask.result).substring(0, 500))
+                : null;
+
+              await supabase
+                .from('generated_tests')
+                .update({ 
+                  status: finalStatus,
+                  last_run_at: recheckTask.completed_at || new Date().toISOString(),
+                  execution_time_ms: executionTimeMs,
+                  result_summary: resultSummary,
+                })
+                .eq('id', test.id);
+            }
+            // If DB also has no finalized status, leave as running (don't mark as expired)
             continue;
           }
 
@@ -373,13 +443,35 @@ export default function TestsDashboard() {
           }
         } catch (error) {
           console.error('Error checking test status:', error);
-          await supabase
-            .from('generated_tests')
-            .update({ 
-              status: 'passed',
-              last_run_at: new Date().toISOString(),
-            })
-            .eq('id', test.id);
+          // On error, don't blindly mark as passed - check DB first
+          try {
+            const { data: testData } = await supabase
+              .from('generated_tests')
+              .select('task_id')
+              .eq('id', test.id)
+              .single();
+
+            if (testData?.task_id) {
+              const { data: dbTask } = await supabase
+                .from('tasks')
+                .select('status, started_at, completed_at, result')
+                .eq('id', testData.task_id)
+                .maybeSingle();
+
+              if (dbTask?.status && ['completed', 'failed', 'cancelled'].includes(dbTask.status)) {
+                const finalStatus = mapDbTaskToTestStatus(dbTask.status);
+                await supabase
+                  .from('generated_tests')
+                  .update({ 
+                    status: finalStatus,
+                    last_run_at: dbTask.completed_at || new Date().toISOString(),
+                  })
+                  .eq('id', test.id);
+              }
+            }
+          } catch {
+            // Fallback: keep running
+          }
         }
       }
       // Refresh data after checking
@@ -1768,7 +1860,7 @@ export default function TestsDashboard() {
 
       {/* Test Detail Modal */}
       <Dialog open={!!selectedTest} onOpenChange={(open) => !open && setSelectedTest(null)}>
-        <DialogContent className="max-w-3xl max-h-[85vh] flex flex-col overflow-hidden">
+        <DialogContent className="max-w-3xl h-[85vh] flex flex-col overflow-hidden">
           <DialogHeader className="flex-shrink-0">
             <div className="flex items-start justify-between gap-4 pr-6">
               <div className="flex-1">
@@ -1787,7 +1879,7 @@ export default function TestsDashboard() {
             </div>
           </DialogHeader>
 
-          <ScrollArea className="flex-1 min-h-0 -mx-6 px-6">
+          <ScrollArea className="flex-1 min-h-0 h-full -mx-6 px-6">
             <div className="space-y-6 pb-4">
               {/* Metadata */}
               <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4 p-4 bg-muted/50 rounded-lg">
