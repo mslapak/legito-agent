@@ -1,13 +1,4 @@
 {
-  "tests": {
-    "pause": "Pause",
-    "resume": "Resume",
-    "cancel": "Cancel",
-    "paused": "Paused",
-    "batchPaused": "Batch has been paused",
-    "batchResumed": "Batch resumed",
-    "batchCancelled": "Batch has been cancelled"
-  },
   "common": {
     "loading": "Loading...",
     "save": "Save",
@@ -201,6 +192,10 @@
     "sessionExpired": "Browser session has expired. Showing saved data."
   },
   "tests": {
+    "pause": "Pause",
+    "resume": "Resume",
+    "cancel": "Cancel",
+    "paused": "Paused",
     "title": "Tests Overview",
     "subtitle": "All generated and imported tests",
     "searchPlaceholder": "Search tests...",
