@@ -15,6 +15,18 @@ async function delay(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+// Fire-and-forget: starts async call without waiting for response
+function fireAndForget(url: string, body: object) {
+  fetch(url, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "Authorization": `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
+    },
+    body: JSON.stringify(body),
+  }).catch(e => console.error("[fireAndForget] Error:", e));
+}
+
 // Resilient session stop - tries multiple methods
 async function stopSessionResilient(sessionId: string, batchId: string): Promise<void> {
   console.log(`[Batch ${batchId}] Stopping session resilient: ${sessionId}`);
@@ -788,7 +800,7 @@ serve(async (req) => {
     const supabase = createClient(SUPABASE_URL!, SUPABASE_SERVICE_ROLE_KEY!);
     const index = currentIndex || 0;
 
-    // Initial call: check for active batches and set up
+    // Initial call: check for active batches, start batch, and IMMEDIATELY return
     if (!isRecursiveCall) {
       const { data: activeBatches, error: checkError } = await supabase
         .from("test_batch_runs")
@@ -822,6 +834,29 @@ serve(async (req) => {
         .eq("id", batchId);
 
       console.log(`[run-tests-batch] Starting batch ${batchId} with ${testIds.length} tests${batchDelaySeconds ? `, delay: ${batchDelaySeconds}s` : ''}`);
+
+      // Fire-and-forget: spawn async call to process first test
+      // This returns IMMEDIATELY to avoid 504 timeout
+      const selfUrl = `${SUPABASE_URL}/functions/v1/run-tests-batch`;
+      fireAndForget(selfUrl, {
+        batchId,
+        testIds,
+        userId,
+        batchDelaySeconds,
+        currentIndex: 0,
+        isRecursiveCall: true,
+      });
+
+      // Return immediately - frontend relies on real-time subscription for updates
+      return new Response(
+        JSON.stringify({ 
+          success: true, 
+          message: "Batch started", 
+          batchId,
+          totalTests: testIds.length 
+        }),
+        { headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
     }
 
     // Check if batch is paused or cancelled
