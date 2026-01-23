@@ -418,6 +418,19 @@ export default function TestGenerator() {
     toast.success(t('testGenerator.testsImported', { count: parsedCsvTests.length }));
   };
 
+  // Generate unique test ID with timestamp and sequence
+  const generateUniqueTestId = (index: number, existingId?: string): string => {
+    if (existingId && existingId.trim()) {
+      return existingId; // Keep Azure DevOps ID if available
+    }
+    // Generate unique ID: IMP-YYYYMMDD-HHMMSS-XXX (import timestamp + sequence)
+    const now = new Date();
+    const datePart = now.toISOString().slice(0, 10).replace(/-/g, '');
+    const timePart = now.toTimeString().slice(0, 8).replace(/:/g, '');
+    const seqPart = String(index + 1).padStart(3, '0');
+    return `IMP-${datePart}-${timePart}-${seqPart}`;
+  };
+
   // Azure DevOps XLSX parsing
   const parseAzureDevOpsExport = (workbook: XLSX.WorkBook): AzureDevOpsTestCase[] => {
     const sheet = workbook.Sheets[workbook.SheetNames[0]];
@@ -426,6 +439,9 @@ export default function TestGenerator() {
     const tests: AzureDevOpsTestCase[] = [];
     let currentTest: AzureDevOpsTestCase | null = null;
     let testCounter = 0;
+    
+    // Generate base timestamp for this import batch
+    const importTimestamp = Date.now();
     
     for (const row of rows) {
       // Support both ID column and Work Item Type column
@@ -446,8 +462,8 @@ export default function TestGenerator() {
       if (isNewTestCase) {
         if (currentTest) tests.push(currentTest);
         testCounter++;
-        // Use ID if available, otherwise generate one from counter
-        const testId = id || `TC-${testCounter}`;
+        // Use Azure DevOps ID if available, otherwise generate unique timestamp-based ID
+        const testId = id || `IMP-${importTimestamp}-${String(testCounter).padStart(4, '0')}`;
         currentTest = { id: testId, title, steps: [] };
       }
       
