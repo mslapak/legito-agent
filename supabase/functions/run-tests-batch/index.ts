@@ -181,7 +181,7 @@ async function scheduleNextTest(batchId: string, testIds: string[], currentIndex
   }
 }
 
-// Process a single test
+// Process a single test with atomic claim mechanism to prevent duplicate invocations
 async function processSingleTest(
   batchId: string, 
   testId: string, 
@@ -190,11 +190,46 @@ async function processSingleTest(
   testIndex: number,
   totalTests: number,
   overrideDelaySeconds?: number
-): Promise<{ passed: boolean; failed: boolean; sessionId: string | null }> {
+): Promise<{ didRun: boolean; passed: boolean; failed: boolean; sessionId: string | null }> {
   console.log(`[Batch ${batchId}] Processing test ${testId} (${testIndex + 1}/${totalTests})`);
   
   const supabase = createClient(SUPABASE_URL!, SUPABASE_SERVICE_ROLE_KEY!);
   
+  // Generate unique task ID for atomic claim
+  const claimedTaskId = crypto.randomUUID();
+  
+  console.log(`[Batch ${batchId}] Claim attempt testId=${testId} index=${testIndex} claimedTaskId=${claimedTaskId}`);
+  
+  // ATOMIC CLAIM: Only succeed if test is not already running AND has no task_id
+  // This prevents duplicate invocations from creating multiple sessions/tasks
+  const { data: claimResult, error: claimError } = await supabase
+    .from("generated_tests")
+    .update({
+      status: "running",
+      task_id: claimedTaskId,
+      last_run_at: new Date().toISOString(),
+    })
+    .eq("id", testId)
+    .neq("status", "running")
+    .is("task_id", null)
+    .select("id")
+    .maybeSingle();
+
+  if (claimError) {
+    console.error(`[Batch ${batchId}] Claim error for testId=${testId}:`, claimError);
+    // On error, treat as failed claim - let another invocation handle it
+    return { didRun: false, passed: false, failed: false, sessionId: null };
+  }
+
+  if (!claimResult) {
+    // Another invocation already claimed this test - skip silently
+    console.log(`[Batch ${batchId}] Claim SKIPPED (already running or claimed) testId=${testId}`);
+    return { didRun: false, passed: false, failed: false, sessionId: null };
+  }
+
+  console.log(`[Batch ${batchId}] Claim SUCCESS taskId=${claimedTaskId} for testId=${testId}`);
+  
+  // Update batch current_test_id
   await supabase
     .from("test_batch_runs")
     .update({ current_test_id: testId })
@@ -212,7 +247,12 @@ async function processSingleTest(
 
     if (testError || !test) {
       console.error(`[Batch ${batchId}] Test not found: ${testId}`);
-      return { passed: false, failed: true, sessionId: null };
+      // Rollback claim
+      await supabase
+        .from("generated_tests")
+        .update({ status: "error", task_id: null, result_summary: "Test not found" })
+        .eq("id", testId);
+      return { didRun: true, passed: false, failed: true, sessionId: null };
     }
 
     let setupPrompt = "";
@@ -387,10 +427,12 @@ async function processSingleTest(
       throw new Error("Failed to create task after all retries");
     }
 
-    // Create record in tasks table
+    // Create record in tasks table using the pre-generated claimedTaskId
+    // This ensures generated_tests.task_id matches tasks.id
     const { data: taskRecord, error: taskError2 } = await supabase
       .from("tasks")
       .insert({
+        id: claimedTaskId, // Use the same ID we claimed with
         user_id: userId,
         project_id: test.project_id,
         title: test.title,
@@ -405,19 +447,19 @@ async function processSingleTest(
 
     if (taskError2 || !taskRecord) {
       console.error(`[Batch ${batchId}] Failed to create task record:`, taskError2);
+      // Rollback the claim on generated_tests
+      await supabase
+        .from("generated_tests")
+        .update({
+          status: "error",
+          task_id: null,
+          result_summary: `Failed to create task record: ${taskError2?.message || "Unknown error"}`,
+        })
+        .eq("id", testId);
       throw new Error("Failed to create task record");
     }
 
-    console.log(`[Batch ${batchId}] Task record created: ${taskRecord.id}`);
-
-    // Update generated_tests with task_id and set status to running
-    await supabase
-      .from("generated_tests")
-      .update({
-        status: "running",
-        task_id: taskRecord.id,
-      })
-      .eq("id", testId);
+    console.log(`[Batch ${batchId}] Task record created: ${taskRecord.id} (matches claimedTaskId: ${claimedTaskId})`);
 
     // Poll for task completion
     let taskFinished = false;
@@ -725,7 +767,7 @@ async function processSingleTest(
 
     console.log(`[Batch ${batchId}] Test ${testId} completed with status: ${finalStatus}`);
     
-    return { 
+    return { didRun: true, 
       passed: finalStatus === "passed", 
       failed: finalStatus !== "passed",
       // session already stopped above to guarantee one-by-one execution
@@ -764,7 +806,7 @@ async function processSingleTest(
       console.error(`[Batch ${batchId}] Failed to update test status:`, updateError);
     }
 
-    return { passed: false, failed: true, sessionId: null };
+    return { didRun: true, passed: false, failed: true, sessionId: null };
   }
 }
 
@@ -921,7 +963,23 @@ serve(async (req) => {
       batchDelaySeconds
     );
 
-    // Update batch progress
+    // If claim failed (duplicate invocation), skip progress update and scheduling
+    // The invocation that successfully claimed the test will handle everything
+    if (!result.didRun) {
+      console.log(`[Batch ${batchId}] Skipping progress update for duplicate invocation at index ${index}`);
+      return new Response(
+        JSON.stringify({
+          success: true,
+          message: "Skipped duplicate invocation",
+          batchId,
+          currentIndex: index,
+          skipped: true,
+        }),
+        { headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
+    // Update batch progress - only when test actually ran
     const completedTests = (batchState?.completed_tests || 0) + 1;
     const passedTests = (batchState?.passed_tests || 0) + (result.passed ? 1 : 0);
     const failedTests = (batchState?.failed_tests || 0) + (result.failed ? 1 : 0);
