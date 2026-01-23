@@ -78,6 +78,41 @@ const mapStatus = (browserStatus: string, hasOutput: boolean): string => {
 // Helper function for delay
 const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
+// Resilient fetch helper with retry for transient network errors (HTTP/2, connection reset, etc.)
+async function resilientFetch(url: string, options: RequestInit, maxRetries = 3): Promise<Response> {
+  let lastError: Error | null = null;
+  
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    try {
+      const response = await fetch(url, options);
+      return response;
+    } catch (error) {
+      lastError = error instanceof Error ? error : new Error(String(error));
+      const errorMessage = lastError.message.toLowerCase();
+      
+      // Check if it's a transient network error worth retrying
+      const isTransientError = 
+        errorMessage.includes('http2') ||
+        errorMessage.includes('connection') ||
+        errorMessage.includes('reset') ||
+        errorMessage.includes('timeout') ||
+        errorMessage.includes('sendrequest') ||
+        errorMessage.includes('network');
+      
+      if (isTransientError && attempt < maxRetries) {
+        console.log(`[resilientFetch] Attempt ${attempt}/${maxRetries} failed with transient error, retrying in ${attempt * 1000}ms: ${lastError.message}`);
+        await delay(attempt * 1000); // Exponential backoff: 1s, 2s, 3s
+        continue;
+      }
+      
+      // Non-transient error or max retries reached
+      throw lastError;
+    }
+  }
+  
+  throw lastError || new Error('resilientFetch failed unexpectedly');
+}
+
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
@@ -659,8 +694,8 @@ serve(async (req) => {
       }
 
       case 'get_task_status': {
-        // Get task status from Browser-Use Cloud
-        const browserUseResponse = await fetch(`${BROWSER_USE_API_URL}/tasks/${taskId}/status`, {
+        // Get task status from Browser-Use Cloud (with retry for transient errors)
+        const browserUseResponse = await resilientFetch(`${BROWSER_USE_API_URL}/tasks/${taskId}/status`, {
           method: 'GET',
           headers: {
             'X-Browser-Use-API-Key': BROWSER_USE_API_KEY,
@@ -688,9 +723,9 @@ serve(async (req) => {
       }
 
       case 'get_task_details': {
-        // Get full task details from Browser-Use Cloud
+        // Get full task details from Browser-Use Cloud (with retry for transient errors)
         console.log(`Fetching task details for: ${taskId}`);
-        const browserUseResponse = await fetch(`${BROWSER_USE_API_URL}/tasks/${taskId}`, {
+        const browserUseResponse = await resilientFetch(`${BROWSER_USE_API_URL}/tasks/${taskId}`, {
           method: 'GET',
           headers: {
             'X-Browser-Use-API-Key': BROWSER_USE_API_KEY,
