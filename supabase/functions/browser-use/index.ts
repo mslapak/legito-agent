@@ -97,20 +97,42 @@ async function resilientFetch(url: string, options: RequestInit, maxRetries = 3)
         errorMessage.includes('reset') ||
         errorMessage.includes('timeout') ||
         errorMessage.includes('sendrequest') ||
-        errorMessage.includes('network');
+        errorMessage.includes('network') ||
+        errorMessage.includes('lost') ||
+        errorMessage.includes('abort') ||
+        errorMessage.includes('econnreset') ||
+        errorMessage.includes('socket');
       
       if (isTransientError && attempt < maxRetries) {
-        console.log(`[resilientFetch] Attempt ${attempt}/${maxRetries} failed with transient error, retrying in ${attempt * 1000}ms: ${lastError.message}`);
-        await delay(attempt * 1000); // Exponential backoff: 1s, 2s, 3s
+        console.log(`[resilientFetch] Attempt ${attempt}/${maxRetries} failed with transient error, retrying in ${attempt * 1500}ms: ${lastError.message}`);
+        await delay(attempt * 1500); // Slightly longer backoff: 1.5s, 3s, 4.5s
         continue;
       }
       
       // Non-transient error or max retries reached
+      console.error(`[resilientFetch] All ${maxRetries} attempts failed: ${lastError.message}`);
       throw lastError;
     }
   }
   
   throw lastError || new Error('resilientFetch failed unexpectedly');
+}
+
+// Wrap resilientFetch for task status with graceful fallback
+async function fetchTaskStatusSafe(url: string, apiKey: string, taskId: string): Promise<Response> {
+  try {
+    return await resilientFetch(url, {
+      method: 'GET',
+      headers: { 'X-Browser-Use-API-Key': apiKey },
+    });
+  } catch (error) {
+    // If all retries fail, return a synthetic "expired" response instead of throwing
+    console.log(`[fetchTaskStatusSafe] Network failure for task ${taskId}, treating as expired`);
+    return new Response(JSON.stringify({ status: 'network_error', expired: true }), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' },
+    });
+  }
 }
 
 serve(async (req) => {
@@ -694,13 +716,12 @@ serve(async (req) => {
       }
 
       case 'get_task_status': {
-        // Get task status from Browser-Use Cloud (with retry for transient errors)
-        const browserUseResponse = await resilientFetch(`${BROWSER_USE_API_URL}/tasks/${taskId}/status`, {
-          method: 'GET',
-          headers: {
-            'X-Browser-Use-API-Key': BROWSER_USE_API_KEY,
-          },
-        });
+        // Get task status from Browser-Use Cloud (with retry + graceful fallback)
+        const browserUseResponse = await fetchTaskStatusSafe(
+          `${BROWSER_USE_API_URL}/tasks/${taskId}/status`,
+          BROWSER_USE_API_KEY,
+          taskId
+        );
 
         // Handle 404 - task session no longer exists
         if (browserUseResponse.status === 404) {
