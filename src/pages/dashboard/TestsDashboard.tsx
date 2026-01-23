@@ -1002,8 +1002,9 @@ export default function TestsDashboard() {
                    (Array.isArray(dbTask.steps) ? dbTask.steps.length : null);
 
                  // Estimate cost (same formula as batch runner)
+                 // If step_count is missing, calculate cost from execution_time only (partial estimate)
                  let estimatedCost: number | null = null;
-                 if (typeof stepCount === 'number' && typeof executionTimeMs === 'number') {
+                 if (typeof executionTimeMs === 'number') {
                    let recordVideo = true;
                    if (test.project_id) {
                      const { data: project } = await supabase
@@ -1013,9 +1014,11 @@ export default function TestsDashboard() {
                        .maybeSingle();
                      if (typeof project?.record_video === 'boolean') recordVideo = project.record_video;
                    }
-                   const execMinutes = (executionTimeMs || 0) / 60000;
+                   const execMinutes = executionTimeMs / 60000;
                    const proxyRate = recordVideo ? 0.008 : 0.004;
-                   estimatedCost = 0.01 + (stepCount * 0.01) + (execMinutes * proxyRate);
+                   // If stepCount is known, use full formula; otherwise estimate with 0 step cost
+                   const stepCost = typeof stepCount === 'number' ? (stepCount * 0.01) : 0;
+                   estimatedCost = 0.01 + stepCost + (execMinutes * proxyRate);
                  }
 
                  await supabase
@@ -1103,8 +1106,9 @@ export default function TestsDashboard() {
               (typeof dbTask.step_count === 'number' ? dbTask.step_count : null) ??
               (Array.isArray(dbTask.steps) ? dbTask.steps.length : null);
 
+            // Estimate cost - if step_count is missing, calculate from execution_time only
             let estimatedCost: number | null = null;
-            if (typeof stepCount === 'number' && typeof executionTimeMs === 'number') {
+            if (typeof executionTimeMs === 'number') {
               let recordVideo = true;
               if (test.project_id) {
                 const { data: project } = await supabase
@@ -1114,9 +1118,10 @@ export default function TestsDashboard() {
                   .maybeSingle();
                 if (typeof project?.record_video === 'boolean') recordVideo = project.record_video;
               }
-              const execMinutes = (executionTimeMs || 0) / 60000;
+              const execMinutes = executionTimeMs / 60000;
               const proxyRate = recordVideo ? 0.008 : 0.004;
-              estimatedCost = 0.01 + (stepCount * 0.01) + (execMinutes * proxyRate);
+              const stepCost = typeof stepCount === 'number' ? (stepCount * 0.01) : 0;
+              estimatedCost = 0.01 + stepCost + (execMinutes * proxyRate);
             }
 
             await supabase
