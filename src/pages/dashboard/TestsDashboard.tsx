@@ -171,6 +171,16 @@ export default function TestsDashboard() {
 
   const dateLocale = i18n.language === 'cs' ? 'cs-CZ' : 'en-US';
 
+  const looksLikeSessionExpired = (val: string) => {
+    const s = val.toLowerCase();
+    return (
+      s.includes('session expired') ||
+      s.includes('session vypršela') ||
+      s.includes('task not found') ||
+      s.includes('task nebyl nalezen')
+    );
+  };
+
   // Fetch linked task when selectedTest changes
   useEffect(() => {
     const fetchLinkedTask = async () => {
@@ -300,6 +310,29 @@ export default function TestsDashboard() {
       return 'pending';
     };
 
+    const deriveResultSummaryFromTask = async (dbTask: { result: unknown; browser_use_task_id: string | null }) => {
+      const raw = dbTask.result
+        ? (typeof dbTask.result === 'string' ? dbTask.result : JSON.stringify(dbTask.result))
+        : '';
+
+      // If DB has a known "session expired" placeholder, try provider details via browser_use_task_id.
+      if (typeof raw === 'string' && raw && looksLikeSessionExpired(raw) && dbTask.browser_use_task_id) {
+        try {
+          const details = await supabase.functions.invoke('browser-use', {
+            body: { action: 'get_task_details', taskId: dbTask.browser_use_task_id },
+          });
+          const output = details.data?.output || details.data?.result;
+          if (typeof output === 'string' && output.trim()) return output.substring(0, 500);
+          if (output) return JSON.stringify(output).substring(0, 500);
+        } catch {
+          // ignore, fall back to DB
+        }
+      }
+
+      if (!raw) return null;
+      return typeof raw === 'string' ? raw.substring(0, 500) : JSON.stringify(raw).substring(0, 500);
+    };
+
     const checkRunningTests = async () => {
       for (const test of runningTests) {
         try {
@@ -335,9 +368,10 @@ export default function TestsDashboard() {
               executionTimeMs = new Date(dbTask.completed_at).getTime() - new Date(dbTask.started_at).getTime();
             }
 
-            const resultSummary = dbTask.result 
-              ? (typeof dbTask.result === 'string' ? dbTask.result.substring(0, 500) : JSON.stringify(dbTask.result).substring(0, 500))
-              : null;
+            const resultSummary = await deriveResultSummaryFromTask({
+              result: dbTask.result,
+              browser_use_task_id: dbTask.browser_use_task_id ?? null,
+            });
 
             await supabase
               .from('generated_tests')
@@ -392,7 +426,8 @@ export default function TestsDashboard() {
                   status: finalStatus,
                   last_run_at: recheckTask.completed_at || new Date().toISOString(),
                   execution_time_ms: executionTimeMs,
-                  result_summary: resultSummary,
+                  // If DB has a placeholder "session expired" result, avoid overwriting with it.
+                  result_summary: (resultSummary && looksLikeSessionExpired(resultSummary)) ? null : resultSummary,
                 })
                 .eq('id', test.id);
             }
@@ -1879,7 +1914,7 @@ export default function TestsDashboard() {
             </div>
           </DialogHeader>
 
-          <ScrollArea className="flex-1 min-h-0 h-full -mx-6 px-6">
+          <ScrollArea className="flex-1 min-h-0 -mx-6 px-6">
             <div className="space-y-6 pb-4">
               {/* Metadata */}
               <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4 p-4 bg-muted/50 rounded-lg">
