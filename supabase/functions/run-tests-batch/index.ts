@@ -996,9 +996,15 @@ serve(async (req) => {
       })
       .eq("id", batchId);
 
-    // Mark batch as completed if this was the last test
+    // Check if there are more tests to run
     const hasMoreTests = index + 1 < testIds.length;
-    if (!hasMoreTests) {
+    
+    if (hasMoreTests) {
+      // Schedule the next test
+      console.log(`[Batch ${batchId}] Scheduling next test (index ${index + 1})`);
+      await scheduleNextTest(batchId, testIds, index, userId, batchDelaySeconds);
+    } else {
+      // Mark batch as completed - this was the last test
       console.log(`[Batch ${batchId}] All tests completed (${completedTests} total, ${passedTests} passed, ${failedTests} failed)`);
       
       await supabase
