@@ -194,11 +194,8 @@ async function processSingleTest(
   console.log(`[Batch ${batchId}] Processing test ${testId} (${testIndex + 1}/${totalTests})`);
   
   const supabase = createClient(SUPABASE_URL!, SUPABASE_SERVICE_ROLE_KEY!);
-  
-  // Generate unique task ID for atomic claim
-  const claimedTaskId = crypto.randomUUID();
-  
-  console.log(`[Batch ${batchId}] Claim attempt testId=${testId} index=${testIndex} claimedTaskId=${claimedTaskId}`);
+
+  console.log(`[Batch ${batchId}] Claim attempt testId=${testId} index=${testIndex}`);
   
   // ATOMIC CLAIM: Only succeed if test is not already running
   // We reset task_id at batch start, so we only need to check status here
@@ -207,7 +204,6 @@ async function processSingleTest(
     .from("generated_tests")
     .update({
       status: "running",
-      task_id: claimedTaskId,
       last_run_at: new Date().toISOString(),
     })
     .eq("id", testId)
@@ -227,7 +223,7 @@ async function processSingleTest(
     return { didRun: false, passed: false, failed: false, sessionId: null };
   }
 
-  console.log(`[Batch ${batchId}] Claim SUCCESS taskId=${claimedTaskId} for testId=${testId}`);
+  console.log(`[Batch ${batchId}] Claim SUCCESS for testId=${testId}`);
   
   // Update batch current_test_id
   await supabase
@@ -427,12 +423,9 @@ async function processSingleTest(
       throw new Error("Failed to create task after all retries");
     }
 
-    // Create record in tasks table using the pre-generated claimedTaskId
-    // This ensures generated_tests.task_id matches tasks.id
     const { data: taskRecord, error: taskError2 } = await supabase
       .from("tasks")
       .insert({
-        id: claimedTaskId, // Use the same ID we claimed with
         user_id: userId,
         project_id: test.project_id,
         title: test.title,
@@ -452,14 +445,13 @@ async function processSingleTest(
         .from("generated_tests")
         .update({
           status: "error",
-          task_id: null,
           result_summary: `Failed to create task record: ${taskError2?.message || "Unknown error"}`,
         })
         .eq("id", testId);
       throw new Error("Failed to create task record");
     }
 
-    console.log(`[Batch ${batchId}] Task record created: ${taskRecord.id} (matches claimedTaskId: ${claimedTaskId})`);
+    console.log(`[Batch ${batchId}] Task record created: ${taskRecord.id}`);
 
     // Poll for task completion
     let taskFinished = false;
@@ -865,16 +857,6 @@ serve(async (req) => {
           { status: 409, headers: { ...corsHeaders, "Content-Type": "application/json" } }
         );
       }
-
-      // Reset task_id for all tests in batch to ensure fresh claim
-      // This allows re-running tests that were previously executed
-      console.log(`[run-tests-batch] Resetting task_id for ${testIds.length} tests before batch start`);
-      
-      await supabase
-        .from("generated_tests")
-        .update({ task_id: null })
-        .in("id", testIds)
-        .neq("status", "running"); // Only reset non-running tests
 
       // Start the batch
       await supabase
