@@ -200,7 +200,8 @@ async function processSingleTest(
   
   console.log(`[Batch ${batchId}] Claim attempt testId=${testId} index=${testIndex} claimedTaskId=${claimedTaskId}`);
   
-  // ATOMIC CLAIM: Only succeed if test is not already running AND has no task_id
+  // ATOMIC CLAIM: Only succeed if test is not already running
+  // We reset task_id at batch start, so we only need to check status here
   // This prevents duplicate invocations from creating multiple sessions/tasks
   const { data: claimResult, error: claimError } = await supabase
     .from("generated_tests")
@@ -211,7 +212,6 @@ async function processSingleTest(
     })
     .eq("id", testId)
     .neq("status", "running")
-    .is("task_id", null)
     .select("id")
     .maybeSingle();
 
@@ -865,6 +865,16 @@ serve(async (req) => {
           { status: 409, headers: { ...corsHeaders, "Content-Type": "application/json" } }
         );
       }
+
+      // Reset task_id for all tests in batch to ensure fresh claim
+      // This allows re-running tests that were previously executed
+      console.log(`[run-tests-batch] Resetting task_id for ${testIds.length} tests before batch start`);
+      
+      await supabase
+        .from("generated_tests")
+        .update({ task_id: null })
+        .in("id", testIds)
+        .neq("status", "running"); // Only reset non-running tests
 
       // Start the batch
       await supabase
