@@ -1,89 +1,97 @@
 
-<context>
-U tebe se znovu rozjela situace, kdy se v jedné batchi spustí víc testů najednou. Z aktuálního kódu `run-tests-batch` je vidět, že další invokace se plánuje „fire-and-forget“ a zároveň uvnitř `scheduleNextTest` je delay. Pokud se omylem spustí více invokací pro stejný `currentIndex` (např. duplicita self-invoke, retry, nebo opakované naplánování), všechny ty duplicity po svém delay doběhnou a spustí další index → výsledkem je více paralelních browser sessionů.
 
-Nejbezpečnější fix je udělat celý batch runner idempotentní: pro každý `testId` dovolíme “claim” pouze jedné invokaci. Všechny ostatní invokace pro stejný test se okamžitě ukončí a nic nespustí. To zabrání paralelnímu startu i kdyby se scheduling rozbil.
-</context>
+# Oprava: Batch nespouští další testy po dokončení prvního
 
-<goals>
-1) Garantovat “one-by-one” i při duplicitních invokacích (hard server-side guard).
-2) Nezvyšovat počet paralelních browser sessionů ani omylem.
-3) Nezkreslovat batch progress (completed/passed/failed) kvůli duplicitám.
-</goals>
+## Problém
+Po dokončení testu se batch zastaví, protože chybí volání `scheduleNextTest()` v hlavním handleru. Funkce existuje, ale není nikde volána po úspěšném zpracování testu.
 
-<root-cause-analysis>
-Aktuálně není žádný atomický “lock/claim” mechanismus, který by řekl: “Tento test teď zpracovává konkrétní invokace.”  
-Proto když dojde k duplicitní invokaci pro stejný index/test (a to se v praxi občas stává), obě invokace vytvoří session + task a jede to paralelně.
+## Analýza kódu
 
-Klíčový problém: kontrola “už běží?” je jen na úrovni batch runu (jeden batch na usera), ale chybí ochrana “jeden test z batch runu může běžet jen jednou”.
-</root-cause-analysis>
+**Aktuální flow (nefunkční):**
+```text
+Initial Call
+    │
+    ▼
+fireAndForget(currentIndex: 0) ──► processSingleTest(test 0)
+                                          │
+                                          ▼
+                                   Update progress
+                                          │
+                                          ▼
+                                   Return response
+                                          │
+                                          ▼
+                                   KONEC! (chybí scheduleNextTest)
+```
 
-<implementation-steps>
-<step id="1" title="Přidat server-side claim na úrovni generated_tests před vytvořením session/task">
-V `supabase/functions/run-tests-batch/index.ts` upravíme `processSingleTest()` tak, aby ještě před voláním Browser-Use API provedla atomický claim:
+**Požadovaný flow:**
+```text
+Initial Call
+    │
+    ▼
+fireAndForget(currentIndex: 0) ──► processSingleTest(test 0)
+                                          │
+                                          ▼
+                                   Update progress
+                                          │
+                                          ▼
+                                   scheduleNextTest(currentIndex + 1) ◄── TOTO CHYBÍ!
+                                          │
+                                          ▼
+                                   Return response
+```
 
-- Vygeneruje se `claimedTaskId = crypto.randomUUID()` (Deno runtime).
-- Provede se UPDATE na `generated_tests`, který uspěje pouze pokud test není už rozběhnutý:
-  - podmínka typicky: `id = testId AND status != 'running' AND task_id IS NULL`  
-  - update nastaví: `status='running'`, `task_id=claimedTaskId`, `last_run_at=now()`
-- Pokud update neovlivní žádný řádek (0 rows), znamená to, že test už někdo jiný claimnul → tato invokace se hned ukončí bez vytvoření session/task.
+## Řešení
 
-Tímhle zajistíme, že session/task se vytvoří jen jednou, i kdyby se runner spustil duplicitně.
-</step>
+Upravit `supabase/functions/run-tests-batch/index.ts` - přidat volání `scheduleNextTest()` po dokončení testu:
 
-<step id="2" title="Zajistit korektní progress – duplicity nesmí zvyšovat completed_tests">
-Upravíme návratový typ `processSingleTest()` tak, aby vracel např.:
-- `didRun: boolean` (true jen když claim proběhl a test se opravdu spustil)
-- `passed/failed` jako dnes
+**Změna v řádcích cca 999-1013:**
 
-V hlavním handleru (část kolem řádků ~910+) uděláme:
-- pokud `didRun === false`:
-  - neinkrementovat `completed_tests/passed_tests/failed_tests`
-  - pouze vrátit odpověď typu “Skipped duplicate invocation”
-  - a hlavně nic dalšího neschedulovat (protože schedulování udělá ta invokace, která test skutečně běží)
+Před:
+```typescript
+const hasMoreTests = index + 1 < testIds.length;
+if (!hasMoreTests) {
+  console.log(`[Batch ${batchId}] All tests completed...`);
+  // ... mark batch as completed
+}
 
-To zabrání tomu, aby duplicity “dokončovaly” batch a rozházely statistiky.
-</step>
+return new Response(...);
+```
 
-<step id="3" title="Když claim uspěje, vytvořit tasks záznam s předem vygenerovaným id">
-Protože claim nastaví `generated_tests.task_id = claimedTaskId` ještě před vložením do `tasks`, upravíme insert do `tasks` tak, aby používal stejné ID:
+Po:
+```typescript
+const hasMoreTests = index + 1 < testIds.length;
+if (hasMoreTests) {
+  // NOVÉ: Spustit další test
+  console.log(`[Batch ${batchId}] Scheduling next test (index ${index + 1})`);
+  await scheduleNextTest(batchId, testIds, index, userId, batchDelaySeconds);
+} else {
+  console.log(`[Batch ${batchId}] All tests completed...`);
+  // ... mark batch as completed
+}
 
-- Insert do `tasks` bude obsahovat `id: claimedTaskId`
-- Pokud insert selže, v catch bloku provedeme rollback na `generated_tests`:
-  - `status='error'` nebo zpět `pending`
-  - `task_id = null`
-  - `result_summary = ...`
+return new Response(...);
+```
 
-Tím nedovolíme, aby zůstal “viset” `task_id` bez odpovídajícího `tasks` záznamu.
-</step>
+## Technické detaily
 
-<step id="4" title="Dodat logy, abychom příště přesně viděli, jestli šlo o duplicitu">
-Doplníme logy:
-- `[Batch X] Claim attempt testId=... index=...`
-- `[Batch X] Claim success taskId=...`
-- `[Batch X] Claim SKIPPED (already running)`
+- `scheduleNextTest()` již obsahuje delay logiku (čeká `batchDelaySeconds` před voláním)
+- `scheduleNextTest()` volá sebe sama přes `fetch()` s `currentIndex + 1`
+- Tím se zajistí sekvenční zpracování testů s požadovanou prodlevou
 
-Tohle umožní rychle v logách potvrdit, že problém byl duplicita invokace a že se už bezpečně ignoruje.
-</step>
+## Soubory k úpravě
 
-<step id="5" title="Ověření fixu">
+| Soubor | Změna |
+|--------|-------|
+| `supabase/functions/run-tests-batch/index.ts` | Přidat volání `scheduleNextTest()` po úspěšném dokončení testu (před řádek 1014) |
+
+## Ověření
+
 Po úpravě:
-- spustit batch s více testy
-- v logách ověřit, že pro jeden `testId` je jen jeden “Claim success”
-- ověřit, že se nevytváří více paralelních sessions (zmizí “Too many concurrent active sessions” během batch runu)
-</step>
-</implementation-steps>
+1. Spustit batch s více testy
+2. V logách ověřit:
+   - `[Batch X] Scheduling next test (index 1)`
+   - `[Batch X] Waiting Xs before scheduling next test invocation...`
+   - `[Batch X] Processing test 2/N: ...`
+3. Ověřit že progress v UI se aktualizuje (1/4, 2/4, ...)
 
-<files-to-change>
-1) `supabase/functions/run-tests-batch/index.ts`
-   - `processSingleTest()` přidat claim na `generated_tests` ještě před session/task creation
-   - upravit insert do `tasks` aby používal předem vygenerované `id`
-   - vracet `didRun` a podle toho řídit inkrement progressu v handleru
-2) `src/pages/dashboard/TestsDashboard.tsx`
-   - pravděpodobně bez změn (frontend už batch spouští jen jednou), maximálně jen drobné UX hlášky “batch started”
-</files-to-change>
-
-<risk-notes>
-- Claim podmínka musí být dostatečně přísná, aby blokovala duplicity, ale zároveň umožnila re-run testu (tzn. při novém spuštění musí být `task_id` předem null nebo test resetnutý). Pokud teď aplikace testy nerezetuje `task_id`, doplníme i safe reset (typicky se to už dělá přes “Reset test status”).
-- Pokud existuje stav, kdy `status='running'` zůstane viset (např. crash), je možné doplnit “stale lock” logiku později (např. pokud `last_run_at` je starší než X minut, dovolíme re-claim). To ale nechci teď otevírat bez potvrzení, aby se nezavedla další nejistota.
-</risk-notes>
