@@ -230,11 +230,9 @@ export default function TestsDashboard() {
     return () => clearInterval(backupInterval);
   }, [user]);
 
-  // Real-time subscription for batch runs with reconnect logic
+  // Real-time subscription for batch runs
   useEffect(() => {
     if (!user) return;
-
-    let reconnectTimeout: ReturnType<typeof setTimeout> | null = null;
 
     const batchChannel = supabase
       .channel('batch-runs-realtime')
@@ -253,17 +251,9 @@ export default function TestsDashboard() {
       )
       .subscribe((status) => {
         console.log('Batch channel status:', status);
-        if (status === 'CLOSED' || status === 'CHANNEL_ERROR') {
-          // Reconnect after 3 seconds
-          reconnectTimeout = setTimeout(() => {
-            console.log('Reconnecting batch channel...');
-            batchChannel.subscribe();
-          }, 3000);
-        }
       });
 
     return () => {
-      if (reconnectTimeout) clearTimeout(reconnectTimeout);
       supabase.removeChannel(batchChannel);
     };
   }, [user]);
