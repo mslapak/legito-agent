@@ -975,32 +975,60 @@ export default function TestsDashboard() {
               // Verify DB task before marking as error
               const { data: dbTask } = await supabase
                 .from('tasks')
-                .select('status, started_at, completed_at, updated_at, result')
+                 .select('status, started_at, completed_at, updated_at, result, step_count, steps, project_id, error_message')
                 .eq('id', dbTaskId)
                 .maybeSingle();
 
-              if (dbTask?.status === 'completed') {
-                // Task actually completed – use DB data
-                const startedAt = dbTask.started_at;
-                const finishedAt = dbTask.completed_at || dbTask.updated_at;
-                const executionTimeMs = startedAt && finishedAt
-                  ? new Date(finishedAt).getTime() - new Date(startedAt).getTime()
-                  : null;
+               if (dbTask?.status && ['completed', 'failed'].includes(dbTask.status)) {
+                 // Task is finalized in DB – NEVER overwrite with “session expired”.
+                 const startedAt = dbTask.started_at;
+                 const finishedAt = dbTask.completed_at || dbTask.updated_at;
+                 const executionTimeMs = startedAt && finishedAt
+                   ? new Date(finishedAt).getTime() - new Date(startedAt).getTime()
+                   : null;
 
-                const output = dbTask.result ?? '';
-                const resultSummary = typeof output === 'string'
-                  ? output.substring(0, 500)
-                  : JSON.stringify(output).substring(0, 500);
+                 // Pull summary primarily from DB (it might already contain the real output)
+                 const rawResult = dbTask.result ?? (dbTask.error_message ? { error: dbTask.error_message } : null);
+                 const output = (rawResult && typeof rawResult === 'object' && 'output' in (rawResult as Record<string, unknown>))
+                   ? (rawResult as Record<string, unknown>).output
+                   : rawResult;
 
-                await supabase
-                  .from('generated_tests')
-                  .update({
-                    status: 'passed',
-                    last_run_at: new Date().toISOString(),
-                    execution_time_ms: executionTimeMs,
-                    result_summary: resultSummary || null,
-                  })
-                  .eq('id', testId);
+                 const resultSummary = output
+                   ? (typeof output === 'string' ? output.substring(0, 500) : JSON.stringify(output).substring(0, 500))
+                   : null;
+
+                 const stepCount =
+                   (typeof dbTask.step_count === 'number' ? dbTask.step_count : null) ??
+                   (Array.isArray(dbTask.steps) ? dbTask.steps.length : null);
+
+                 // Estimate cost (same formula as batch runner)
+                 let estimatedCost: number | null = null;
+                 if (typeof stepCount === 'number' && typeof executionTimeMs === 'number') {
+                   let recordVideo = true;
+                   if (test.project_id) {
+                     const { data: project } = await supabase
+                       .from('projects')
+                       .select('record_video')
+                       .eq('id', test.project_id)
+                       .maybeSingle();
+                     if (typeof project?.record_video === 'boolean') recordVideo = project.record_video;
+                   }
+                   const execMinutes = (executionTimeMs || 0) / 60000;
+                   const proxyRate = recordVideo ? 0.008 : 0.004;
+                   estimatedCost = 0.01 + (stepCount * 0.01) + (execMinutes * proxyRate);
+                 }
+
+                 await supabase
+                   .from('generated_tests')
+                   .update({
+                     status: dbTask.status === 'failed' ? 'error' : 'passed',
+                     last_run_at: (dbTask.completed_at || dbTask.updated_at || new Date().toISOString()),
+                     execution_time_ms: executionTimeMs,
+                     result_summary: resultSummary,
+                     step_count: stepCount,
+                     estimated_cost: estimatedCost,
+                   })
+                   .eq('id', testId);
               } else {
                 // Session truly expired before completion
                 await supabase
@@ -1051,29 +1079,55 @@ export default function TestsDashboard() {
           // Timeout - before writing a timeout, verify whether the DB task has already completed.
           const { data: dbTask } = await supabase
             .from('tasks')
-            .select('status, started_at, completed_at, updated_at, result')
+            .select('status, started_at, completed_at, updated_at, result, step_count, steps, project_id, error_message')
             .eq('id', dbTaskId)
             .maybeSingle();
 
-          if (dbTask?.status === 'completed') {
+          if (dbTask?.status && ['completed', 'failed'].includes(dbTask.status)) {
             const startedAt = dbTask.started_at;
             const finishedAt = dbTask.completed_at || dbTask.updated_at;
             const executionTimeMs = startedAt && finishedAt
               ? new Date(finishedAt).getTime() - new Date(startedAt).getTime()
               : null;
 
-            const output = dbTask.result ?? '';
-            const resultSummary = typeof output === 'string'
-              ? output.substring(0, 500)
-              : JSON.stringify(output).substring(0, 500);
+            const rawResult = dbTask.result ?? (dbTask.error_message ? { error: dbTask.error_message } : null);
+            const output = (rawResult && typeof rawResult === 'object' && 'output' in (rawResult as Record<string, unknown>))
+              ? (rawResult as Record<string, unknown>).output
+              : rawResult;
+
+            const resultSummary = output
+              ? (typeof output === 'string' ? output.substring(0, 500) : JSON.stringify(output).substring(0, 500))
+              : null;
+
+            const stepCount =
+              (typeof dbTask.step_count === 'number' ? dbTask.step_count : null) ??
+              (Array.isArray(dbTask.steps) ? dbTask.steps.length : null);
+
+            let estimatedCost: number | null = null;
+            if (typeof stepCount === 'number' && typeof executionTimeMs === 'number') {
+              let recordVideo = true;
+              if (test.project_id) {
+                const { data: project } = await supabase
+                  .from('projects')
+                  .select('record_video')
+                  .eq('id', test.project_id)
+                  .maybeSingle();
+                if (typeof project?.record_video === 'boolean') recordVideo = project.record_video;
+              }
+              const execMinutes = (executionTimeMs || 0) / 60000;
+              const proxyRate = recordVideo ? 0.008 : 0.004;
+              estimatedCost = 0.01 + (stepCount * 0.01) + (execMinutes * proxyRate);
+            }
 
             await supabase
               .from('generated_tests')
               .update({
-                status: 'passed',
-                last_run_at: new Date().toISOString(),
+                status: dbTask.status === 'failed' ? 'error' : 'passed',
+                last_run_at: (dbTask.completed_at || dbTask.updated_at || new Date().toISOString()),
                 execution_time_ms: executionTimeMs,
-                result_summary: resultSummary || null,
+                result_summary: resultSummary,
+                step_count: stepCount,
+                estimated_cost: estimatedCost,
               })
               .eq('id', testId);
           } else {
