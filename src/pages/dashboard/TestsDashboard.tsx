@@ -965,21 +965,26 @@ export default function TestsDashboard() {
           });
 
           const apiStatus = statusResponse.data?.status;
-          if (['finished', 'completed', 'done', 'failed', 'error', 'stopped', 'not_found', 'expired'].includes(apiStatus)) {
-            taskCompleted = true;
-            
-            // When session expired/not_found, check DB task first – it may have completed successfully
-            const isExpiredOrNotFound = apiStatus === 'not_found' || apiStatus === 'expired' || statusResponse.data?.expired;
-            
-            if (isExpiredOrNotFound) {
-              // Verify DB task before marking as error
-              const { data: dbTask } = await supabase
-                .from('tasks')
-                 .select('status, started_at, completed_at, updated_at, result, step_count, steps, project_id, error_message')
-                .eq('id', dbTaskId)
-                .maybeSingle();
 
-               if (dbTask?.status && ['completed', 'failed'].includes(dbTask.status)) {
+          const isExpiredOrNotFound =
+            apiStatus === 'not_found' || apiStatus === 'expired' || statusResponse.data?.expired;
+
+          const isTerminalProviderStatus =
+            ['finished', 'completed', 'done', 'failed', 'error', 'stopped'].includes(apiStatus);
+
+          // IMPORTANT:
+          // Provider tasks can temporarily return not_found/expired while our DB task is still processing
+          // (or while the provider is closing/cleaning up). In that case we MUST NOT finalize the test
+          // as error; we keep waiting and let the DB task be the source of truth.
+          if (isExpiredOrNotFound) {
+            const { data: dbTask } = await supabase
+              .from('tasks')
+              .select('status, started_at, completed_at, updated_at, result, step_count, steps, project_id, error_message')
+              .eq('id', dbTaskId)
+              .maybeSingle();
+
+            if (dbTask?.status && ['completed', 'failed'].includes(dbTask.status)) {
+              taskCompleted = true;
                  // Task is finalized in DB – NEVER overwrite with “session expired”.
                  const startedAt = dbTask.started_at;
                  const finishedAt = dbTask.completed_at || dbTask.updated_at;
@@ -1032,49 +1037,42 @@ export default function TestsDashboard() {
                      estimated_cost: estimatedCost,
                    })
                    .eq('id', testId);
-              } else {
-                // Session truly expired before completion
-                await supabase
-                  .from('generated_tests')
-                  .update({ 
-                    status: 'error',
-                    last_run_at: new Date().toISOString(),
-                    result_summary: i18n.language === 'cs'
-                      ? 'Session vypršela / task nebyl nalezen'
-                      : 'Session expired / task not found',
-                  })
-                  .eq('id', testId);
-              }
             } else {
-              // Normal completion (finished, failed, etc.)
-              let newStatus: 'passed' | 'error' = 'passed';
-              if (apiStatus === 'failed' || apiStatus === 'error') {
-                newStatus = 'error';
-              }
-
-              const startedAt = statusResponse.data?.started_at || statusResponse.data?.startedAt;
-              const finishedAt = statusResponse.data?.finished_at || statusResponse.data?.finishedAt || new Date().toISOString();
-              let executionTimeMs: number | null = null;
-              
-              if (startedAt) {
-                executionTimeMs = new Date(finishedAt).getTime() - new Date(startedAt).getTime();
-              }
-
-              const output = statusResponse.data?.output || statusResponse.data?.result || '';
-              const resultSummary = typeof output === 'string' 
-                ? output.substring(0, 500) 
-                : JSON.stringify(output).substring(0, 500);
-
-              await supabase
-                .from('generated_tests')
-                .update({ 
-                  status: newStatus,
-                  last_run_at: new Date().toISOString(),
-                  execution_time_ms: executionTimeMs,
-                  result_summary: resultSummary || null,
-                })
-                .eq('id', testId);
+              // DB task not finalized yet => keep waiting (do NOT mark error)
+              taskCompleted = false;
+              continue;
             }
+          } else if (isTerminalProviderStatus) {
+            taskCompleted = true;
+
+            // Normal completion (finished, failed, etc.)
+            let newStatus: 'passed' | 'error' = 'passed';
+            if (apiStatus === 'failed' || apiStatus === 'error') {
+              newStatus = 'error';
+            }
+
+            const startedAt = statusResponse.data?.started_at || statusResponse.data?.startedAt;
+            const finishedAt = statusResponse.data?.finished_at || statusResponse.data?.finishedAt || new Date().toISOString();
+            let executionTimeMs: number | null = null;
+
+            if (startedAt) {
+              executionTimeMs = new Date(finishedAt).getTime() - new Date(startedAt).getTime();
+            }
+
+            const output = statusResponse.data?.output || statusResponse.data?.result || '';
+            const resultSummary = typeof output === 'string'
+              ? output.substring(0, 500)
+              : JSON.stringify(output).substring(0, 500);
+
+            await supabase
+              .from('generated_tests')
+              .update({
+                status: newStatus,
+                last_run_at: new Date().toISOString(),
+                execution_time_ms: executionTimeMs,
+                result_summary: resultSummary || null,
+              })
+              .eq('id', testId);
           }
         }
 
@@ -1137,14 +1135,16 @@ export default function TestsDashboard() {
               .eq('id', testId);
           } else {
             // Real timeout
-          await supabase
-            .from('generated_tests')
-            .update({ 
-              status: 'error',
-              last_run_at: new Date().toISOString(),
-              result_summary: i18n.language === 'cs' ? 'Timeout - test nedoběhl do 5 minut' : 'Timeout - test did not complete within 5 minutes',
-            })
-            .eq('id', testId);
+            await supabase
+              .from('generated_tests')
+              .update({
+                status: 'error',
+                last_run_at: new Date().toISOString(),
+                result_summary: i18n.language === 'cs'
+                  ? 'Timeout - test nedoběhl do 5 minut'
+                  : 'Timeout - test did not complete within 5 minutes',
+              })
+              .eq('id', testId);
           }
         }
 
