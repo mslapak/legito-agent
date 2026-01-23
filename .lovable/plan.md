@@ -1,97 +1,126 @@
 
+# Oprava: Batch UI nezobrazuje progress ani název aktuálního testu
 
-# Oprava: Batch nespouští další testy po dokončení prvního
+## Identifikované problémy
 
-## Problém
-Po dokončení testu se batch zastaví, protože chybí volání `scheduleNextTest()` v hlavním handleru. Funkce existuje, ale není nikde volána po úspěšném zpracování testu.
+Analýza databáze a kódu odhalila následující root causes:
 
-## Analýza kódu
-
-**Aktuální flow (nefunkční):**
-```text
-Initial Call
-    │
-    ▼
-fireAndForget(currentIndex: 0) ──► processSingleTest(test 0)
-                                          │
-                                          ▼
-                                   Update progress
-                                          │
-                                          ▼
-                                   Return response
-                                          │
-                                          ▼
-                                   KONEC! (chybí scheduleNextTest)
-```
-
-**Požadovaný flow:**
-```text
-Initial Call
-    │
-    ▼
-fireAndForget(currentIndex: 0) ──► processSingleTest(test 0)
-                                          │
-                                          ▼
-                                   Update progress
-                                          │
-                                          ▼
-                                   scheduleNextTest(currentIndex + 1) ◄── TOTO CHYBÍ!
-                                          │
-                                          ▼
-                                   Return response
-```
+| Problém | Příčina | Dopad |
+|---------|---------|-------|
+| Testy se nespouští | Claim podmínka vyžaduje `task_id IS NULL`, ale testy z předchozích běhů mají `task_id` nastaveno | Batch "běží" ale nic nedělá |
+| Progress = 0/4 | `completed_tests` se neaktualizuje, protože claim failne | UI ukazuje špatný progres |
+| Chybí název testu | `current_test_id` se nenastaví, protože claim failne | Prázdné "Aktuální: ..." |
+| Tlačítka `tests.pause` | Překladový klíč se nezobrazuje správně | Chybí lokalizace tlačítek |
 
 ## Řešení
 
-Upravit `supabase/functions/run-tests-batch/index.ts` - přidat volání `scheduleNextTest()` po dokončení testu:
+### Krok 1: Reset test `task_id` před batch runem
 
-**Změna v řádcích cca 999-1013:**
+Před spuštěním batch runu resetovat `task_id` na `null` pro všechny vybrané testy. To zajistí, že claim podmínka projde.
+
+**Změna v `supabase/functions/run-tests-batch/index.ts`** - před řádek 130 (před main loop):
+
+```typescript
+// Reset task_id for all tests in batch to ensure fresh claim
+console.log(`[Batch ${batchId}] Resetting task_id for ${testIds.length} tests before batch start`);
+
+await supabase
+  .from("generated_tests")
+  .update({ task_id: null })
+  .in("id", testIds)
+  .neq("status", "running"); // Only reset non-running tests
+```
+
+### Krok 2: Upravit claim podmínku - povolit re-run testů
+
+Změnit atomický claim tak, aby umožnil re-run testů které mají `status` != `running`:
+
+**Změna řádků 205-216:**
 
 Před:
 ```typescript
-const hasMoreTests = index + 1 < testIds.length;
-if (!hasMoreTests) {
-  console.log(`[Batch ${batchId}] All tests completed...`);
-  // ... mark batch as completed
-}
-
-return new Response(...);
+.neq("status", "running")
+.is("task_id", null)
 ```
 
 Po:
 ```typescript
-const hasMoreTests = index + 1 < testIds.length;
-if (hasMoreTests) {
-  // NOVÉ: Spustit další test
-  console.log(`[Batch ${batchId}] Scheduling next test (index ${index + 1})`);
-  await scheduleNextTest(batchId, testIds, index, userId, batchDelaySeconds);
-} else {
-  console.log(`[Batch ${batchId}] All tests completed...`);
-  // ... mark batch as completed
-}
-
-return new Response(...);
+.neq("status", "running")
+// Removed: .is("task_id", null) - allows re-runs of previously executed tests
 ```
+
+A přidat podmínku pouze pro aktuálně běžící test:
+```typescript
+// Check if test is already being processed in THIS batch
+const { data: currentlyRunning } = await supabase
+  .from("generated_tests")
+  .select("status")
+  .eq("id", testId)
+  .eq("status", "running")
+  .single();
+
+if (currentlyRunning) {
+  console.log(`[Batch ${batchId}] Test ${testId} already running, skipping`);
+  return { didRun: false, passed: false, failed: false, sessionId: null };
+}
+```
+
+### Krok 3: Ověřit překlady
+
+Zkontrolovat a opravit případné duplicitní JSON objekty v překladových souborech:
+- `src/i18n/locales/cs/translation.json`
+- `src/i18n/locales/en/translation.json`
+
+Potenciální problém: duplicitní `tests` objekty, kde druhý přepíše první a ztratí klíče `pause`, `resume`, `cancel`.
+
+---
 
 ## Technické detaily
 
-- `scheduleNextTest()` již obsahuje delay logiku (čeká `batchDelaySeconds` před voláním)
-- `scheduleNextTest()` volá sebe sama přes `fetch()` s `currentIndex + 1`
-- Tím se zajistí sekvenční zpracování testů s požadovanou prodlevou
+### Datový flow po opravě
 
-## Soubory k úpravě
+```text
+Batch Start
+    │
+    ▼
+Reset všech test task_id → null
+    │
+    ▼
+fireAndForget(index: 0)
+    │
+    ▼
+processSingleTest() ──► Claim test (status != 'running')
+                              │
+                              ▼
+                        Update current_test_id ← NYNÍ FUNGUJE
+                              │
+                              ▼
+                        Run browser session
+                              │
+                              ▼
+                        Update completed_tests ← NYNÍ FUNGUJE
+                              │
+                              ▼
+                        scheduleNextTest(index + 1)
+```
+
+### Soubory k úpravě
 
 | Soubor | Změna |
 |--------|-------|
-| `supabase/functions/run-tests-batch/index.ts` | Přidat volání `scheduleNextTest()` po úspěšném dokončení testu (před řádek 1014) |
+| `supabase/functions/run-tests-batch/index.ts` | (1) Přidat reset `task_id` při startu batch; (2) Upravit claim podmínku |
+| `src/i18n/locales/cs/translation.json` | Ověřit/opravit duplicitní `tests` objekt |
+| `src/i18n/locales/en/translation.json` | Ověřit/opravit duplicitní `tests` objekt |
 
-## Ověření
+---
 
-Po úpravě:
-1. Spustit batch s více testy
-2. V logách ověřit:
-   - `[Batch X] Scheduling next test (index 1)`
-   - `[Batch X] Waiting Xs before scheduling next test invocation...`
-   - `[Batch X] Processing test 2/N: ...`
-3. Ověřit že progress v UI se aktualizuje (1/4, 2/4, ...)
+## Ověření po implementaci
 
+1. Spustit batch s 3+ testy
+2. V UI ověřit:
+   - Progress se aktualizuje (1/3, 2/3, ...)
+   - Název aktuálního testu se zobrazuje
+   - Tlačítka "Pozastavit" / "Zrušit" mají správný text
+3. V databázi ověřit:
+   - `test_batch_runs.completed_tests` se inkrementuje
+   - `test_batch_runs.current_test_id` se mění s každým testem
