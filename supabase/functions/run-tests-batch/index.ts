@@ -130,8 +130,14 @@ function evaluateTestResult(resultSummary: string, expectedResult: string | null
 }
 
 // Self-invoke to process next test (recursive edge function call)
+// Now includes internal delay to ensure sequential execution even when called early
 async function scheduleNextTest(batchId: string, testIds: string[], currentIndex: number, userId: string, batchDelaySeconds?: number) {
   const functionUrl = `${SUPABASE_URL}/functions/v1/run-tests-batch`;
+  
+  // Wait for the delay BEFORE scheduling to ensure sequential execution
+  const minDelay = Math.max(batchDelaySeconds || 10, 5) * 1000;
+  console.log(`[Batch ${batchId}] Waiting ${minDelay / 1000}s before scheduling next test invocation for index ${currentIndex + 1}...`);
+  await delay(minDelay);
   
   console.log(`[Batch ${batchId}] Scheduling next test invocation for index ${currentIndex + 1}`);
   
@@ -835,7 +841,22 @@ serve(async (req) => {
     const testId = testIds[index];
     console.log(`[Batch ${batchId}] Processing test ${index + 1}/${testIds.length}: ${testId}`);
 
-    // Process single test
+    // CRITICAL: Schedule next test FIRST, before processing current test
+    // This ensures the batch continues even if this invocation times out during media fetch
+    const hasMoreTests = index + 1 < testIds.length;
+    
+    if (hasMoreTests) {
+      const minDelay = Math.max(batchDelaySeconds || 10, 5) * 1000;
+      console.log(`[Batch ${batchId}] Pre-scheduling next test (index ${index + 1}) with ${minDelay / 1000}s delay...`);
+      
+      // Schedule next test invocation immediately - it will wait for the delay internally
+      // This is fire-and-forget to ensure the chain continues
+      scheduleNextTest(batchId, testIds, index, userId, batchDelaySeconds).catch(err => {
+        console.error(`[Batch ${batchId}] Failed to pre-schedule next test:`, err);
+      });
+    }
+
+    // Process single test (this may take a while due to media fetch)
     const result = await processSingleTest(
       batchId,
       testId,
@@ -867,16 +888,8 @@ serve(async (req) => {
       await stopSessionResilient(result.sessionId, batchId);
     }
 
-    // Wait before next test
-    const minDelay = Math.max(batchDelaySeconds || 10, 5) * 1000;
-    console.log(`[Batch ${batchId}] Waiting ${minDelay / 1000}s before scheduling next test...`);
-    await delay(minDelay);
-
-    // Schedule next test (recursive call)
-    if (index + 1 < testIds.length) {
-      await scheduleNextTest(batchId, testIds, index, userId, batchDelaySeconds);
-    } else {
-      // Final test completed
+    // Mark batch as completed if this was the last test
+    if (!hasMoreTests) {
       console.log(`[Batch ${batchId}] All tests completed (${completedTests} total, ${passedTests} passed, ${failedTests} failed)`);
       
       await supabase
