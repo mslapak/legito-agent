@@ -174,6 +174,7 @@ async function processSingleTest(
   batchId: string, 
   testId: string, 
   userId: string, 
+  testIds: string[],
   testIndex: number,
   totalTests: number,
   overrideDelaySeconds?: number
@@ -454,6 +455,27 @@ async function processSingleTest(
           resultSummary = statusData.output || statusData.result || "";
           steps = statusData.steps || [];
 
+          // IMPORTANT: strict one-by-one execution
+          // Close the browser session FIRST, then schedule the next invocation.
+          // This prevents "Too many concurrent active sessions" errors when a previous invocation
+          // continues media processing while a new one starts.
+          if (sessionIdForCleanup) {
+            try {
+              await stopSessionResilient(sessionIdForCleanup, batchId);
+            } catch (e) {
+              console.log(`[Batch ${batchId}] Error stopping session before scheduling next test:`, e);
+            }
+          }
+
+          const hasMoreTests = testIndex + 1 < testIds.length;
+          if (hasMoreTests) {
+            // Fire-and-forget: even if this invocation times out during media fetching,
+            // the chain will continue. scheduleNextTest includes the required delay.
+            scheduleNextTest(batchId, testIds, testIndex, userId, batchDelaySeconds).catch((err) => {
+              console.error(`[Batch ${batchId}] Failed to schedule next test from processSingleTest:`, err);
+            });
+          }
+
           // Extract screenshots from steps
           if (Array.isArray(steps)) {
             for (const step of steps) {
@@ -542,6 +564,7 @@ async function processSingleTest(
               }
               
               // If no videos from task, try session endpoint (v2 API may store recordings there)
+              // NOTE: session may already be stopped for sequential safety; keep this as best-effort.
               if (recordings.length === 0 && sessionId) {
                 console.log(`[Batch ${batchId}] No recordings from task, trying session endpoint: ${sessionId}`);
                 try {
@@ -693,12 +716,23 @@ async function processSingleTest(
     return { 
       passed: finalStatus === "passed", 
       failed: finalStatus !== "passed",
-      sessionId: sessionIdForCleanup 
+      // session already stopped above to guarantee one-by-one execution
+      sessionId: null
     };
   } catch (error) {
     console.error(`[Batch ${batchId}] Error running test ${testId}:`, error);
 
     const supabase = createClient(SUPABASE_URL!, SUPABASE_SERVICE_ROLE_KEY!);
+
+    // Best-effort cleanup to avoid leaking active sessions when an error occurs mid-run
+    if (sessionIdForCleanup) {
+      try {
+        await stopSessionResilient(sessionIdForCleanup, batchId);
+        sessionIdForCleanup = null;
+      } catch (e) {
+        console.log(`[Batch ${batchId}] Error stopping session in error handler:`, e);
+      }
+    }
     
     try {
       // Technical error → status = 'error'
@@ -718,7 +752,7 @@ async function processSingleTest(
       console.error(`[Batch ${batchId}] Failed to update test status:`, updateError);
     }
 
-    return { passed: false, failed: true, sessionId: sessionIdForCleanup };
+    return { passed: false, failed: true, sessionId: null };
   }
 }
 
@@ -841,26 +875,12 @@ serve(async (req) => {
     const testId = testIds[index];
     console.log(`[Batch ${batchId}] Processing test ${index + 1}/${testIds.length}: ${testId}`);
 
-    // CRITICAL: Schedule next test FIRST, before processing current test
-    // This ensures the batch continues even if this invocation times out during media fetch
-    const hasMoreTests = index + 1 < testIds.length;
-    
-    if (hasMoreTests) {
-      const minDelay = Math.max(batchDelaySeconds || 10, 5) * 1000;
-      console.log(`[Batch ${batchId}] Pre-scheduling next test (index ${index + 1}) with ${minDelay / 1000}s delay...`);
-      
-      // Schedule next test invocation immediately - it will wait for the delay internally
-      // This is fire-and-forget to ensure the chain continues
-      scheduleNextTest(batchId, testIds, index, userId, batchDelaySeconds).catch(err => {
-        console.error(`[Batch ${batchId}] Failed to pre-schedule next test:`, err);
-      });
-    }
-
     // Process single test (this may take a while due to media fetch)
     const result = await processSingleTest(
       batchId,
       testId,
       userId,
+      testIds,
       index,
       testIds.length,
       batchDelaySeconds
@@ -883,12 +903,8 @@ serve(async (req) => {
       })
       .eq("id", batchId);
 
-    // Close session
-    if (result.sessionId) {
-      await stopSessionResilient(result.sessionId, batchId);
-    }
-
     // Mark batch as completed if this was the last test
+    const hasMoreTests = index + 1 < testIds.length;
     if (!hasMoreTests) {
       console.log(`[Batch ${batchId}] All tests completed (${completedTests} total, ${passedTests} passed, ${failedTests} failed)`);
       
