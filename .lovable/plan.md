@@ -1,126 +1,97 @@
 
-# Oprava: Batch UI nezobrazuje progress ani název aktuálního testu
 
-## Identifikované problémy
+# Oprava: Zaseknutý batch se nezobrazuje jako ukončený
 
-Analýza databáze a kódu odhalila následující root causes:
+## Aktuální stav
 
-| Problém | Příčina | Dopad |
-|---------|---------|-------|
-| Testy se nespouští | Claim podmínka vyžaduje `task_id IS NULL`, ale testy z předchozích běhů mají `task_id` nastaveno | Batch "běží" ale nic nedělá |
-| Progress = 0/4 | `completed_tests` se neaktualizuje, protože claim failne | UI ukazuje špatný progres |
-| Chybí název testu | `current_test_id` se nenastaví, protože claim failne | Prázdné "Aktuální: ..." |
-| Tlačítka `tests.pause` | Překladový klíč se nezobrazuje správně | Chybí lokalizace tlačítek |
+| Batch ID | Status | Progress | Vytvořen | Problém |
+|----------|--------|----------|----------|---------|
+| `2e4b818c-...` | `running` | 0/1 | před ~1 hodinou | Test se nikdy nespustil, batch visí |
+
+Test `aeeb0c3e` má status `pending` a `task_id: null` - edge funkce buď crashla před spuštěním, nebo `fireAndForget` selhal.
 
 ## Řešení
 
-### Krok 1: Reset test `task_id` před batch runem
+### Krok 1: Manuální ukončení zaseknutého batche
 
-Před spuštěním batch runu resetovat `task_id` na `null` pro všechny vybrané testy. To zajistí, že claim podmínka projde.
+Okamžitě označit batch jako `error` s vysvětlující zprávou:
 
-**Změna v `supabase/functions/run-tests-batch/index.ts`** - před řádek 130 (před main loop):
+```sql
+UPDATE test_batch_runs 
+SET status = 'error',
+    error_message = 'Batch timed out - no progress detected',
+    completed_at = now()
+WHERE id = '2e4b818c-c1b4-42cb-8055-ecc611e571aa';
+```
+
+### Krok 2: Přidat Stale Batch Detection do UI
+
+Upravit `src/pages/dashboard/TestsDashboard.tsx` tak, aby automaticky detekoval a označil "zaseklé" batche:
+
+**Logika:**
+- Pokud batch je `running` déle než **10 minut** bez změny `completed_tests`
+- Automaticky ho označit jako `error` v UI a nabídnout tlačítko "Vyčistit"
+
+**Implementace:**
 
 ```typescript
-// Reset task_id for all tests in batch to ensure fresh claim
-console.log(`[Batch ${batchId}] Resetting task_id for ${testIds.length} tests before batch start`);
-
-await supabase
-  .from("generated_tests")
-  .update({ task_id: null })
-  .in("id", testIds)
-  .neq("status", "running"); // Only reset non-running tests
+// V fetchActiveBatches() nebo jako useEffect
+const checkStaleBatches = async () => {
+  const tenMinutesAgo = new Date(Date.now() - 10 * 60 * 1000).toISOString();
+  
+  const { data: staleBatches } = await supabase
+    .from('test_batch_runs')
+    .select('id')
+    .eq('status', 'running')
+    .lt('updated_at', tenMinutesAgo);
+  
+  if (staleBatches?.length) {
+    // Mark as error
+    await supabase
+      .from('test_batch_runs')
+      .update({ 
+        status: 'error', 
+        error_message: 'Batch timed out - no progress for 10+ minutes',
+        completed_at: new Date().toISOString()
+      })
+      .in('id', staleBatches.map(b => b.id));
+    
+    // Refresh UI
+    fetchActiveBatches();
+  }
+};
 ```
 
-### Krok 2: Upravit claim podmínku - povolit re-run testů
+### Krok 3: Přidat `updated_at` trigger na batch progress
 
-Změnit atomický claim tak, aby umožnil re-run testů které mají `status` != `running`:
+Aby stale detection fungovala správně, potřebujeme aktualizovat `updated_at` při každé změně progressu:
 
-**Změna řádků 205-216:**
+```sql
+-- Trigger pro automatickou aktualizaci updated_at
+CREATE OR REPLACE FUNCTION update_batch_updated_at()
+RETURNS TRIGGER AS $$
+BEGIN
+  NEW.updated_at = now();
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
 
-Před:
-```typescript
-.neq("status", "running")
-.is("task_id", null)
+CREATE TRIGGER batch_runs_updated_at
+  BEFORE UPDATE ON test_batch_runs
+  FOR EACH ROW
+  EXECUTE FUNCTION update_batch_updated_at();
 ```
 
-Po:
-```typescript
-.neq("status", "running")
-// Removed: .is("task_id", null) - allows re-runs of previously executed tests
-```
-
-A přidat podmínku pouze pro aktuálně běžící test:
-```typescript
-// Check if test is already being processed in THIS batch
-const { data: currentlyRunning } = await supabase
-  .from("generated_tests")
-  .select("status")
-  .eq("id", testId)
-  .eq("status", "running")
-  .single();
-
-if (currentlyRunning) {
-  console.log(`[Batch ${batchId}] Test ${testId} already running, skipping`);
-  return { didRun: false, passed: false, failed: false, sessionId: null };
-}
-```
-
-### Krok 3: Ověřit překlady
-
-Zkontrolovat a opravit případné duplicitní JSON objekty v překladových souborech:
-- `src/i18n/locales/cs/translation.json`
-- `src/i18n/locales/en/translation.json`
-
-Potenciální problém: duplicitní `tests` objekty, kde druhý přepíše první a ztratí klíče `pause`, `resume`, `cancel`.
-
----
-
-## Technické detaily
-
-### Datový flow po opravě
-
-```text
-Batch Start
-    │
-    ▼
-Reset všech test task_id → null
-    │
-    ▼
-fireAndForget(index: 0)
-    │
-    ▼
-processSingleTest() ──► Claim test (status != 'running')
-                              │
-                              ▼
-                        Update current_test_id ← NYNÍ FUNGUJE
-                              │
-                              ▼
-                        Run browser session
-                              │
-                              ▼
-                        Update completed_tests ← NYNÍ FUNGUJE
-                              │
-                              ▼
-                        scheduleNextTest(index + 1)
-```
-
-### Soubory k úpravě
+## Soubory k úpravě
 
 | Soubor | Změna |
 |--------|-------|
-| `supabase/functions/run-tests-batch/index.ts` | (1) Přidat reset `task_id` při startu batch; (2) Upravit claim podmínku |
-| `src/i18n/locales/cs/translation.json` | Ověřit/opravit duplicitní `tests` objekt |
-| `src/i18n/locales/en/translation.json` | Ověřit/opravit duplicitní `tests` objekt |
+| Database | (1) UPDATE zaseknutého batche; (2) Přidat trigger pro `updated_at` |
+| `src/pages/dashboard/TestsDashboard.tsx` | Přidat stale batch detection (10 min timeout) |
 
----
+## Výsledek
 
-## Ověření po implementaci
+- UI automaticky vyčistí "zombie" batche které visí déle než 10 minut
+- Uživatel uvidí chybovou zprávu místo nekonečného "běží"
+- Může okamžitě spustit nový batch
 
-1. Spustit batch s 3+ testy
-2. V UI ověřit:
-   - Progress se aktualizuje (1/3, 2/3, ...)
-   - Název aktuálního testu se zobrazuje
-   - Tlačítka "Pozastavit" / "Zrušit" mají správný text
-3. V databázi ověřit:
-   - `test_batch_runs.completed_tests` se inkrementuje
-   - `test_batch_runs.current_test_id` se mění s každým testem
