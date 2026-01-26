@@ -201,14 +201,9 @@ function evaluateTestResult(resultSummary: string, expectedResult: string | null
 }
 
 // Self-invoke to process next test (recursive edge function call)
-// Now includes internal delay to ensure sequential execution even when called early
+// SIMPLIFIED: delay is now handled externally via EdgeRuntime.waitUntil
 async function scheduleNextTest(batchId: string, testIds: string[], currentIndex: number, userId: string, batchDelaySeconds?: number) {
   const functionUrl = `${SUPABASE_URL}/functions/v1/run-tests-batch`;
-  
-  // Wait for the delay BEFORE scheduling to ensure sequential execution
-  const minDelay = Math.max(batchDelaySeconds || 10, 5) * 1000;
-  console.log(`[Batch ${batchId}] Waiting ${minDelay / 1000}s before scheduling next test invocation for index ${currentIndex + 1}...`);
-  await delay(minDelay);
   
   console.log(`[Batch ${batchId}] Scheduling next test invocation for index ${currentIndex + 1}`);
   
@@ -572,14 +567,8 @@ async function processSingleTest(
             }
           }
 
-          const hasMoreTests = testIndex + 1 < testIds.length;
-          if (hasMoreTests) {
-            // Fire-and-forget: even if this invocation times out during media fetching,
-            // the chain will continue. scheduleNextTest includes the required delay.
-            scheduleNextTest(batchId, testIds, testIndex, userId, batchDelaySeconds).catch((err) => {
-              console.error(`[Batch ${batchId}] Failed to schedule next test from processSingleTest:`, err);
-            });
-          }
+          // NOTE: scheduling next test is now handled in the main serve function via EdgeRuntime.waitUntil
+          // This ensures the delay completes even if edge function wants to shut down
 
           // Extract screenshots from steps
           if (Array.isArray(steps)) {
@@ -1051,9 +1040,18 @@ serve(async (req) => {
     const hasMoreTests = index + 1 < testIds.length;
     
     if (hasMoreTests) {
-      // Schedule the next test
-      console.log(`[Batch ${batchId}] Scheduling next test (index ${index + 1})`);
-      await scheduleNextTest(batchId, testIds, index, userId, batchDelaySeconds);
+      // Schedule the next test using EdgeRuntime.waitUntil
+      // This guarantees the delay + scheduling completes even if edge function wants to shut down
+      const minDelay = Math.max(batchDelaySeconds || 10, 5) * 1000;
+      console.log(`[Batch ${batchId}] Scheduling next test (index ${index + 1}) with ${minDelay / 1000}s delay via EdgeRuntime.waitUntil`);
+      
+      const schedulePromise = (async () => {
+        await delay(minDelay);
+        await scheduleNextTest(batchId, testIds, index, userId, batchDelaySeconds);
+      })();
+      
+      // @ts-ignore - EdgeRuntime is available in Deno edge functions
+      EdgeRuntime.waitUntil(schedulePromise);
     } else {
       // Mark batch as completed - this was the last test
       console.log(`[Batch ${batchId}] All tests completed (${completedTests} total, ${passedTests} passed, ${failedTests} failed)`);
