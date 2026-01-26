@@ -511,6 +511,31 @@ export default function TestsDashboard() {
 
   const fetchActiveBatches = async () => {
     try {
+      // First, check for stale batches (running > 10 minutes without progress)
+      const tenMinutesAgo = new Date(Date.now() - 10 * 60 * 1000).toISOString();
+      
+      const { data: staleBatches } = await supabase
+        .from('test_batch_runs')
+        .select('id')
+        .eq('status', 'running')
+        .lt('updated_at', tenMinutesAgo);
+      
+      // Mark stale batches as cancelled
+      if (staleBatches && staleBatches.length > 0) {
+        console.log('Found stale batches:', staleBatches.map(b => b.id));
+        await supabase
+          .from('test_batch_runs')
+          .update({ 
+            status: 'cancelled', 
+            error_message: 'Batch timed out - no progress for 10+ minutes',
+            completed_at: new Date().toISOString()
+          })
+          .in('id', staleBatches.map(b => b.id));
+        
+        toast.warning(t('tests.staleBatchCancelled'));
+      }
+
+      // Fetch active batches
       const { data, error } = await supabase
         .from('test_batch_runs')
         .select('*')

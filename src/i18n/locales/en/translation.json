@@ -253,6 +253,7 @@
     "batchPaused": "Batch paused",
     "batchResumed": "Batch resumed",
     "batchCancelled": "Batch cancelled",
+    "staleBatchCancelled": "Stale batch automatically cancelled (10+ min without activity)",
     "pageInfo": "Page {{page}} of {{total}}",
     "showingRange": "Showing {{from}}-{{to}} of {{total}}"
   },
