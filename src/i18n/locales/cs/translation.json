@@ -253,6 +253,7 @@
     "batchPaused": "Dávka pozastavena",
     "batchResumed": "Dávka pokračuje",
     "batchCancelled": "Dávka zrušena",
+    "staleBatchCancelled": "Zaseknutá dávka byla automaticky zrušena (10+ min bez aktivity)",
     "pageInfo": "Stránka {{page}} z {{total}}",
     "showingRange": "Zobrazeno {{from}}-{{to}} z {{total}}"
   },
