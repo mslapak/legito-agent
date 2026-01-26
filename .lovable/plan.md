@@ -1,97 +1,106 @@
 
 
-# Oprava: Zaseknutý batch se nezobrazuje jako ukončený
+# Oprava: Falešně negativní vyhodnocení testu
 
-## Aktuální stav
+## Identifikovaný problém
 
-| Batch ID | Status | Progress | Vytvořen | Problém |
-|----------|--------|----------|----------|---------|
-| `2e4b818c-...` | `running` | 0/1 | před ~1 hodinou | Test se nikdy nespustil, batch visí |
+Test `Regression Test - Dashboard - Account links - Settings - 02` skončil jako **"Failed"**, přestože výsledek jasně ukazuje **úspěch**:
 
-Test `aeeb0c3e` má status `pending` a `task_id: null` - edge funkce buď crashla před spuštěním, nebo `fireAndForget` selhal.
+| Pole | Hodnota |
+|------|---------|
+| `result_summary` | "The test of DocBot application was **successful**..." |
+| `result_reasoning` | "Výsledek obsahuje **kritický indikátor selhání**" |
+| `status` | `failed` |
+
+### Příčina
+
+V `result_summary` je věta:
+> "The Guided Tour was **not displayed** during this session, so no action was needed"
+
+Logika `evaluateTestResult` v `run-tests-batch/index.ts` obsahuje `criticalFailureIndicators`:
+
+```typescript
+const criticalFailureIndicators = [
+  'timeout', 'failure', 'was not displayed', 'not displayed', ...
+];
+```
+
+Fráze **"not displayed"** triggeruje false positive, i když kontextově to znamená pouze "prvek nebyl přítomen, takže jsem ho nemusel zavřít" = **validní úspěch**.
 
 ## Řešení
 
-### Krok 1: Manuální ukončení zaseknutého batche
+### Vylepšit logiku vyhodnocování
 
-Okamžitě označit batch jako `error` s vysvětlující zprávou:
+Aktuální logika je příliš naivní - hledá pouhý výskyt slov bez ohledu na kontext.
 
-```sql
-UPDATE test_batch_runs 
-SET status = 'error',
-    error_message = 'Batch timed out - no progress detected',
-    completed_at = now()
-WHERE id = '2e4b818c-c1b4-42cb-8055-ecc611e571aa';
-```
+**Navrhované změny v `supabase/functions/run-tests-batch/index.ts`:**
 
-### Krok 2: Přidat Stale Batch Detection do UI
-
-Upravit `src/pages/dashboard/TestsDashboard.tsx` tak, aby automaticky detekoval a označil "zaseklé" batche:
-
-**Logika:**
-- Pokud batch je `running` déle než **10 minut** bez změny `completed_tests`
-- Automaticky ho označit jako `error` v UI a nabídnout tlačítko "Vyčistit"
-
-**Implementace:**
+1. **Přidat prioritu úspěšných indikátorů** - pokud výsledek obsahuje silné úspěšné fráze na začátku, nedělat kritické selhání
+2. **Změnit kritické indikátory na specifičtější fráze** - např. `"test failed"`, `"error occurred"`, `"could not complete"`
+3. **Vyloučit false positives** - fráze jako "was not displayed during this session" nebo "was not shown (expected)" by neměly být kritické selhání
 
 ```typescript
-// V fetchActiveBatches() nebo jako useEffect
-const checkStaleBatches = async () => {
-  const tenMinutesAgo = new Date(Date.now() - 10 * 60 * 1000).toISOString();
+function evaluateTestResult(resultSummary: string, expectedResult: string | null): { status: 'passed' | 'failed', reasoning: string } {
+  // ...
   
-  const { data: staleBatches } = await supabase
-    .from('test_batch_runs')
-    .select('id')
-    .eq('status', 'running')
-    .lt('updated_at', tenMinutesAgo);
+  const result = resultSummary.toLowerCase().trim();
   
-  if (staleBatches?.length) {
-    // Mark as error
-    await supabase
-      .from('test_batch_runs')
-      .update({ 
-        status: 'error', 
-        error_message: 'Batch timed out - no progress for 10+ minutes',
-        completed_at: new Date().toISOString()
-      })
-      .in('id', staleBatches.map(b => b.id));
+  // STRONG success indicators at the beginning take precedence
+  const strongSuccessStarts = [
+    'the test of', 'test was successful', 'test completed successfully',
+    'all steps completed', 'verification successful'
+  ];
+  const startsWithStrongSuccess = strongSuccessStarts.some(s => result.startsWith(s) || result.includes('was successful'));
+  
+  // Critical failures - more specific patterns
+  const criticalFailurePatterns = [
+    'timeout', 
+    'test failed', 
+    'could not complete',
+    'error occurred',
+    'exception thrown',
+    'did not complete the task',
+    'nebyl dokončen',
+    'test selhal'
+  ];
+  
+  // Context-aware exclusion: "not displayed" is OK if followed by context
+  const falsePositiveContexts = [
+    'was not displayed during this session',
+    'was not shown during',
+    'not displayed (expected)',
+    'not displayed, so no action'
+  ];
+  
+  const hasFalsePositiveContext = falsePositiveContexts.some(ctx => result.includes(ctx));
+  
+  // Only trigger critical failure if not a false positive context and not strong success
+  const hasCriticalFailure = !startsWithStrongSuccess && 
+    !hasFalsePositiveContext && 
+    criticalFailurePatterns.some(ind => result.includes(ind));
     
-    // Refresh UI
-    fetchActiveBatches();
-  }
-};
-```
-
-### Krok 3: Přidat `updated_at` trigger na batch progress
-
-Aby stale detection fungovala správně, potřebujeme aktualizovat `updated_at` při každé změně progressu:
-
-```sql
--- Trigger pro automatickou aktualizaci updated_at
-CREATE OR REPLACE FUNCTION update_batch_updated_at()
-RETURNS TRIGGER AS $$
-BEGIN
-  NEW.updated_at = now();
-  RETURN NEW;
-END;
-$$ LANGUAGE plpgsql;
-
-CREATE TRIGGER batch_runs_updated_at
-  BEFORE UPDATE ON test_batch_runs
-  FOR EACH ROW
-  EXECUTE FUNCTION update_batch_updated_at();
+  // ... rest of logic
+}
 ```
 
 ## Soubory k úpravě
 
 | Soubor | Změna |
 |--------|-------|
-| Database | (1) UPDATE zaseknutého batche; (2) Přidat trigger pro `updated_at` |
-| `src/pages/dashboard/TestsDashboard.tsx` | Přidat stale batch detection (10 min timeout) |
+| `supabase/functions/run-tests-batch/index.ts` | Vylepšit `evaluateTestResult` funkci - přidat kontext-aware vyhodnocování |
 
-## Výsledek
+## Alternativní přístup
 
-- UI automaticky vyčistí "zombie" batche které visí déle než 10 minut
-- Uživatel uvidí chybovou zprávu místo nekonečného "běží"
-- Může okamžitě spustit nový batch
+Pokud chceme robustnější řešení, můžeme použít AI model pro vyhodnocení výsledků:
+
+- Použít Lovable AI (např. `gemini-2.5-flash`) pro inteligentní vyhodnocení
+- Předat `result_summary` + `expected_result` modelu
+- Model vrátí `passed/failed` s reasoning
+
+Toto by eliminovalo všechny edge case s keyword matching, ale přidá latenci a náklady.
+
+## Doporučený postup
+
+1. **Okamžitě**: Implementovat context-aware vyhodnocování (výše)
+2. **Volitelně**: Ručně opravit status tohoto konkrétního testu na `passed`
 
