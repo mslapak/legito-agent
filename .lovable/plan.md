@@ -1,85 +1,78 @@
 
+# Oprava: Batch nepokračuje na další test + progress se neaktualizuje
 
-# Oprava: Falešně negativní vyhodnocení testu
+## Zjištěné problémy
 
-## Identifikovaný problém
-
-Test `Regression Test - Dashboard - Account links - Settings - 02` skončil jako **"Failed"**, přestože výsledek jasně ukazuje **úspěch**:
-
-| Pole | Hodnota |
-|------|---------|
-| `result_summary` | "The test of DocBot application was **successful**..." |
-| `result_reasoning` | "Výsledek obsahuje **kritický indikátor selhání**" |
-| `status` | `failed` |
-
-### Příčina
-
-V `result_summary` je věta:
-> "The Guided Tour was **not displayed** during this session, so no action was needed"
-
-Logika `evaluateTestResult` v `run-tests-batch/index.ts` obsahuje `criticalFailureIndicators`:
-
-```typescript
-const criticalFailureIndicators = [
-  'timeout', 'failure', 'was not displayed', 'not displayed', ...
-];
+### 1. Edge function shutdown přerušuje chain
+```text
+12:57:50Z - Waiting 10s before scheduling next test...
+12:57:53Z - shutdown (po 3 sekundách!)
 ```
+Funkce `scheduleNextTest` čeká 10 sekund UVNITŘ sebe, ale je volaná fire-and-forget. Edge runtime ukončí funkci dříve, než proběhne delay.
 
-Fráze **"not displayed"** triggeruje false positive, i když kontextově to znamená pouze "prvek nebyl přítomen, takže jsem ho nemusel zavřít" = **validní úspěch**.
+### 2. Progress update se nikdy neprovede
+Řádky 1033-1048 aktualizují `completed_tests`, ale jsou **ZA** návratem z `processSingleTest`. Protože edge funkce dostane shutdown, tento kód se nikdy nespustí.
+
+### 3. Duplicitní scheduleNextTest
+Funkce je volaná DVAkrát:
+- Řádek 579 (fire-and-forget v `processSingleTest`)
+- Řádek 1056 (await v `serve`)
+
+Logika na řádku 579 je problematická - čeká uvnitř fire-and-forget, což edge runtime nemůže garantovat.
 
 ## Řešení
 
-### Vylepšit logiku vyhodnocování
+### Změna architektury: EdgeRuntime.waitUntil
 
-Aktuální logika je příliš naivní - hledá pouhý výskyt slov bez ohledu na kontext.
+Místo fire-and-forget použijeme `EdgeRuntime.waitUntil()`, které garantuje, že Deno počká na dokončení async operace před shutdownem.
 
-**Navrhované změny v `supabase/functions/run-tests-batch/index.ts`:**
+### Krok 1: Přesunout progress update PŘED scheduleNextTest
 
-1. **Přidat prioritu úspěšných indikátorů** - pokud výsledek obsahuje silné úspěšné fráze na začátku, nedělat kritické selhání
-2. **Změnit kritické indikátory na specifičtější fráze** - např. `"test failed"`, `"error occurred"`, `"could not complete"`
-3. **Vyloučit false positives** - fráze jako "was not displayed during this session" nebo "was not shown (expected)" by neměly být kritické selhání
+Aktuálně:
+```text
+processSingleTest() → vrátí → progress update → scheduleNextTest
+                                                ↑
+                                            shutdown zde!
+```
+
+Nová logika:
+```text
+processSingleTest() → progress update → vrátí → scheduleNextTest (waitUntil)
+```
+
+### Krok 2: Odstranit duplicitní scheduleNextTest z processSingleTest
+
+Řádky 575-582 v `processSingleTest` se musí odstranit - scheduling bude pouze v hlavní `serve` funkci.
+
+### Krok 3: Použít EdgeRuntime.waitUntil pro scheduling
 
 ```typescript
-function evaluateTestResult(resultSummary: string, expectedResult: string | null): { status: 'passed' | 'failed', reasoning: string } {
-  // ...
+// V serve funkci, po progress update:
+if (hasMoreTests) {
+  const schedulePromise = scheduleNextTest(batchId, testIds, index, userId, batchDelaySeconds);
+  // @ts-ignore - EdgeRuntime je dostupný v Deno edge functions
+  EdgeRuntime.waitUntil(schedulePromise);
+}
+
+// Vrátit response IHNED - waitUntil zajistí dokončení
+return new Response(...);
+```
+
+### Krok 4: Zjednodušit scheduleNextTest
+
+Odstranit interní delay z `scheduleNextTest` - delay bude PŘED voláním v hlavní funkci:
+
+```typescript
+// V serve funkci:
+if (hasMoreTests) {
+  const minDelay = Math.max(batchDelaySeconds || 10, 5) * 1000;
   
-  const result = resultSummary.toLowerCase().trim();
+  const schedulePromise = (async () => {
+    await delay(minDelay);
+    await scheduleNextTest(batchId, testIds, index, userId);
+  })();
   
-  // STRONG success indicators at the beginning take precedence
-  const strongSuccessStarts = [
-    'the test of', 'test was successful', 'test completed successfully',
-    'all steps completed', 'verification successful'
-  ];
-  const startsWithStrongSuccess = strongSuccessStarts.some(s => result.startsWith(s) || result.includes('was successful'));
-  
-  // Critical failures - more specific patterns
-  const criticalFailurePatterns = [
-    'timeout', 
-    'test failed', 
-    'could not complete',
-    'error occurred',
-    'exception thrown',
-    'did not complete the task',
-    'nebyl dokončen',
-    'test selhal'
-  ];
-  
-  // Context-aware exclusion: "not displayed" is OK if followed by context
-  const falsePositiveContexts = [
-    'was not displayed during this session',
-    'was not shown during',
-    'not displayed (expected)',
-    'not displayed, so no action'
-  ];
-  
-  const hasFalsePositiveContext = falsePositiveContexts.some(ctx => result.includes(ctx));
-  
-  // Only trigger critical failure if not a false positive context and not strong success
-  const hasCriticalFailure = !startsWithStrongSuccess && 
-    !hasFalsePositiveContext && 
-    criticalFailurePatterns.some(ind => result.includes(ind));
-    
-  // ... rest of logic
+  EdgeRuntime.waitUntil(schedulePromise);
 }
 ```
 
@@ -87,20 +80,18 @@ function evaluateTestResult(resultSummary: string, expectedResult: string | null
 
 | Soubor | Změna |
 |--------|-------|
-| `supabase/functions/run-tests-batch/index.ts` | Vylepšit `evaluateTestResult` funkci - přidat kontext-aware vyhodnocování |
+| `supabase/functions/run-tests-batch/index.ts` | (1) Odstranit scheduleNextTest z processSingleTest (řádky 575-582); (2) Přidat EdgeRuntime.waitUntil v serve funkci; (3) Zjednodušit scheduleNextTest funkci |
 
-## Alternativní přístup
+## Očekávaný výsledek
 
-Pokud chceme robustnější řešení, můžeme použít AI model pro vyhodnocení výsledků:
+```text
+Test 1 finished
+→ Progress update: 1/2
+→ Response vrácena klientovi
+→ EdgeRuntime.waitUntil: čeká 10s, pak volá další test
+→ Test 2 started
+→ Progress update: 2/2
+→ Batch completed
+```
 
-- Použít Lovable AI (např. `gemini-2.5-flash`) pro inteligentní vyhodnocení
-- Předat `result_summary` + `expected_result` modelu
-- Model vrátí `passed/failed` s reasoning
-
-Toto by eliminovalo všechny edge case s keyword matching, ale přidá latenci a náklady.
-
-## Doporučený postup
-
-1. **Okamžitě**: Implementovat context-aware vyhodnocování (výše)
-2. **Volitelně**: Ručně opravit status tohoto konkrétního testu na `passed`
-
+UI bude správně ukazovat progress díky Realtime subscription na `test_batch_runs` tabulku (trigger `batch_runs_updated_at` zajistí update `updated_at`).
