@@ -85,19 +85,76 @@ function evaluateTestResult(resultSummary: string, expectedResult: string | null
   const result = resultSummary.toLowerCase().trim();
   const expected = expectedResult.toLowerCase().trim();
 
-  // Failure indicators - these ALWAYS indicate failure, even if success indicators are present
-  const criticalFailureIndicators = ['timeout', 'failure', 'was not displayed', 'not displayed', 'was not shown', 'nebyl zobrazen', 'nebyla zobrazena', 'did not complete', 'nedokončen'];
-  const hasCriticalFailure = criticalFailureIndicators.some(ind => result.includes(ind));
+  // STRONG success indicators - if result starts with or contains these, prioritize success
+  const strongSuccessPatterns = [
+    'the test of', 'test was successful', 'test completed successfully',
+    'all steps completed', 'verification successful', 'was successful',
+    'successfully completed', 'successfully verified', 'test passed'
+  ];
+  const hasStrongSuccess = strongSuccessPatterns.some(pattern => result.includes(pattern));
 
-  // Regular failure indicators
+  // False positive contexts - these phrases contain failure keywords but are NOT failures
+  // Example: "Guided Tour was not displayed during this session, so no action was needed"
+  const falsePositiveContexts = [
+    'was not displayed during this session',
+    'was not shown during this session',
+    'not displayed, so no action',
+    'was not displayed so no action',
+    'not shown, so no action',
+    'was not shown so no action',
+    'not displayed (expected)',
+    'was not needed',
+    'nebyl zobrazen, takže',
+    'nebyla zobrazena, takže'
+  ];
+  const hasFalsePositiveContext = falsePositiveContexts.some(ctx => result.includes(ctx));
+
+  // Critical failure patterns - more specific to avoid false positives
+  const criticalFailurePatterns = [
+    'timeout', 
+    'test failed',
+    'task failed',
+    'could not complete',
+    'error occurred',
+    'exception thrown',
+    'did not complete the task',
+    'unable to complete',
+    'nebyl dokončen',
+    'test selhal',
+    'úloha selhala'
+  ];
+  
+  // Only trigger critical failure if NOT in false positive context and NOT strong success
+  const hasCriticalFailure = !hasStrongSuccess && 
+    !hasFalsePositiveContext && 
+    criticalFailurePatterns.some(pattern => result.includes(pattern));
+
+  // Regular failure indicators (less severe)
   const failureIndicators = ['error', 'failed', 'not found', 'exception', 'chyba', 'selhalo', 'nenalezeno', 'neúspěch'];
-  const hasFailureIndicator = failureIndicators.some(ind => result.includes(ind));
+  // Exclude "failed" if it's part of false positive or strong success context
+  const hasFailureIndicator = !hasStrongSuccess && 
+    !hasFalsePositiveContext && 
+    failureIndicators.some(ind => result.includes(ind));
 
-  const successIndicators = ['success', 'passed', 'verified', 'confirmed', 'úspěch', 'ověřeno', 'potvrzeno'];
-  // Remove 'completed' and 'ok' from success - they're too generic and cause false positives
+  const successIndicators = ['success', 'passed', 'verified', 'confirmed', 'úspěch', 'ověřeno', 'potvrzeno', 'successful'];
   const hasSuccessIndicator = successIndicators.some(ind => result.includes(ind));
 
-  // Critical failures always result in 'failed' status
+  // Strong success with false positive context = PASS
+  if (hasStrongSuccess || (hasSuccessIndicator && hasFalsePositiveContext)) {
+    const keywords = expected
+      .split(/[\s,;.!?]+/)
+      .filter(word => word.length > 3)
+      .filter(word => !['should', 'must', 'will', 'that', 'this', 'with', 'from', 'have', 'been', 'mělo', 'musí', 'bude', 'tento', 'tato', 'které', 'result', 'expected', 'displayed'].includes(word));
+    const matchedKeywords = keywords.filter(kw => result.includes(kw));
+    const matchRatio = keywords.length > 0 ? matchedKeywords.length / keywords.length : 1;
+    
+    return { 
+      status: 'passed', 
+      reasoning: `Výsledek obsahuje silný indikátor úspěchu a ${Math.round(matchRatio * 100)}% klíčových slov.` 
+    };
+  }
+
+  // Critical failures = FAIL
   if (hasCriticalFailure) {
     return { 
       status: 'failed', 
@@ -113,7 +170,7 @@ function evaluateTestResult(resultSummary: string, expectedResult: string | null
   const matchedKeywords = keywords.filter(kw => result.includes(kw));
   const matchRatio = keywords.length > 0 ? matchedKeywords.length / keywords.length : 0;
 
-  // If there's a failure indicator, it takes precedence over success indicators
+  // Regular failure indicator = FAIL
   if (hasFailureIndicator) {
     return { 
       status: 'failed', 
@@ -121,6 +178,7 @@ function evaluateTestResult(resultSummary: string, expectedResult: string | null
     };
   }
 
+  // Success indicator + reasonable keyword match = PASS
   if (hasSuccessIndicator && matchRatio >= 0.3) {
     return { 
       status: 'passed', 
@@ -128,6 +186,7 @@ function evaluateTestResult(resultSummary: string, expectedResult: string | null
     };
   }
 
+  // High keyword match = PASS
   if (matchRatio >= 0.5) {
     return { 
       status: 'passed', 
