@@ -1,97 +1,109 @@
 
-# Oprava: Batch nepokračuje na další test + progress se neaktualizuje
+<context>
+U tebe se teď reálně stalo tohle (podle DB + logů):
 
-## Zjištěné problémy
+1) V tabulce `test_batch_runs` je batch `2d678...` pořád `status=running`, `completed_tests=0`, `updated_at` se nezměnil od začátku (13:11:56).
+2) V logu `run-tests-batch` vidíme jen opakované “Task … status: started” a žádné “Updating progress” ani “Scheduling next test”.
+3) V tabulce `generated_tests` pro test `64078...` je `status=pending` a `task_id=null` – i když task v `tasks` tabulce existuje a doběhl (`f1004add...` je `completed`).
 
-### 1. Edge function shutdown přerušuje chain
-```text
-12:57:50Z - Waiting 10s before scheduling next test...
-12:57:53Z - shutdown (po 3 sekundách!)
-```
-Funkce `scheduleNextTest` čeká 10 sekund UVNITŘ sebe, ale je volaná fire-and-forget. Edge runtime ukončí funkci dříve, než proběhne delay.
+Z toho vychází dvě hlavní příčiny:
+- **(A) Frontend sabotuje běh**: `TestsDashboard.tsx` má logiku, která když test má `status=running`, ale `task_id` je null, tak ho “opraví” zpět na `pending`. To je v našem batch režimu špatně, protože `run-tests-batch` dnes nastavuje `generated_tests.task_id` až na konci (po dokončení testu). Tzn. UI ti testy “shazuje” zpět.
+- **(B) Edge funkce může být ukončena uprostřed běhu**: i když jsme přidali `waitUntil` pro scheduling dalšího testu, pořád máme dlouhotrvající polling + media fetch uvnitř jedné invokace. Když runtime invokaci zabije uprostřed (limit/instabilita), stane se přesně to, co vidíme: task v `tasks` může být už zapsaný jako completed, ale batch progress + scheduling se nikdy nedokončí.
 
-### 2. Progress update se nikdy neprovede
-Řádky 1033-1048 aktualizují `completed_tests`, ale jsou **ZA** návratem z `processSingleTest`. Protože edge funkce dostane shutdown, tento kód se nikdy nespustí.
+Cíl: udělat to “strojově stabilní” pro 10+ testů, bez závislosti na jedné dlouhé invokaci a bez UI, které mění stavy.
 
-### 3. Duplicitní scheduleNextTest
-Funkce je volaná DVAkrát:
-- Řádek 579 (fire-and-forget v `processSingleTest`)
-- Řádek 1056 (await v `serve`)
+</context>
 
-Logika na řádku 579 je problematická - čeká uvnitř fire-and-forget, což edge runtime nemůže garantovat.
+<goal>
+- Batch spolehlivě jede 1→2→…→10 testů.
+- UI “Active background batches” a progress se průběžně aktualizují.
+- Žádné resetování `generated_tests` zpět na `pending` během běhu.
+- Každá invokace backend funkce je krátká (sekundy), žádné minuty pollingu v jedné invokaci.
+</goal>
 
-## Řešení
+<root-causes>
+1) `src/pages/dashboard/TestsDashboard.tsx`:
+   - V “poll running tests” části je blok:
+     - když `generated_tests.status === 'running'` a `task_id` chybí → update `generated_tests.status = 'pending'`.
+   - V batch režimu ale `task_id` chybí po většinu běhu (protože se nastavuje až po dokončení), takže UI test “srazí”.
 
-### Změna architektury: EdgeRuntime.waitUntil
+2) `supabase/functions/run-tests-batch/index.ts`:
+   - Dělá dlouhé čekání: poll každých 5s (až 30 minut) + media retry loop.
+   - Pokud runtime invokaci ukončí v nevhodném bodě, batch progress (`test_batch_runs.completed_tests`) se nikdy neupdatuje a další test se nenaplánuje.
+   - `test_batch_runs.updated_at` se aktualizuje jen při progress incrementu, takže UI snadno vyhodnotí batch jako “stuck”.
 
-Místo fire-and-forget použijeme `EdgeRuntime.waitUntil()`, které garantuje, že Deno počká na dokončení async operace před shutdownem.
+</root-causes>
 
-### Krok 1: Přesunout progress update PŘED scheduleNextTest
+<solution-approach>
+Předěláme batch běh na krátké “state machine” invokace (robustní pattern):
 
-Aktuálně:
-```text
-processSingleTest() → vrátí → progress update → scheduleNextTest
-                                                ↑
-                                            shutdown zde!
-```
+A) “Start/launch phase” (krátká invokace)
+- Claim test (status→running)
+- Vytvořit Browser-Use session/task + DB `tasks` record (status running)
+- **Ihned uložit `generated_tests.task_id = taskRecord.id`** (tím přestaneme narážet na UI reset)
+- Nečekat na dokončení provider tasku.
+- Naplánovat “poll phase” (self invoke) za X sekund přes `EdgeRuntime.waitUntil`.
 
-Nová logika:
-```text
-processSingleTest() → progress update → vrátí → scheduleNextTest (waitUntil)
-```
+B) “Poll phase” (krátká invokace opakovaně)
+- Načíst `tasks.status` pro `generated_tests.task_id`
+- Pokud `tasks.status` stále running:
+  - (volitelně) zavolat backend funkci `browser-use` pro refresh detailů / nebo rovnou provider status, ale vždy rychle
+  - update `test_batch_runs.updated_at` jako heartbeat
+  - naplánovat další poll za X sekund
+  - return
+- Pokud `tasks.status` je final (completed/failed/cancelled):
+  - provést vyhodnocení výsledku (evaluateTestResult) a doplnit `generated_tests.status/result_summary/...`
+  - increment batch progress (`completed_tests/passed_tests/failed_tests`) + update `updated_at`
+  - naplánovat další index (další testcase) přes `EdgeRuntime.waitUntil` (s batchDelaySeconds)
+  - pokud poslední, označit batch jako completed
 
-### Krok 2: Odstranit duplicitní scheduleNextTest z processSingleTest
+C) Frontend fix
+- Zrušit/změnit pravidlo “když running a bez task_id → pending”.
+- V nejhorším to změnit na “když running + bez task_id + last_run_at starší než X minut → pending” (ochrana proti reálným rozbitým stavům), ale ne během normálního běhu.
 
-Řádky 575-582 v `processSingleTest` se musí odstranit - scheduling bude pouze v hlavní `serve` funkci.
+D) Heartbeat
+- Během poll fáze vždy update `test_batch_runs.updated_at` (i když completed_tests se nezměnilo), aby UI vidělo život a necancelovalo to jako stale.
+</solution-approach>
 
-### Krok 3: Použít EdgeRuntime.waitUntil pro scheduling
+<implementation-steps>
+1) Backend: `supabase/functions/run-tests-batch/index.ts`
+   - Přidat “fáze” do request body (např. `phase: 'start' | 'poll'` nebo `mode`).
+   - U prvního spuštění testu:
+     - po vytvoření `tasks` záznamu okamžitě update `generated_tests.task_id = taskRecord.id` (nečekat na konec).
+     - místo dlouhého poll loopu rovnou naplánovat `phase='poll'` (EdgeRuntime.waitUntil + delay).
+   - V `phase='poll'`:
+     - načíst DB task status pro `task_id`
+     - pokud není hotovo → heartbeat update batch run + reschedule poll
+     - pokud hotovo → finalize generated_tests + progress update + schedule next index
+   - Ujistit se, že scheduling logy jsou jednoznačné (aby šlo debuggovat).
 
-```typescript
-// V serve funkci, po progress update:
-if (hasMoreTests) {
-  const schedulePromise = scheduleNextTest(batchId, testIds, index, userId, batchDelaySeconds);
-  // @ts-ignore - EdgeRuntime je dostupný v Deno edge functions
-  EdgeRuntime.waitUntil(schedulePromise);
-}
+2) Frontend: `src/pages/dashboard/TestsDashboard.tsx`
+   - Upravit logiku v “Poll running tests”:
+     - odstranit automatické přepnutí na pending jen kvůli `task_id=null`.
+     - případně nahradit ochranným pravidlem založeným na čase (`last_run_at`), ne na `task_id`.
 
-// Vrátit response IHNED - waitUntil zajistí dokončení
-return new Response(...);
-```
+3) Stabilita UI “Active background batches”
+   - Ověřit, že se `fetchActiveBatches()` trefuje na správné řádky:
+     - (doporučení) filtrovat `test_batch_runs` podle `user_id = user.id`, aby se netahaly cizí batche a UI nebylo matoucí.
+   - Díky heartbeatům bude progress panel “živý”.
 
-### Krok 4: Zjednodušit scheduleNextTest
+4) Test plán
+   - Spustit batch se 2 testy:
+     - ověřit, že `completed_tests` jde 0→1→2 a `updated_at` se mění i během čekání.
+   - Spustit batch s 10 testy:
+     - ověřit, že se nezasekne na 0/10, a že po každém testu dojde k naplánování dalšího.
+   - Pokud cokoliv spadne, logy budou ukazovat, jestli jsme ve “start” nebo “poll” fázi a proč se reschedulovalo.
 
-Odstranit interní delay z `scheduleNextTest` - delay bude PŘED voláním v hlavní funkci:
+</implementation-steps>
 
-```typescript
-// V serve funkci:
-if (hasMoreTests) {
-  const minDelay = Math.max(batchDelaySeconds || 10, 5) * 1000;
-  
-  const schedulePromise = (async () => {
-    await delay(minDelay);
-    await scheduleNextTest(batchId, testIds, index, userId);
-  })();
-  
-  EdgeRuntime.waitUntil(schedulePromise);
-}
-```
+<why-this-will-be-stable>
+- Odstraníme “minutové invokace” (největší zdroj zabíjení runtimem).
+- Každý krok je idempotentní a krátký → když se jedna invokace přeruší, další poll/rekurze to dožene.
+- UI už nebude přepisovat běžící testy zpět na pending.
+- Batch bude mít heartbeat → už žádné “stuck” active batches bez update.
+</why-this-will-be-stable>
 
-## Soubory k úpravě
-
-| Soubor | Změna |
-|--------|-------|
-| `supabase/functions/run-tests-batch/index.ts` | (1) Odstranit scheduleNextTest z processSingleTest (řádky 575-582); (2) Přidat EdgeRuntime.waitUntil v serve funkci; (3) Zjednodušit scheduleNextTest funkci |
-
-## Očekávaný výsledek
-
-```text
-Test 1 finished
-→ Progress update: 1/2
-→ Response vrácena klientovi
-→ EdgeRuntime.waitUntil: čeká 10s, pak volá další test
-→ Test 2 started
-→ Progress update: 2/2
-→ Batch completed
-```
-
-UI bude správně ukazovat progress díky Realtime subscription na `test_batch_runs` tabulku (trigger `batch_runs_updated_at` zajistí update `updated_at`).
+<files-to-change>
+- `supabase/functions/run-tests-batch/index.ts`
+- `src/pages/dashboard/TestsDashboard.tsx`
+</files-to-change>
