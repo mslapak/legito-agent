@@ -329,16 +329,26 @@ export default function TestsDashboard() {
           // Always fetch task from DB first to get browser_use_task_id and current status
           const { data: testData } = await supabase
             .from('generated_tests')
-            .select('task_id')
+            .select('task_id, last_run_at')
             .eq('id', test.id)
             .single();
 
+          // *** FIX: Don't reset to pending just because task_id is null ***
+          // In batch mode, task_id is set IMMEDIATELY after task creation now.
+          // Only reset if test has been running for >15 minutes without task_id (truly stuck)
           if (!testData?.task_id) {
-            // No task_id means test was never started properly, reset to pending
-            await supabase
-              .from('generated_tests')
-              .update({ status: 'pending' })
-              .eq('id', test.id);
+            const lastRunAt = testData?.last_run_at ? new Date(testData.last_run_at).getTime() : 0;
+            const fifteenMinutesAgo = Date.now() - 15 * 60 * 1000;
+            
+            if (lastRunAt < fifteenMinutesAgo) {
+              // Test has been running for >15 min without task_id - likely truly stuck
+              console.log(`[TestsDashboard] Test ${test.id} stuck for >15min without task_id, resetting to pending`);
+              await supabase
+                .from('generated_tests')
+                .update({ status: 'pending' })
+                .eq('id', test.id);
+            }
+            // Otherwise, just wait - batch is likely still creating the task
             continue;
           }
 

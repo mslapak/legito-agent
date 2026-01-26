@@ -15,18 +15,6 @@ async function delay(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-// Fire-and-forget: starts async call without waiting for response
-function fireAndForget(url: string, body: object) {
-  fetch(url, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "Authorization": `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
-    },
-    body: JSON.stringify(body),
-  }).catch(e => console.error("[fireAndForget] Error:", e));
-}
-
 // Resilient session stop - tries multiple methods
 async function stopSessionResilient(sessionId: string, batchId: string): Promise<void> {
   console.log(`[Batch ${batchId}] Stopping session resilient: ${sessionId}`);
@@ -76,7 +64,6 @@ async function stopSessionResilient(sessionId: string, batchId: string): Promise
 }
 
 // Evaluate test result against expected result
-// Returns 'passed' or 'failed' (functional failure - test ran but didn't meet expectations)
 function evaluateTestResult(resultSummary: string, expectedResult: string | null): { status: 'passed' | 'failed', reasoning: string } {
   if (!expectedResult || expectedResult.trim() === '') {
     return { status: 'passed', reasoning: 'Test dokončen bez definovaného očekávaného výsledku.' };
@@ -85,7 +72,6 @@ function evaluateTestResult(resultSummary: string, expectedResult: string | null
   const result = resultSummary.toLowerCase().trim();
   const expected = expectedResult.toLowerCase().trim();
 
-  // STRONG success indicators - if result starts with or contains these, prioritize success
   const strongSuccessPatterns = [
     'the test of', 'test was successful', 'test completed successfully',
     'all steps completed', 'verification successful', 'was successful',
@@ -93,8 +79,6 @@ function evaluateTestResult(resultSummary: string, expectedResult: string | null
   ];
   const hasStrongSuccess = strongSuccessPatterns.some(pattern => result.includes(pattern));
 
-  // False positive contexts - these phrases contain failure keywords but are NOT failures
-  // Example: "Guided Tour was not displayed during this session, so no action was needed"
   const falsePositiveContexts = [
     'was not displayed during this session',
     'was not shown during this session',
@@ -109,7 +93,6 @@ function evaluateTestResult(resultSummary: string, expectedResult: string | null
   ];
   const hasFalsePositiveContext = falsePositiveContexts.some(ctx => result.includes(ctx));
 
-  // Critical failure patterns - more specific to avoid false positives
   const criticalFailurePatterns = [
     'timeout', 
     'test failed',
@@ -124,14 +107,11 @@ function evaluateTestResult(resultSummary: string, expectedResult: string | null
     'úloha selhala'
   ];
   
-  // Only trigger critical failure if NOT in false positive context and NOT strong success
   const hasCriticalFailure = !hasStrongSuccess && 
     !hasFalsePositiveContext && 
     criticalFailurePatterns.some(pattern => result.includes(pattern));
 
-  // Regular failure indicators (less severe)
   const failureIndicators = ['error', 'failed', 'not found', 'exception', 'chyba', 'selhalo', 'nenalezeno', 'neúspěch'];
-  // Exclude "failed" if it's part of false positive or strong success context
   const hasFailureIndicator = !hasStrongSuccess && 
     !hasFalsePositiveContext && 
     failureIndicators.some(ind => result.includes(ind));
@@ -139,7 +119,6 @@ function evaluateTestResult(resultSummary: string, expectedResult: string | null
   const successIndicators = ['success', 'passed', 'verified', 'confirmed', 'úspěch', 'ověřeno', 'potvrzeno', 'successful'];
   const hasSuccessIndicator = successIndicators.some(ind => result.includes(ind));
 
-  // Strong success with false positive context = PASS
   if (hasStrongSuccess || (hasSuccessIndicator && hasFalsePositiveContext)) {
     const keywords = expected
       .split(/[\s,;.!?]+/)
@@ -154,7 +133,6 @@ function evaluateTestResult(resultSummary: string, expectedResult: string | null
     };
   }
 
-  // Critical failures = FAIL
   if (hasCriticalFailure) {
     return { 
       status: 'failed', 
@@ -170,7 +148,6 @@ function evaluateTestResult(resultSummary: string, expectedResult: string | null
   const matchedKeywords = keywords.filter(kw => result.includes(kw));
   const matchRatio = keywords.length > 0 ? matchedKeywords.length / keywords.length : 0;
 
-  // Regular failure indicator = FAIL
   if (hasFailureIndicator) {
     return { 
       status: 'failed', 
@@ -178,7 +155,6 @@ function evaluateTestResult(resultSummary: string, expectedResult: string | null
     };
   }
 
-  // Success indicator + reasonable keyword match = PASS
   if (hasSuccessIndicator && matchRatio >= 0.3) {
     return { 
       status: 'passed', 
@@ -186,7 +162,6 @@ function evaluateTestResult(resultSummary: string, expectedResult: string | null
     };
   }
 
-  // High keyword match = PASS
   if (matchRatio >= 0.5) {
     return { 
       status: 'passed', 
@@ -200,60 +175,63 @@ function evaluateTestResult(resultSummary: string, expectedResult: string | null
   };
 }
 
-// Self-invoke to process next test (recursive edge function call)
-// SIMPLIFIED: delay is now handled externally via EdgeRuntime.waitUntil
-async function scheduleNextTest(batchId: string, testIds: string[], currentIndex: number, userId: string, batchDelaySeconds?: number) {
+// Self-invoke for next phase or next test
+async function scheduleSelfInvoke(
+  body: Record<string, unknown>,
+  delayMs: number,
+  logPrefix: string
+): Promise<void> {
   const functionUrl = `${SUPABASE_URL}/functions/v1/run-tests-batch`;
   
-  console.log(`[Batch ${batchId}] Scheduling next test invocation for index ${currentIndex + 1}`);
+  console.log(`${logPrefix} Scheduling self-invoke in ${delayMs / 1000}s with phase=${body.phase || 'start'}`);
   
   try {
+    if (delayMs > 0) {
+      await delay(delayMs);
+    }
+    
     const response = await fetch(functionUrl, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
         "Authorization": `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
       },
-      body: JSON.stringify({
-        batchId,
-        testIds,
-        userId,
-        batchDelaySeconds,
-        currentIndex: currentIndex + 1, // Move to next test
-        isRecursiveCall: true,
-      }),
+      body: JSON.stringify(body),
     });
     
     if (!response.ok) {
       const errorText = await response.text();
-      console.error(`[Batch ${batchId}] Failed to schedule next test:`, errorText);
+      console.error(`${logPrefix} Failed to schedule self-invoke:`, errorText);
     } else {
-      console.log(`[Batch ${batchId}] Next test scheduled successfully`);
+      console.log(`${logPrefix} Self-invoke scheduled successfully`);
     }
   } catch (error) {
-    console.error(`[Batch ${batchId}] Error scheduling next test:`, error);
+    console.error(`${logPrefix} Error scheduling self-invoke:`, error);
   }
 }
 
-// Process a single test with atomic claim mechanism to prevent duplicate invocations
-async function processSingleTest(
-  batchId: string, 
-  testId: string, 
-  userId: string, 
-  testIds: string[],
+// ================== PHASE: START ==================
+// Creates browser session/task, saves task_id IMMEDIATELY, then schedules poll phase
+async function phaseStart(
+  batchId: string,
+  testId: string,
   testIndex: number,
-  totalTests: number,
-  overrideDelaySeconds?: number
-): Promise<{ didRun: boolean; passed: boolean; failed: boolean; sessionId: string | null }> {
-  console.log(`[Batch ${batchId}] Processing test ${testId} (${testIndex + 1}/${totalTests})`);
+  testIds: string[],
+  userId: string,
+  batchDelaySeconds: number
+): Promise<Response> {
+  const logPrefix = `[Batch ${batchId}][START][${testIndex + 1}/${testIds.length}]`;
+  console.log(`${logPrefix} Starting test ${testId}`);
   
   const supabase = createClient(SUPABASE_URL!, SUPABASE_SERVICE_ROLE_KEY!);
-
-  console.log(`[Batch ${batchId}] Claim attempt testId=${testId} index=${testIndex}`);
+  
+  // Heartbeat: update batch updated_at
+  await supabase
+    .from("test_batch_runs")
+    .update({ updated_at: new Date().toISOString() })
+    .eq("id", batchId);
   
   // ATOMIC CLAIM: Only succeed if test is not already running
-  // We reset task_id at batch start, so we only need to check status here
-  // This prevents duplicate invocations from creating multiple sessions/tasks
   const { data: claimResult, error: claimError } = await supabase
     .from("generated_tests")
     .update({
@@ -266,18 +244,22 @@ async function processSingleTest(
     .maybeSingle();
 
   if (claimError) {
-    console.error(`[Batch ${batchId}] Claim error for testId=${testId}:`, claimError);
-    // On error, treat as failed claim - let another invocation handle it
-    return { didRun: false, passed: false, failed: false, sessionId: null };
+    console.error(`${logPrefix} Claim error:`, claimError);
+    return new Response(
+      JSON.stringify({ success: false, error: "Claim error", phase: "start" }),
+      { headers: { ...corsHeaders, "Content-Type": "application/json" } }
+    );
   }
 
   if (!claimResult) {
-    // Another invocation already claimed this test - skip silently
-    console.log(`[Batch ${batchId}] Claim SKIPPED (already running or claimed) testId=${testId}`);
-    return { didRun: false, passed: false, failed: false, sessionId: null };
+    console.log(`${logPrefix} Claim SKIPPED (already running or claimed)`);
+    return new Response(
+      JSON.stringify({ success: true, message: "Already claimed", phase: "start", skipped: true }),
+      { headers: { ...corsHeaders, "Content-Type": "application/json" } }
+    );
   }
 
-  console.log(`[Batch ${batchId}] Claim SUCCESS for testId=${testId}`);
+  console.log(`${logPrefix} Claim SUCCESS`);
   
   // Update batch current_test_id
   await supabase
@@ -285,578 +267,751 @@ async function processSingleTest(
     .update({ current_test_id: testId })
     .eq("id", batchId);
   
-  let sessionIdForCleanup: string | null = null;
-  let batchDelaySeconds = overrideDelaySeconds ?? 10;
-  
-  try {
-    const { data: test, error: testError } = await supabase
+  // Fetch test details
+  const { data: test, error: testError } = await supabase
+    .from("generated_tests")
+    .select("*")
+    .eq("id", testId)
+    .single();
+
+  if (testError || !test) {
+    console.error(`${logPrefix} Test not found`);
+    await supabase
       .from("generated_tests")
-      .select("*")
-      .eq("id", testId)
+      .update({ status: "error", result_summary: "Test not found" })
+      .eq("id", testId);
+    
+    // Schedule next test
+    // @ts-ignore
+    EdgeRuntime.waitUntil(scheduleSelfInvoke({
+      batchId, testIds, userId, batchDelaySeconds,
+      currentIndex: testIndex + 1,
+      phase: "start",
+      isRecursiveCall: true,
+    }, batchDelaySeconds * 1000, logPrefix));
+    
+    return new Response(
+      JSON.stringify({ success: false, error: "Test not found", phase: "start" }),
+      { headers: { ...corsHeaders, "Content-Type": "application/json" } }
+    );
+  }
+
+  // Build prompt
+  let setupPrompt = "";
+  let baseUrl = "";
+  let credentials = "";
+  let browserProfileId: string | null = null;
+  let maxSteps = 10;
+  let recordVideo = true;
+
+  if (test.project_id) {
+    const { data: project } = await supabase
+      .from("projects")
+      .select("setup_prompt, base_url, browser_profile_id, max_steps, record_video, batch_delay_seconds")
+      .eq("id", test.project_id)
       .single();
 
-    if (testError || !test) {
-      console.error(`[Batch ${batchId}] Test not found: ${testId}`);
-      // Rollback claim
-      await supabase
-        .from("generated_tests")
-        .update({ status: "error", task_id: null, result_summary: "Test not found" })
-        .eq("id", testId);
-      return { didRun: true, passed: false, failed: true, sessionId: null };
+    if (project) {
+      setupPrompt = project.setup_prompt || "";
+      baseUrl = project.base_url || "";
+      browserProfileId = project.browser_profile_id || null;
+      maxSteps = project.max_steps ?? 10;
+      recordVideo = project.record_video ?? true;
     }
 
-    let setupPrompt = "";
-    let baseUrl = "";
-    let credentials = "";
-    let browserProfileId: string | null = null;
-    let maxSteps = 10;
-    let recordVideo = true;
+    const { data: creds } = await supabase
+      .from("project_credentials")
+      .select("username, password, description")
+      .eq("project_id", test.project_id);
 
-    if (test.project_id) {
-      const { data: project } = await supabase
-        .from("projects")
-        .select("setup_prompt, base_url, browser_profile_id, max_steps, record_video, batch_delay_seconds")
-        .eq("id", test.project_id)
-        .single();
-
-      if (project) {
-        setupPrompt = project.setup_prompt || "";
-        baseUrl = project.base_url || "";
-        browserProfileId = project.browser_profile_id || null;
-        maxSteps = project.max_steps ?? 10;
-        recordVideo = project.record_video ?? true;
-        batchDelaySeconds = overrideDelaySeconds ?? project.batch_delay_seconds ?? 10;
-      }
-
-      const { data: creds } = await supabase
-        .from("project_credentials")
-        .select("username, password, description")
-        .eq("project_id", test.project_id);
-
-      if (creds && creds.length > 0) {
-        credentials = creds
-          .map((c) =>
-            `Credentials${c.description ? ` (${c.description})` : ""}: username="${c.username}", password="${c.password}"`
-          )
-          .join("\n");
-      }
+    if (creds && creds.length > 0) {
+      credentials = creds
+        .map((c) =>
+          `Credentials${c.description ? ` (${c.description})` : ""}: username="${c.username}", password="${c.password}"`
+        )
+        .join("\n");
     }
+  }
 
-    let fullPrompt = test.prompt;
-    if (baseUrl) {
-      fullPrompt = `Naviguj na ${baseUrl}\n\n${fullPrompt}`;
-    }
-    if (setupPrompt) {
-      fullPrompt = `${setupPrompt}\n\nNásledně proveď test:\n${fullPrompt}`;
-    }
-    if (credentials) {
-      fullPrompt = `${fullPrompt}\n\n${credentials}`;
-    }
-    if (test.expected_result) {
-      fullPrompt = `${fullPrompt}\n\nOčekávaný výsledek: ${test.expected_result}`;
-    }
+  let fullPrompt = test.prompt;
+  if (baseUrl) {
+    fullPrompt = `Naviguj na ${baseUrl}\n\n${fullPrompt}`;
+  }
+  if (setupPrompt) {
+    fullPrompt = `${setupPrompt}\n\nNásledně proveď test:\n${fullPrompt}`;
+  }
+  if (credentials) {
+    fullPrompt = `${fullPrompt}\n\n${credentials}`;
+  }
+  if (test.expected_result) {
+    fullPrompt = `${fullPrompt}\n\nOčekávaný výsledek: ${test.expected_result}`;
+  }
 
-    console.log(`[Batch ${batchId}] Creating browser-use task for test ${testId}${browserProfileId ? ` with profile ${browserProfileId}` : ''}, maxSteps: ${maxSteps}, recordVideo: ${recordVideo}`);
+  console.log(`${logPrefix} Creating browser-use task${browserProfileId ? ` with profile ${browserProfileId}` : ''}`);
+  
+  // Create session and task
+  let sessionId: string | null = null;
+  let browserTaskId: string | null = null;
+  
+  const maxCreateRetries = 4;
+  const retryDelays = [20000, 40000, 60000, 90000];
+  
+  for (let createAttempt = 1; createAttempt <= maxCreateRetries; createAttempt++) {
+    console.log(`${logPrefix} Task creation attempt ${createAttempt}/${maxCreateRetries}`);
     
-    // Step 1: Create session and task with retry for concurrency errors
-    let sessionId: string | null = null;
-    let browserTaskId: string | null = null;
-    
-    const maxCreateRetries = 4;
-    const retryDelays = [20000, 40000, 60000, 90000];
-    
-    for (let createAttempt = 1; createAttempt <= maxCreateRetries; createAttempt++) {
-      console.log(`[Batch ${batchId}] Task creation attempt ${createAttempt}/${maxCreateRetries}`);
-      
-      try {
-        const sessionPayload: Record<string, unknown> = {};
-        if (browserProfileId) {
-          sessionPayload.profileId = browserProfileId;
-          sessionPayload.profile_id = browserProfileId;
-        }
-        
-        const sessionRes = await fetch("https://api.browser-use.com/api/v2/sessions", {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            "X-Browser-Use-API-Key": BROWSER_USE_API_KEY!,
-          },
-          body: JSON.stringify(sessionPayload),
-        });
-        
-        const sessionRaw = await sessionRes.text();
-        console.log(`[Batch ${batchId}] Session create response: ${sessionRes.status} ${sessionRaw.substring(0, 500)}`);
-        
-        if (sessionRes.ok) {
-          const sessionData = JSON.parse(sessionRaw);
-          sessionId = sessionData.id || sessionData.sessionId || sessionData.session_id;
-          sessionIdForCleanup = sessionId;
-          console.log(`[Batch ${batchId}] Created session, sessionId: ${sessionId}`);
-        } else if (sessionRaw.includes("Too many concurrent")) {
-          console.log(`[Batch ${batchId}] Session creation hit concurrency limit`);
-          if (sessionIdForCleanup) {
-            await stopSessionResilient(sessionIdForCleanup, batchId);
-            sessionIdForCleanup = null;
-          }
-          if (createAttempt < maxCreateRetries) {
-            console.log(`[Batch ${batchId}] Waiting ${retryDelays[createAttempt - 1] / 1000}s before retry...`);
-            await delay(retryDelays[createAttempt - 1]);
-            continue;
-          }
-        }
-      } catch (e) {
-        console.error(`[Batch ${batchId}] Error creating session:`, e);
+    try {
+      const sessionPayload: Record<string, unknown> = {};
+      if (browserProfileId) {
+        sessionPayload.profileId = browserProfileId;
+        sessionPayload.profile_id = browserProfileId;
       }
       
-      // Create the task
-      const taskPayload: Record<string, unknown> = {
-        task: fullPrompt,
-        save_browser_data: true,
-        record_video: recordVideo,
-        max_steps: maxSteps,
-      };
-      
-      if (sessionId) {
-        taskPayload.sessionId = sessionId;
-        taskPayload.session_id = sessionId;
-        console.log(`[Batch ${batchId}] Creating task with session: ${sessionId}`);
-      } else if (browserProfileId) {
-        taskPayload.profile_id = browserProfileId;
-        taskPayload.profileId = browserProfileId;
-        console.log(`[Batch ${batchId}] Creating task with direct profile (fallback): ${browserProfileId}`);
-      }
-      
-      const createResponse = await fetch("https://api.browser-use.com/api/v2/tasks", {
+      const sessionRes = await fetch("https://api.browser-use.com/api/v2/sessions", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
           "X-Browser-Use-API-Key": BROWSER_USE_API_KEY!,
         },
-        body: JSON.stringify(taskPayload),
+        body: JSON.stringify(sessionPayload),
       });
-
-      if (!createResponse.ok) {
-        const errorText = await createResponse.text();
-        console.error(`[Batch ${batchId}] Failed to create task: ${errorText}`);
-        
-        if (errorText.includes("Too many concurrent") && createAttempt < maxCreateRetries) {
-          console.log(`[Batch ${batchId}] Task creation hit concurrency limit, attempt ${createAttempt}/${maxCreateRetries}`);
-          if (sessionIdForCleanup) {
-            await stopSessionResilient(sessionIdForCleanup, batchId);
-            sessionIdForCleanup = null;
-            sessionId = null;
-          }
-          console.log(`[Batch ${batchId}] Waiting ${retryDelays[createAttempt - 1] / 1000}s before retry...`);
+      
+      const sessionRaw = await sessionRes.text();
+      console.log(`${logPrefix} Session create response: ${sessionRes.status}`);
+      
+      if (sessionRes.ok) {
+        const sessionData = JSON.parse(sessionRaw);
+        sessionId = sessionData.id || sessionData.sessionId || sessionData.session_id;
+        console.log(`${logPrefix} Created session: ${sessionId}`);
+      } else if (sessionRaw.includes("Too many concurrent")) {
+        console.log(`${logPrefix} Session creation hit concurrency limit`);
+        if (createAttempt < maxCreateRetries) {
+          console.log(`${logPrefix} Waiting ${retryDelays[createAttempt - 1] / 1000}s before retry...`);
           await delay(retryDelays[createAttempt - 1]);
           continue;
         }
-        
-        throw new Error(`Failed to create task: ${errorText}`);
       }
+    } catch (e) {
+      console.error(`${logPrefix} Error creating session:`, e);
+    }
+    
+    // Create the task
+    const taskPayload: Record<string, unknown> = {
+      task: fullPrompt,
+      save_browser_data: true,
+      record_video: recordVideo,
+      max_steps: maxSteps,
+    };
+    
+    if (sessionId) {
+      taskPayload.sessionId = sessionId;
+      taskPayload.session_id = sessionId;
+    } else if (browserProfileId) {
+      taskPayload.profile_id = browserProfileId;
+      taskPayload.profileId = browserProfileId;
+    }
+    
+    const createResponse = await fetch("https://api.browser-use.com/api/v2/tasks", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "X-Browser-Use-API-Key": BROWSER_USE_API_KEY!,
+      },
+      body: JSON.stringify(taskPayload),
+    });
 
-      const createData = await createResponse.json();
-      browserTaskId = createData.id;
+    if (!createResponse.ok) {
+      const errorText = await createResponse.text();
+      console.error(`${logPrefix} Failed to create task: ${errorText}`);
       
-      if (!sessionIdForCleanup) {
-        const taskSessionId = createData.sessionId || createData.session_id;
-        if (taskSessionId) {
-          sessionIdForCleanup = taskSessionId;
-          console.log(`[Batch ${batchId}] Captured sessionId from task response: ${sessionIdForCleanup}`);
+      if (errorText.includes("Too many concurrent") && createAttempt < maxCreateRetries) {
+        if (sessionId) {
+          await stopSessionResilient(sessionId, batchId);
+          sessionId = null;
         }
+        console.log(`${logPrefix} Waiting ${retryDelays[createAttempt - 1] / 1000}s before retry...`);
+        await delay(retryDelays[createAttempt - 1]);
+        continue;
       }
+      
+      // Final failure
+      await supabase
+        .from("generated_tests")
+        .update({ status: "error", result_summary: `Failed to create task: ${errorText.substring(0, 200)}` })
+        .eq("id", testId);
+      
+      // Schedule next test
+      // @ts-ignore
+      EdgeRuntime.waitUntil(scheduleSelfInvoke({
+        batchId, testIds, userId, batchDelaySeconds,
+        currentIndex: testIndex + 1,
+        phase: "start",
+        isRecursiveCall: true,
+      }, batchDelaySeconds * 1000, logPrefix));
+      
+      return new Response(
+        JSON.stringify({ success: false, error: "Failed to create task", phase: "start" }),
+        { headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
 
-      if (!browserTaskId) {
-        throw new Error("No task ID returned from browser-use");
+    const createData = await createResponse.json();
+    browserTaskId = createData.id;
+    
+    if (!sessionId) {
+      const taskSessionId = createData.sessionId || createData.session_id;
+      if (taskSessionId) {
+        sessionId = taskSessionId;
       }
+    }
 
-      console.log(`[Batch ${batchId}] Browser-use task created: ${browserTaskId}`);
+    if (browserTaskId) {
+      console.log(`${logPrefix} Browser-use task created: ${browserTaskId}`);
       break;
     }
-    
-    if (!browserTaskId) {
-      throw new Error("Failed to create task after all retries");
-    }
-
-    const { data: taskRecord, error: taskError2 } = await supabase
-      .from("tasks")
-      .insert({
-        user_id: userId,
-        project_id: test.project_id,
-        title: test.title,
-        prompt: fullPrompt,
-        status: "running",
-        browser_use_task_id: browserTaskId,
-        started_at: new Date().toISOString(),
-        task_type: "test",
-      })
-      .select()
-      .single();
-
-    if (taskError2 || !taskRecord) {
-      console.error(`[Batch ${batchId}] Failed to create task record:`, taskError2);
-      // Rollback the claim on generated_tests
-      await supabase
-        .from("generated_tests")
-        .update({
-          status: "error",
-          result_summary: `Failed to create task record: ${taskError2?.message || "Unknown error"}`,
-        })
-        .eq("id", testId);
-      throw new Error("Failed to create task record");
-    }
-
-    console.log(`[Batch ${batchId}] Task record created: ${taskRecord.id}`);
-
-    // Poll for task completion
-    let taskFinished = false;
-    let taskStatus = "";
-    let resultSummary = "";
-    let steps: unknown[] = [];
-    let screenshots: string[] = [];
-    let recordings: string[] = [];
-    const maxPolls = 360; // ~30 minutes max
-    let pollCount = 0;
-
-    while (!taskFinished && pollCount < maxPolls) {
-      pollCount++;
-      await delay(5000);
-
-      try {
-        const statusRes = await fetch(
-          `https://api.browser-use.com/api/v2/tasks/${browserTaskId}`,
-          {
-            headers: {
-              "X-Browser-Use-API-Key": BROWSER_USE_API_KEY!,
-            },
-          }
-        );
-
-        if (!statusRes.ok) {
-          console.error(`[Batch ${batchId}] Status check failed: ${statusRes.status}`);
-          continue;
-        }
-
-        const statusData = await statusRes.json();
-        taskStatus = statusData.status;
-        
-        // Capture sessionId from polling if we don't have it
-        if (!sessionIdForCleanup) {
-          const polledSessionId = statusData.sessionId || statusData.session_id;
-          if (polledSessionId) {
-            sessionIdForCleanup = polledSessionId;
-            console.log(`[Batch ${batchId}] Captured sessionId from polling: ${sessionIdForCleanup}`);
-          }
-        }
-
-        console.log(`[Batch ${batchId}] Task ${browserTaskId} status: ${taskStatus}`);
-
-        if (taskStatus === "finished" || taskStatus === "failed" || taskStatus === "stopped") {
-          taskFinished = true;
-          resultSummary = statusData.output || statusData.result || "";
-          steps = statusData.steps || [];
-
-          // IMPORTANT: strict one-by-one execution
-          // Close the browser session FIRST, then schedule the next invocation.
-          // This prevents "Too many concurrent active sessions" errors when a previous invocation
-          // continues media processing while a new one starts.
-          if (sessionIdForCleanup) {
-            try {
-              await stopSessionResilient(sessionIdForCleanup, batchId);
-            } catch (e) {
-              console.log(`[Batch ${batchId}] Error stopping session before scheduling next test:`, e);
-            }
-          }
-
-          // NOTE: scheduling next test is now handled in the main serve function via EdgeRuntime.waitUntil
-          // This ensures the delay completes even if edge function wants to shut down
-
-          // Extract screenshots from steps
-          if (Array.isArray(steps)) {
-            for (const step of steps) {
-              if (typeof step === "object" && step !== null) {
-                const stepObj = step as Record<string, unknown>;
-                if (stepObj.screenshotUrl && typeof stepObj.screenshotUrl === "string") {
-                  screenshots.push(stepObj.screenshotUrl);
-                }
-                if (stepObj.screenshot_url && typeof stepObj.screenshot_url === "string") {
-                  screenshots.push(stepObj.screenshot_url);
-                }
-              }
-            }
-          }
-
-          // Wait for video processing
-          console.log(`[Batch ${batchId}] Waiting for video processing...`);
-          await delay(5000);
-
-          // Fetch media files - try both task and session endpoints
-          const maxMediaRetries = 6;
-          for (let mediaAttempt = 1; mediaAttempt <= maxMediaRetries; mediaAttempt++) {
-            console.log(`[Batch ${batchId}] Media fetch attempt ${mediaAttempt}/${maxMediaRetries}...`);
-            
-            // First try task endpoint
-            const mediaRes = await fetch(
-              `https://api.browser-use.com/api/v2/tasks/${browserTaskId}`,
-              {
-                headers: {
-                  "X-Browser-Use-API-Key": BROWSER_USE_API_KEY!,
-                },
-              }
-            );
-
-            if (mediaRes.ok) {
-              const mediaData = await mediaRes.json();
-              const outputFiles = mediaData.outputFiles || mediaData.output_files || [];
-              
-              console.log(`[Batch ${batchId}] Attempt ${mediaAttempt} - Status: ${mediaData.status}, OutputFiles: ${JSON.stringify(outputFiles)}`);
-              console.log(`[Batch ${batchId}] Attempt ${mediaAttempt} - OutputFiles raw:`, JSON.stringify(outputFiles));
-              
-              const videoFiles = outputFiles.filter((f: { id?: string; fileName?: string }) => {
-                const fileName = f?.fileName || '';
-                return fileName.endsWith('.webm') || fileName.endsWith('.mp4');
-              });
-              console.log(`[Batch ${batchId}] Video files found: ${videoFiles.length}`);
-              
-              // Get new screenshots from steps
-              if (mediaData.steps && Array.isArray(mediaData.steps)) {
-                for (const step of mediaData.steps) {
-                  if (typeof step === "object" && step !== null) {
-                    const stepObj = step as Record<string, unknown>;
-                    if (stepObj.screenshotUrl && typeof stepObj.screenshotUrl === "string" && !screenshots.includes(stepObj.screenshotUrl)) {
-                      screenshots.push(stepObj.screenshotUrl);
-                    }
-                    if (stepObj.screenshot_url && typeof stepObj.screenshot_url === "string" && !screenshots.includes(stepObj.screenshot_url)) {
-                      screenshots.push(stepObj.screenshot_url);
-                    }
-                  }
-                }
-              }
-              
-              // Process video files from task
-              for (const file of videoFiles) {
-                if (file.id) {
-                  try {
-                    const downloadRes = await fetch(
-                      `https://api.browser-use.com/api/v2/files/${file.id}/download`,
-                      {
-                        headers: {
-                          "X-Browser-Use-API-Key": BROWSER_USE_API_KEY!,
-                        },
-                      }
-                    );
-                    if (downloadRes.ok) {
-                      const downloadData = await downloadRes.json();
-                      if (downloadData.url) {
-                        recordings.push(downloadData.url);
-                        console.log(`[Batch ${batchId}] Got recording URL from task: ${downloadData.url.substring(0, 50)}...`);
-                      }
-                    }
-                  } catch (e) {
-                    console.log(`[Batch ${batchId}] Error fetching video download URL:`, e);
-                  }
-                }
-              }
-              
-              // If no videos from task, try session endpoint (v2 API may store recordings there)
-              // NOTE: session may already be stopped for sequential safety; keep this as best-effort.
-              if (recordings.length === 0 && sessionId) {
-                console.log(`[Batch ${batchId}] No recordings from task, trying session endpoint: ${sessionId}`);
-                try {
-                  const sessionRes = await fetch(
-                    `https://api.browser-use.com/api/v2/sessions/${sessionId}`,
-                    {
-                      headers: {
-                        "X-Browser-Use-API-Key": BROWSER_USE_API_KEY!,
-                      },
-                    }
-                  );
-                  if (sessionRes.ok) {
-                    const sessionData = await sessionRes.json();
-                    console.log(`[Batch ${batchId}] Session data keys:`, Object.keys(sessionData));
-                    
-                    // Check for recordings in various possible fields
-                    const sessionRecordings = sessionData.recordings || sessionData.recording || sessionData.videos || [];
-                    const sessionOutputFiles = sessionData.outputFiles || sessionData.output_files || [];
-                    
-                    console.log(`[Batch ${batchId}] Session recordings: ${JSON.stringify(sessionRecordings)}`);
-                    console.log(`[Batch ${batchId}] Session outputFiles: ${JSON.stringify(sessionOutputFiles)}`);
-                    
-                    // Process session recordings if they're URLs
-                    if (Array.isArray(sessionRecordings)) {
-                      for (const rec of sessionRecordings) {
-                        if (typeof rec === 'string' && rec.startsWith('http')) {
-                          recordings.push(rec);
-                        } else if (typeof rec === 'object' && rec !== null) {
-                          const url = rec.url || rec.downloadUrl || rec.download_url;
-                          if (url) recordings.push(url);
-                        }
-                      }
-                    }
-                    
-                    // Process session output files for videos
-                    if (Array.isArray(sessionOutputFiles)) {
-                      const sessionVideoFiles = sessionOutputFiles.filter((f: { id?: string; fileName?: string }) => {
-                        const fileName = f?.fileName || '';
-                        return fileName.endsWith('.webm') || fileName.endsWith('.mp4');
-                      });
-                      
-                      for (const file of sessionVideoFiles) {
-                        if (file.id) {
-                          try {
-                            const downloadRes = await fetch(
-                              `https://api.browser-use.com/api/v2/files/${file.id}/download`,
-                              {
-                                headers: {
-                                  "X-Browser-Use-API-Key": BROWSER_USE_API_KEY!,
-                                },
-                              }
-                            );
-                            if (downloadRes.ok) {
-                              const downloadData = await downloadRes.json();
-                              if (downloadData.url) {
-                                recordings.push(downloadData.url);
-                                console.log(`[Batch ${batchId}] Got recording URL from session: ${downloadData.url.substring(0, 50)}...`);
-                              }
-                            }
-                          } catch (e) {
-                            console.log(`[Batch ${batchId}] Error fetching session video download URL:`, e);
-                          }
-                        }
-                      }
-                    }
-                  }
-                } catch (e) {
-                  console.log(`[Batch ${batchId}] Error fetching session for recordings:`, e);
-                }
-              }
-              
-              console.log(`[Batch ${batchId}] Final media: ${screenshots.length} screenshots, ${recordings.length} recordings`);
-              
-              if (recordings.length > 0 || mediaAttempt === maxMediaRetries) {
-                break;
-              }
-            }
-            
-            if (mediaAttempt < maxMediaRetries) {
-              console.log(`[Batch ${batchId}] Waiting 5s for video processing...`);
-              await delay(5000);
-            }
-          }
-        }
-      } catch (e) {
-        console.error(`[Batch ${batchId}] Error polling task:`, e);
-      }
-    }
-
-    // Calculate execution time
-    const startedAt = taskRecord.started_at ? new Date(taskRecord.started_at).getTime() : Date.now();
-    const executionTimeMs = Date.now() - startedAt;
-    const stepCount = Array.isArray(steps) ? steps.length : 0;
-
-    // Evaluate test result
-    // taskStatus === "failed" means technical error → status = 'error'
-    // evaluation.status === "failed" means functional failure → status = 'failed'
-    const evaluation = evaluateTestResult(resultSummary, test.expected_result);
-    const finalStatus = taskStatus === "failed" ? "error" : evaluation.status;
-    const resultReasoning = evaluation.reasoning;
-
-    console.log(`[Batch ${batchId}] Test evaluation: ${finalStatus} - ${resultReasoning}`);
-
-    // Calculate cost
-    const execMinutes = (executionTimeMs || 0) / 60000;
-    const proxyRate = recordVideo ? 0.008 : 0.004;
-    const estimatedCost = 0.01 + (stepCount * 0.01) + (execMinutes * proxyRate);
-    
-    console.log(`[Batch ${batchId}] Cost: ${stepCount} steps, ${execMinutes.toFixed(2)} min, $${estimatedCost.toFixed(4)}`);
-
-    // Update task record
-    // 'error' (technical) → tasks.status = 'failed'
-    // 'failed' (functional) → tasks.status = 'completed' (test ran successfully, just didn't pass)
+  }
+  
+  if (!browserTaskId) {
+    console.error(`${logPrefix} Failed to create task after all retries`);
     await supabase
-      .from("tasks")
-      .update({
-        status: finalStatus === "error" ? "failed" : "completed",
-        completed_at: new Date().toISOString(),
-        screenshots: screenshots.length > 0 ? screenshots : null,
-        recordings: recordings.length > 0 ? recordings : null,
-        result: { output: resultSummary, reasoning: resultReasoning },
-        step_count: stepCount,
-      })
-      .eq("id", taskRecord.id);
-
-    // Update generated_tests with all metrics
-    const updateResult = await supabase
       .from("generated_tests")
-      .update({
-        status: finalStatus,
-        last_run_at: new Date().toISOString(),
-        execution_time_ms: executionTimeMs,
-        result_summary: resultSummary || null,
-        result_reasoning: resultReasoning || null,
-        step_count: stepCount,
-        estimated_cost: estimatedCost,
-        task_id: taskRecord.id,
-      })
+      .update({ status: "error", result_summary: "Failed to create browser task after retries" })
       .eq("id", testId);
     
-    if (updateResult.error) {
-      console.error(`[Batch ${batchId}] Failed to update generated_test ${testId}:`, updateResult.error);
-    } else {
-      console.log(`[Batch ${batchId}] Updated generated_test ${testId}: status=${finalStatus}, steps=${stepCount}, cost=$${estimatedCost.toFixed(4)}`);
-    }
-
-    console.log(`[Batch ${batchId}] Test ${testId} completed with status: ${finalStatus}`);
+    // @ts-ignore
+    EdgeRuntime.waitUntil(scheduleSelfInvoke({
+      batchId, testIds, userId, batchDelaySeconds,
+      currentIndex: testIndex + 1,
+      phase: "start",
+      isRecursiveCall: true,
+    }, batchDelaySeconds * 1000, logPrefix));
     
-    return { didRun: true, 
-      passed: finalStatus === "passed", 
-      failed: finalStatus !== "passed",
-      // session already stopped above to guarantee one-by-one execution
-      sessionId: null
-    };
-  } catch (error) {
-    console.error(`[Batch ${batchId}] Error running test ${testId}:`, error);
+    return new Response(
+      JSON.stringify({ success: false, error: "No task ID", phase: "start" }),
+      { headers: { ...corsHeaders, "Content-Type": "application/json" } }
+    );
+  }
 
-    const supabase = createClient(SUPABASE_URL!, SUPABASE_SERVICE_ROLE_KEY!);
+  // Create task record in DB
+  const { data: taskRecord, error: taskError2 } = await supabase
+    .from("tasks")
+    .insert({
+      user_id: userId,
+      project_id: test.project_id,
+      title: test.title,
+      prompt: fullPrompt,
+      status: "running",
+      browser_use_task_id: browserTaskId,
+      started_at: new Date().toISOString(),
+      task_type: "test",
+    })
+    .select()
+    .single();
 
-    // Best-effort cleanup to avoid leaking active sessions when an error occurs mid-run
-    if (sessionIdForCleanup) {
-      try {
-        await stopSessionResilient(sessionIdForCleanup, batchId);
-        sessionIdForCleanup = null;
-      } catch (e) {
-        console.log(`[Batch ${batchId}] Error stopping session in error handler:`, e);
+  if (taskError2 || !taskRecord) {
+    console.error(`${logPrefix} Failed to create task record:`, taskError2);
+    await supabase
+      .from("generated_tests")
+      .update({ status: "error", result_summary: `Failed to create DB task: ${taskError2?.message}` })
+      .eq("id", testId);
+    
+    // @ts-ignore
+    EdgeRuntime.waitUntil(scheduleSelfInvoke({
+      batchId, testIds, userId, batchDelaySeconds,
+      currentIndex: testIndex + 1,
+      phase: "start",
+      isRecursiveCall: true,
+    }, batchDelaySeconds * 1000, logPrefix));
+    
+    return new Response(
+      JSON.stringify({ success: false, error: "Failed to create task record", phase: "start" }),
+      { headers: { ...corsHeaders, "Content-Type": "application/json" } }
+    );
+  }
+
+  console.log(`${logPrefix} Task record created: ${taskRecord.id}`);
+
+  // *** CRITICAL FIX: IMMEDIATELY update task_id on generated_tests ***
+  // This prevents frontend from resetting status to 'pending'
+  await supabase
+    .from("generated_tests")
+    .update({ task_id: taskRecord.id })
+    .eq("id", testId);
+
+  console.log(`${logPrefix} Updated generated_tests.task_id = ${taskRecord.id}`);
+
+  // Schedule poll phase after 10 seconds
+  // @ts-ignore
+  EdgeRuntime.waitUntil(scheduleSelfInvoke({
+    batchId,
+    testIds,
+    userId,
+    batchDelaySeconds,
+    currentIndex: testIndex,
+    phase: "poll",
+    isRecursiveCall: true,
+    taskRecordId: taskRecord.id,
+    browserTaskId: browserTaskId,
+    sessionId: sessionId,
+    recordVideo: recordVideo,
+    expectedResult: test.expected_result,
+  }, 10000, logPrefix));
+
+  console.log(`${logPrefix} Poll phase scheduled in 10s`);
+
+  return new Response(
+    JSON.stringify({ 
+      success: true, 
+      message: "Task launched, poll scheduled",
+      phase: "start",
+      taskRecordId: taskRecord.id,
+    }),
+    { headers: { ...corsHeaders, "Content-Type": "application/json" } }
+  );
+}
+
+// ================== PHASE: POLL ==================
+// Checks task status, updates heartbeat, finalizes when done
+async function phasePoll(
+  batchId: string,
+  testId: string,
+  testIndex: number,
+  testIds: string[],
+  userId: string,
+  batchDelaySeconds: number,
+  taskRecordId: string,
+  browserTaskId: string,
+  sessionId: string | null,
+  recordVideo: boolean,
+  expectedResult: string | null
+): Promise<Response> {
+  const logPrefix = `[Batch ${batchId}][POLL][${testIndex + 1}/${testIds.length}]`;
+  console.log(`${logPrefix} Polling task ${browserTaskId}`);
+  
+  const supabase = createClient(SUPABASE_URL!, SUPABASE_SERVICE_ROLE_KEY!);
+  
+  // Heartbeat: update batch updated_at
+  await supabase
+    .from("test_batch_runs")
+    .update({ updated_at: new Date().toISOString() })
+    .eq("id", batchId);
+  
+  // Check batch status (cancelled/paused)
+  const { data: batchState } = await supabase
+    .from("test_batch_runs")
+    .select("paused, status, completed_tests, passed_tests, failed_tests")
+    .eq("id", batchId)
+    .single();
+
+  if (batchState?.status === "cancelled") {
+    console.log(`${logPrefix} Batch was cancelled`);
+    // Stop session if active
+    if (sessionId) {
+      await stopSessionResilient(sessionId, batchId);
+    }
+    return new Response(
+      JSON.stringify({ success: true, message: "Batch cancelled", phase: "poll" }),
+      { headers: { ...corsHeaders, "Content-Type": "application/json" } }
+    );
+  }
+
+  if (batchState?.paused) {
+    console.log(`${logPrefix} Batch is paused, re-scheduling poll in 10s`);
+    // @ts-ignore
+    EdgeRuntime.waitUntil(scheduleSelfInvoke({
+      batchId, testIds, userId, batchDelaySeconds,
+      currentIndex: testIndex,
+      phase: "poll",
+      isRecursiveCall: true,
+      taskRecordId, browserTaskId, sessionId, recordVideo, expectedResult,
+    }, 10000, logPrefix));
+    
+    return new Response(
+      JSON.stringify({ success: true, message: "Batch paused", phase: "poll" }),
+      { headers: { ...corsHeaders, "Content-Type": "application/json" } }
+    );
+  }
+
+  // Check task status from DB first
+  const { data: dbTask } = await supabase
+    .from("tasks")
+    .select("status, started_at, completed_at, result, step_count, screenshots, recordings")
+    .eq("id", taskRecordId)
+    .single();
+
+  // If DB says task is done, finalize immediately
+  if (dbTask?.status && ['completed', 'failed', 'cancelled'].includes(dbTask.status)) {
+    console.log(`${logPrefix} DB task already finalized: ${dbTask.status}`);
+    return await finalizeTest(
+      batchId, testId, testIndex, testIds, userId, batchDelaySeconds,
+      taskRecordId, dbTask, sessionId, recordVideo, expectedResult, logPrefix
+    );
+  }
+
+  // Poll provider
+  try {
+    const statusRes = await fetch(
+      `https://api.browser-use.com/api/v2/tasks/${browserTaskId}`,
+      {
+        headers: { "X-Browser-Use-API-Key": BROWSER_USE_API_KEY! },
       }
+    );
+
+    if (!statusRes.ok) {
+      console.log(`${logPrefix} Status check failed: ${statusRes.status}, re-polling in 10s`);
+      // @ts-ignore
+      EdgeRuntime.waitUntil(scheduleSelfInvoke({
+        batchId, testIds, userId, batchDelaySeconds,
+        currentIndex: testIndex,
+        phase: "poll",
+        isRecursiveCall: true,
+        taskRecordId, browserTaskId, sessionId, recordVideo, expectedResult,
+      }, 10000, logPrefix));
+      
+      return new Response(
+        JSON.stringify({ success: true, message: "Poll failed, retrying", phase: "poll" }),
+        { headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
     }
+
+    const statusData = await statusRes.json();
+    const taskStatus = statusData.status;
     
-    try {
-      // Technical error → status = 'error'
+    console.log(`${logPrefix} Provider task status: ${taskStatus}`);
+
+    if (taskStatus === "finished" || taskStatus === "failed" || taskStatus === "stopped") {
+      // Task is done - finalize
+      console.log(`${logPrefix} Task finished, finalizing...`);
+      
+      // Stop session first
+      if (sessionId) {
+        await stopSessionResilient(sessionId, batchId);
+      }
+      
+      // Wait for video processing
+      await delay(5000);
+      
+      // Fetch full task data with media
+      const mediaRes = await fetch(
+        `https://api.browser-use.com/api/v2/tasks/${browserTaskId}`,
+        { headers: { "X-Browser-Use-API-Key": BROWSER_USE_API_KEY! } }
+      );
+      
+      let resultSummary = statusData.output || statusData.result || "";
+      let steps: unknown[] = statusData.steps || [];
+      let screenshots: string[] = [];
+      let recordings: string[] = [];
+      
+      if (mediaRes.ok) {
+        const mediaData = await mediaRes.json();
+        resultSummary = mediaData.output || mediaData.result || resultSummary;
+        steps = mediaData.steps || steps;
+        
+        // Extract screenshots from steps
+        if (Array.isArray(steps)) {
+          for (const step of steps) {
+            if (typeof step === "object" && step !== null) {
+              const stepObj = step as Record<string, unknown>;
+              if (stepObj.screenshotUrl && typeof stepObj.screenshotUrl === "string") {
+                screenshots.push(stepObj.screenshotUrl);
+              }
+              if (stepObj.screenshot_url && typeof stepObj.screenshot_url === "string") {
+                screenshots.push(stepObj.screenshot_url);
+              }
+            }
+          }
+        }
+        
+        // Extract recordings
+        const outputFiles = mediaData.outputFiles || mediaData.output_files || [];
+        const videoFiles = outputFiles.filter((f: { id?: string; fileName?: string }) => {
+          const fileName = f?.fileName || '';
+          return fileName.endsWith('.webm') || fileName.endsWith('.mp4');
+        });
+        
+        for (const file of videoFiles) {
+          if (file.id) {
+            try {
+              const downloadRes = await fetch(
+                `https://api.browser-use.com/api/v2/files/${file.id}/download`,
+                { headers: { "X-Browser-Use-API-Key": BROWSER_USE_API_KEY! } }
+              );
+              if (downloadRes.ok) {
+                const downloadData = await downloadRes.json();
+                if (downloadData.url) {
+                  recordings.push(downloadData.url);
+                }
+              }
+            } catch (e) {
+              console.log(`${logPrefix} Error fetching video download URL:`, e);
+            }
+          }
+        }
+      }
+      
+      // Calculate metrics
+      const { data: taskStartData } = await supabase
+        .from("tasks")
+        .select("started_at")
+        .eq("id", taskRecordId)
+        .single();
+      
+      const startedAt = taskStartData?.started_at ? new Date(taskStartData.started_at).getTime() : Date.now();
+      const executionTimeMs = Date.now() - startedAt;
+      const stepCount = Array.isArray(steps) ? steps.length : 0;
+      
+      // Evaluate test result
+      const evaluation = evaluateTestResult(resultSummary, expectedResult);
+      const finalStatus = taskStatus === "failed" ? "error" : evaluation.status;
+      
+      console.log(`${logPrefix} Evaluation: ${finalStatus} - ${evaluation.reasoning}`);
+      
+      // Calculate cost
+      const execMinutes = executionTimeMs / 60000;
+      const proxyRate = recordVideo ? 0.008 : 0.004;
+      const estimatedCost = 0.01 + (stepCount * 0.01) + (execMinutes * proxyRate);
+      
+      // Update task record
+      await supabase
+        .from("tasks")
+        .update({
+          status: finalStatus === "error" ? "failed" : "completed",
+          completed_at: new Date().toISOString(),
+          screenshots: screenshots.length > 0 ? screenshots : null,
+          recordings: recordings.length > 0 ? recordings : null,
+          result: { output: resultSummary, reasoning: evaluation.reasoning },
+          step_count: stepCount,
+        })
+        .eq("id", taskRecordId);
+
+      // Update generated_tests
       await supabase
         .from("generated_tests")
         .update({
-          status: "error",
+          status: finalStatus,
           last_run_at: new Date().toISOString(),
-          result_summary: `Chyba: ${error instanceof Error ? error.message : "Neznámá chyba"}`,
-          result_reasoning: null,
-          execution_time_ms: null,
-          step_count: null,
-          estimated_cost: null,
+          execution_time_ms: executionTimeMs,
+          result_summary: resultSummary || null,
+          result_reasoning: evaluation.reasoning || null,
+          step_count: stepCount,
+          estimated_cost: estimatedCost,
         })
         .eq("id", testId);
-    } catch (updateError) {
-      console.error(`[Batch ${batchId}] Failed to update test status:`, updateError);
+
+      console.log(`${logPrefix} Test finalized: ${finalStatus}`);
+      
+      // Update batch progress
+      const completedTests = (batchState?.completed_tests || 0) + 1;
+      const passedTests = (batchState?.passed_tests || 0) + (finalStatus === "passed" ? 1 : 0);
+      const failedTests = (batchState?.failed_tests || 0) + (finalStatus !== "passed" ? 1 : 0);
+
+      console.log(`${logPrefix} Updating batch progress: ${completedTests}/${testIds.length}`);
+
+      await supabase
+        .from("test_batch_runs")
+        .update({
+          completed_tests: completedTests,
+          passed_tests: passedTests,
+          failed_tests: failedTests,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", batchId);
+
+      // Schedule next test
+      const hasMoreTests = testIndex + 1 < testIds.length;
+      
+      if (hasMoreTests) {
+        console.log(`${logPrefix} Scheduling next test (index ${testIndex + 1}) in ${batchDelaySeconds}s`);
+        
+        // @ts-ignore
+        EdgeRuntime.waitUntil(scheduleSelfInvoke({
+          batchId, testIds, userId, batchDelaySeconds,
+          currentIndex: testIndex + 1,
+          phase: "start",
+          isRecursiveCall: true,
+        }, batchDelaySeconds * 1000, logPrefix));
+      } else {
+        console.log(`${logPrefix} All tests completed (${completedTests} total)`);
+        
+        await supabase
+          .from("test_batch_runs")
+          .update({
+            status: "completed",
+            completed_at: new Date().toISOString(),
+            current_test_id: null,
+          })
+          .eq("id", batchId);
+      }
+
+      return new Response(
+        JSON.stringify({ 
+          success: true, 
+          message: "Test finalized",
+          phase: "poll",
+          status: finalStatus,
+          completed: completedTests,
+        }),
+        { headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
     }
 
-    return { didRun: true, passed: false, failed: true, sessionId: null };
+    // Still running - schedule another poll
+    console.log(`${logPrefix} Task still running, re-polling in 10s`);
+    
+    // @ts-ignore
+    EdgeRuntime.waitUntil(scheduleSelfInvoke({
+      batchId, testIds, userId, batchDelaySeconds,
+      currentIndex: testIndex,
+      phase: "poll",
+      isRecursiveCall: true,
+      taskRecordId, browserTaskId, sessionId, recordVideo, expectedResult,
+    }, 10000, logPrefix));
+
+    return new Response(
+      JSON.stringify({ success: true, message: "Still running", phase: "poll" }),
+      { headers: { ...corsHeaders, "Content-Type": "application/json" } }
+    );
+
+  } catch (error) {
+    console.error(`${logPrefix} Poll error:`, error);
+    
+    // Re-schedule poll
+    // @ts-ignore
+    EdgeRuntime.waitUntil(scheduleSelfInvoke({
+      batchId, testIds, userId, batchDelaySeconds,
+      currentIndex: testIndex,
+      phase: "poll",
+      isRecursiveCall: true,
+      taskRecordId, browserTaskId, sessionId, recordVideo, expectedResult,
+    }, 10000, logPrefix));
+
+    return new Response(
+      JSON.stringify({ success: false, error: "Poll error", phase: "poll" }),
+      { headers: { ...corsHeaders, "Content-Type": "application/json" } }
+    );
   }
 }
 
+// Helper for finalize when DB already has result
+async function finalizeTest(
+  batchId: string,
+  testId: string,
+  testIndex: number,
+  testIds: string[],
+  userId: string,
+  batchDelaySeconds: number,
+  taskRecordId: string,
+  dbTask: { status: string; result: unknown; step_count: number | null; started_at: string | null; completed_at: string | null },
+  sessionId: string | null,
+  recordVideo: boolean,
+  expectedResult: string | null,
+  logPrefix: string
+): Promise<Response> {
+  const supabase = createClient(SUPABASE_URL!, SUPABASE_SERVICE_ROLE_KEY!);
+  
+  // Stop session if active
+  if (sessionId) {
+    await stopSessionResilient(sessionId, batchId);
+  }
+  
+  const resultSummary = dbTask.result 
+    ? (typeof dbTask.result === 'string' ? dbTask.result : JSON.stringify(dbTask.result))
+    : "";
+  
+  const evaluation = evaluateTestResult(resultSummary, expectedResult);
+  const finalStatus = dbTask.status === "failed" ? "error" : evaluation.status;
+  
+  // Calculate execution time
+  const startedAt = dbTask.started_at ? new Date(dbTask.started_at).getTime() : Date.now();
+  const endedAt = dbTask.completed_at ? new Date(dbTask.completed_at).getTime() : Date.now();
+  const executionTimeMs = endedAt - startedAt;
+  
+  // Calculate cost
+  const execMinutes = executionTimeMs / 60000;
+  const proxyRate = recordVideo ? 0.008 : 0.004;
+  const stepCount = dbTask.step_count || 0;
+  const estimatedCost = 0.01 + (stepCount * 0.01) + (execMinutes * proxyRate);
+  
+  // Update generated_tests
+  await supabase
+    .from("generated_tests")
+    .update({
+      status: finalStatus,
+      last_run_at: new Date().toISOString(),
+      execution_time_ms: executionTimeMs,
+      result_summary: resultSummary.substring(0, 500) || null,
+      result_reasoning: evaluation.reasoning || null,
+      step_count: stepCount,
+      estimated_cost: estimatedCost,
+    })
+    .eq("id", testId);
+
+  // Get current batch state for progress
+  const { data: batchState } = await supabase
+    .from("test_batch_runs")
+    .select("completed_tests, passed_tests, failed_tests")
+    .eq("id", batchId)
+    .single();
+
+  // Update batch progress
+  const completedTests = (batchState?.completed_tests || 0) + 1;
+  const passedTests = (batchState?.passed_tests || 0) + (finalStatus === "passed" ? 1 : 0);
+  const failedTests = (batchState?.failed_tests || 0) + (finalStatus !== "passed" ? 1 : 0);
+
+  await supabase
+    .from("test_batch_runs")
+    .update({
+      completed_tests: completedTests,
+      passed_tests: passedTests,
+      failed_tests: failedTests,
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", batchId);
+
+  // Schedule next test
+  const hasMoreTests = testIndex + 1 < testIds.length;
+  
+  if (hasMoreTests) {
+    // @ts-ignore
+    EdgeRuntime.waitUntil(scheduleSelfInvoke({
+      batchId, testIds, userId, batchDelaySeconds,
+      currentIndex: testIndex + 1,
+      phase: "start",
+      isRecursiveCall: true,
+    }, batchDelaySeconds * 1000, logPrefix));
+  } else {
+    await supabase
+      .from("test_batch_runs")
+      .update({
+        status: "completed",
+        completed_at: new Date().toISOString(),
+        current_test_id: null,
+      })
+      .eq("id", batchId);
+  }
+
+  return new Response(
+    JSON.stringify({ 
+      success: true, 
+      message: "Test finalized from DB",
+      phase: "poll",
+      status: finalStatus,
+    }),
+    { headers: { ...corsHeaders, "Content-Type": "application/json" } }
+  );
+}
+
+// ================== MAIN HANDLER ==================
 serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
   }
 
   try {
-    const { batchId, testIds, userId, batchDelaySeconds, currentIndex, isRecursiveCall } = await req.json();
+    const body = await req.json();
+    const { 
+      batchId, testIds, userId, batchDelaySeconds, currentIndex, isRecursiveCall,
+      phase, taskRecordId, browserTaskId, sessionId, recordVideo, expectedResult
+    } = body;
 
     if (!batchId || !testIds || !userId) {
       return new Response(
@@ -881,9 +1036,11 @@ serve(async (req) => {
 
     const supabase = createClient(SUPABASE_URL!, SUPABASE_SERVICE_ROLE_KEY!);
     const index = currentIndex || 0;
+    const effectiveDelay = batchDelaySeconds || 10;
 
-    // Initial call: check for active batches, start batch, and IMMEDIATELY return
+    // ================== INITIAL CALL (not recursive) ==================
     if (!isRecursiveCall) {
+      // Check for active batches
       const { data: activeBatches, error: checkError } = await supabase
         .from("test_batch_runs")
         .select("id, status")
@@ -912,24 +1069,24 @@ serve(async (req) => {
         .update({
           status: "running",
           started_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
         })
         .eq("id", batchId);
 
-      console.log(`[run-tests-batch] Starting batch ${batchId} with ${testIds.length} tests${batchDelaySeconds ? `, delay: ${batchDelaySeconds}s` : ''}`);
+      console.log(`[run-tests-batch] Starting batch ${batchId} with ${testIds.length} tests, delay: ${effectiveDelay}s`);
 
-      // Fire-and-forget: spawn async call to process first test
-      // This returns IMMEDIATELY to avoid 504 timeout
-      const selfUrl = `${SUPABASE_URL}/functions/v1/run-tests-batch`;
-      fireAndForget(selfUrl, {
+      // Schedule first test via EdgeRuntime.waitUntil
+      // @ts-ignore
+      EdgeRuntime.waitUntil(scheduleSelfInvoke({
         batchId,
         testIds,
         userId,
-        batchDelaySeconds,
+        batchDelaySeconds: effectiveDelay,
         currentIndex: 0,
+        phase: "start",
         isRecursiveCall: true,
-      });
+      }, 100, `[Batch ${batchId}]`));
 
-      // Return immediately - frontend relies on real-time subscription for updates
       return new Response(
         JSON.stringify({ 
           success: true, 
@@ -941,36 +1098,9 @@ serve(async (req) => {
       );
     }
 
-    // Check if batch is paused or cancelled
-    const { data: batchState } = await supabase
-      .from("test_batch_runs")
-      .select("paused, status, completed_tests, passed_tests, failed_tests")
-      .eq("id", batchId)
-      .single();
-
-    if (batchState?.status === "cancelled") {
-      console.log(`[Batch ${batchId}] Batch was cancelled`);
-      return new Response(
-        JSON.stringify({ success: true, message: "Batch was cancelled" }),
-        { headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
-    }
-
-    // Handle pause - wait and retry
-    if (batchState?.paused) {
-      console.log(`[Batch ${batchId}] Batch is paused, waiting 10s before re-checking...`);
-      await delay(10000);
-      
-      // Re-invoke to check again
-      await scheduleNextTest(batchId, testIds, index - 1, userId, batchDelaySeconds);
-      
-      return new Response(
-        JSON.stringify({ success: true, message: "Batch paused, scheduled re-check" }),
-        { headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
-    }
-
-    // Check if we've finished all tests
+    // ================== RECURSIVE CALLS ==================
+    
+    // Check if all tests done
     if (index >= testIds.length) {
       console.log(`[Batch ${batchId}] All tests completed`);
       
@@ -990,94 +1120,20 @@ serve(async (req) => {
     }
 
     const testId = testIds[index];
-    console.log(`[Batch ${batchId}] Processing test ${index + 1}/${testIds.length}: ${testId}`);
 
-    // Process single test (this may take a while due to media fetch)
-    const result = await processSingleTest(
-      batchId,
-      testId,
-      userId,
-      testIds,
-      index,
-      testIds.length,
-      batchDelaySeconds
-    );
-
-    // If claim failed (duplicate invocation), skip progress update and scheduling
-    // The invocation that successfully claimed the test will handle everything
-    if (!result.didRun) {
-      console.log(`[Batch ${batchId}] Skipping progress update for duplicate invocation at index ${index}`);
-      return new Response(
-        JSON.stringify({
-          success: true,
-          message: "Skipped duplicate invocation",
-          batchId,
-          currentIndex: index,
-          skipped: true,
-        }),
-        { headers: { ...corsHeaders, "Content-Type": "application/json" } }
+    // Route to appropriate phase
+    if (phase === "poll" && taskRecordId && browserTaskId) {
+      return await phasePoll(
+        batchId, testId, index, testIds, userId, effectiveDelay,
+        taskRecordId, browserTaskId, sessionId || null, recordVideo || false, expectedResult || null
       );
     }
 
-    // Update batch progress - only when test actually ran
-    const completedTests = (batchState?.completed_tests || 0) + 1;
-    const passedTests = (batchState?.passed_tests || 0) + (result.passed ? 1 : 0);
-    const failedTests = (batchState?.failed_tests || 0) + (result.failed ? 1 : 0);
-
-    console.log(`[Batch ${batchId}] Updating progress: ${completedTests}/${testIds.length}`);
-
-    await supabase
-      .from("test_batch_runs")
-      .update({
-        completed_tests: completedTests,
-        passed_tests: passedTests,
-        failed_tests: failedTests,
-        updated_at: new Date().toISOString(),
-      })
-      .eq("id", batchId);
-
-    // Check if there are more tests to run
-    const hasMoreTests = index + 1 < testIds.length;
-    
-    if (hasMoreTests) {
-      // Schedule the next test using EdgeRuntime.waitUntil
-      // This guarantees the delay + scheduling completes even if edge function wants to shut down
-      const minDelay = Math.max(batchDelaySeconds || 10, 5) * 1000;
-      console.log(`[Batch ${batchId}] Scheduling next test (index ${index + 1}) with ${minDelay / 1000}s delay via EdgeRuntime.waitUntil`);
-      
-      const schedulePromise = (async () => {
-        await delay(minDelay);
-        await scheduleNextTest(batchId, testIds, index, userId, batchDelaySeconds);
-      })();
-      
-      // @ts-ignore - EdgeRuntime is available in Deno edge functions
-      EdgeRuntime.waitUntil(schedulePromise);
-    } else {
-      // Mark batch as completed - this was the last test
-      console.log(`[Batch ${batchId}] All tests completed (${completedTests} total, ${passedTests} passed, ${failedTests} failed)`);
-      
-      await supabase
-        .from("test_batch_runs")
-        .update({
-          status: "completed",
-          completed_at: new Date().toISOString(),
-          current_test_id: null,
-        })
-        .eq("id", batchId);
-    }
-
-    return new Response(
-      JSON.stringify({
-        success: true,
-        message: `Test ${index + 1}/${testIds.length} processed`,
-        batchId,
-        currentIndex: index,
-        completed: completedTests,
-        passed: passedTests,
-        failed: failedTests,
-      }),
-      { headers: { ...corsHeaders, "Content-Type": "application/json" } }
+    // Default: start phase
+    return await phaseStart(
+      batchId, testId, index, testIds, userId, effectiveDelay
     );
+
   } catch (error) {
     console.error("[run-tests-batch] Error:", error);
     return new Response(
