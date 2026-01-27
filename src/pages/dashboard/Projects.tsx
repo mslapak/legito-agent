@@ -936,14 +936,14 @@ ${credentials ? `\nIf needed, here are the credentials:\n- Email/Username: ${cre
                               value={[getCostSettings(project).max_steps]}
                               onValueChange={(value) => handleCostSettingsChange(project.id, 'max_steps', value[0])}
                               min={5}
-                              max={25}
+                              max={50}
                               step={1}
                               className="w-full"
                             />
                             <div className="flex justify-between text-xs text-muted-foreground">
                               <span>{i18n.language === 'cs' ? '5 (rychlé)' : '5 (fast)'}</span>
-                              <span>{i18n.language === 'cs' ? '10 (standard)' : '10 (standard)'}</span>
-                              <span>{i18n.language === 'cs' ? '25 (komplexní)' : '25 (complex)'}</span>
+                              <span>{i18n.language === 'cs' ? '25 (standard)' : '25 (standard)'}</span>
+                              <span>{i18n.language === 'cs' ? '50 (komplexní)' : '50 (complex)'}</span>
                             </div>
                           </div>
                           
