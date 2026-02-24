@@ -1,0 +1,144 @@
+# ============================================================
+# Legito Agent - Azure DevOps CI/CD Pipeline
+# ============================================================
+
+trigger:
+  branches:
+    include:
+      - main
+
+pool:
+  vmImage: 'ubuntu-latest'
+
+variables:
+  - group: legito-agent-vars  # Variable group with secrets
+  - name: azureSubscription
+    value: 'your-azure-service-connection'
+  - name: frontendAppName
+    value: 'legito-agent-frontend'
+  - name: backendAppName
+    value: 'legito-agent-backend'
+  - name: resourceGroup
+    value: 'rg-legito-agent'
+
+stages:
+  # ============================================================
+  # Stage 1: Build
+  # ============================================================
+  - stage: Build
+    displayName: 'Build'
+    jobs:
+      - job: BuildFrontend
+        displayName: 'Build Frontend'
+        steps:
+          - task: NodeTool@0
+            inputs:
+              versionSpec: '22.x'
+            displayName: 'Install Node.js 22'
+
+          - script: |
+              cd frontend
+              npm ci
+              npm run build
+            displayName: 'Build Frontend'
+
+          - task: PublishPipelineArtifact@1
+            inputs:
+              targetPath: 'frontend/dist'
+              artifact: 'frontend'
+            displayName: 'Publish Frontend Artifact'
+
+      - job: BuildBackend
+        displayName: 'Build Backend'
+        steps:
+          - task: NodeTool@0
+            inputs:
+              versionSpec: '22.x'
+            displayName: 'Install Node.js 22'
+
+          - script: |
+              cd backend
+              npm ci
+              npm run build
+            displayName: 'Build Backend'
+
+          - task: PublishPipelineArtifact@1
+            inputs:
+              targetPath: 'backend'
+              artifact: 'backend'
+            displayName: 'Publish Backend Artifact'
+
+  # ============================================================
+  # Stage 2: Deploy Database (manual trigger, first time only)
+  # ============================================================
+  - stage: DeployDatabase
+    displayName: 'Deploy Database'
+    dependsOn: []
+    condition: and(succeeded(), eq(variables['deployDatabase'], 'true'))
+    jobs:
+      - job: RunMigration
+        displayName: 'Run Database Migration'
+        steps:
+          - script: |
+              PGPASSWORD=$(DB_PASSWORD) psql \
+                -h $(DB_HOST) \
+                -U $(DB_USER) \
+                -d $(DB_NAME) \
+                -f database/init.sql
+            displayName: 'Execute init.sql'
+
+  # ============================================================
+  # Stage 3: Deploy Backend
+  # ============================================================
+  - stage: DeployBackend
+    displayName: 'Deploy Backend'
+    dependsOn: Build
+    condition: succeeded()
+    jobs:
+      - deployment: DeployBackendApp
+        displayName: 'Deploy Backend to App Service'
+        environment: 'production'
+        strategy:
+          runOnce:
+            deploy:
+              steps:
+                - task: DownloadPipelineArtifact@2
+                  inputs:
+                    artifact: 'backend'
+                    path: '$(Pipeline.Workspace)/backend'
+
+                - task: AzureWebApp@1
+                  inputs:
+                    azureSubscription: $(azureSubscription)
+                    appType: 'webAppLinux'
+                    appName: $(backendAppName)
+                    package: '$(Pipeline.Workspace)/backend'
+                    runtimeStack: 'NODE|22-lts'
+                    startUpCommand: 'node dist/index.js'
+
+  # ============================================================
+  # Stage 4: Deploy Frontend
+  # ============================================================
+  - stage: DeployFrontend
+    displayName: 'Deploy Frontend'
+    dependsOn: Build
+    condition: succeeded()
+    jobs:
+      - deployment: DeployFrontendApp
+        displayName: 'Deploy Frontend to App Service'
+        environment: 'production'
+        strategy:
+          runOnce:
+            deploy:
+              steps:
+                - task: DownloadPipelineArtifact@2
+                  inputs:
+                    artifact: 'frontend'
+                    path: '$(Pipeline.Workspace)/frontend'
+
+                - task: AzureWebApp@1
+                  inputs:
+                    azureSubscription: $(azureSubscription)
+                    appType: 'webAppLinux'
+                    appName: $(frontendAppName)
+                    package: '$(Pipeline.Workspace)/frontend'
