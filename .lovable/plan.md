@@ -1,109 +1,124 @@
 
-<context>
-U tebe se teď reálně stalo tohle (podle DB + logů):
 
-1) V tabulce `test_batch_runs` je batch `2d678...` pořád `status=running`, `completed_tests=0`, `updated_at` se nezměnil od začátku (13:11:56).
-2) V logu `run-tests-batch` vidíme jen opakované “Task … status: started” a žádné “Updating progress” ani “Scheduling next test”.
-3) V tabulce `generated_tests` pro test `64078...` je `status=pending` a `task_id=null` – i když task v `tasks` tabulce existuje a doběhl (`f1004add...` je `completed`).
+# Deployment balíček pro Azure DevOps
 
-Z toho vychází dvě hlavní příčiny:
-- **(A) Frontend sabotuje běh**: `TestsDashboard.tsx` má logiku, která když test má `status=running`, ale `task_id` je null, tak ho “opraví” zpět na `pending`. To je v našem batch režimu špatně, protože `run-tests-batch` dnes nastavuje `generated_tests.task_id` až na konci (po dokončení testu). Tzn. UI ti testy “shazuje” zpět.
-- **(B) Edge funkce může být ukončena uprostřed běhu**: i když jsme přidali `waitUntil` pro scheduling dalšího testu, pořád máme dlouhotrvající polling + media fetch uvnitř jedné invokace. Když runtime invokaci zabije uprostřed (limit/instabilita), stane se přesně to, co vidíme: task v `tasks` může být už zapsaný jako completed, ale batch progress + scheduling se nikdy nedokončí.
+## Přehled
 
-Cíl: udělat to “strojově stabilní” pro 10+ testů, bez závislosti na jedné dlouhé invokaci a bez UI, které mění stavy.
+Vytvoříme kompletní deployment balíček, který bude obsahovat vše potřebné pro nasazení aplikace do Azure prostředí. Balíček bude organizovaný jako monorepo s jasnou strukturou pro Azure DevOps CI/CD pipeline.
 
-</context>
+## Struktura balíčku
 
-<goal>
-- Batch spolehlivě jede 1→2→…→10 testů.
-- UI “Active background batches” a progress se průběžně aktualizují.
-- Žádné resetování `generated_tests` zpět na `pending` během běhu.
-- Každá invokace backend funkce je krátká (sekundy), žádné minuty pollingu v jedné invokaci.
-</goal>
+```text
+legito-agent-azure/
+├── frontend/                    # React aplikace (současný src/)
+│   ├── src/
+│   ├── public/
+│   ├── package.json
+│   ├── vite.config.ts
+│   ├── Dockerfile
+│   └── .env.example
+│
+├── backend/                     # Node.js Express API (nahrazuje Edge Functions)
+│   ├── src/
+│   │   ├── index.ts             # Express server entry point
+│   │   ├── middleware/
+│   │   │   ├── auth.ts          # JWT/Azure AD validace
+│   │   │   └── cors.ts
+│   │   ├── routes/
+│   │   │   ├── browser-use.ts
+│   │   │   ├── generate-tests.ts
+│   │   │   ├── fetch-documentation.ts
+│   │   │   ├── run-tests-batch.ts
+│   │   │   └── structure-training.ts
+│   │   └── db.ts                # PostgreSQL connection pool (pg)
+│   ├── package.json
+│   ├── tsconfig.json
+│   ├── Dockerfile
+│   └── .env.example
+│
+├── database/
+│   ├── init.sql                 # Konsolidovaný SQL (22 migrací → 1 soubor)
+│   └── seed.sql                 # Vzorová data (volitelné)
+│
+├── infra/                       # Infrastructure as Code
+│   ├── azure-pipelines.yml      # Azure DevOps CI/CD pipeline
+│   └── bicep/                   # Azure Bicep šablony (volitelné)
+│       ├── main.bicep
+│       └── parameters.json
+│
+├── docs/
+│   ├── MIGRATION.md             # Návod krok za krokem
+│   ├── ARCHITECTURE.md          # Diagram architektury
+│   └── ENV-VARIABLES.md         # Seznam všech proměnných
+│
+└── README.md                    # Quick start guide
+```
 
-<root-causes>
-1) `src/pages/dashboard/TestsDashboard.tsx`:
-   - V “poll running tests” části je blok:
-     - když `generated_tests.status === 'running'` a `task_id` chybí → update `generated_tests.status = 'pending'`.
-   - V batch režimu ale `task_id` chybí po většinu běhu (protože se nastavuje až po dokončení), takže UI test “srazí”.
+## Co se vytvoří
 
-2) `supabase/functions/run-tests-batch/index.ts`:
-   - Dělá dlouhé čekání: poll každých 5s (až 30 minut) + media retry loop.
-   - Pokud runtime invokaci ukončí v nevhodném bodě, batch progress (`test_batch_runs.completed_tests`) se nikdy neupdatuje a další test se nenaplánuje.
-   - `test_batch_runs.updated_at` se aktualizuje jen při progress incrementu, takže UI snadno vyhodnotí batch jako “stuck”.
+### 1. Frontend úpravy
+- Soubor `.env.example` s proměnnými pro Azure (`VITE_API_URL`, `VITE_AUTH_CLIENT_ID`)
+- Nový `src/integrations/api/client.ts` — nahradí Supabase klient za fetch volání na Express backend
+- Nový `src/hooks/useAuth.tsx` — nahradí Supabase Auth za MSAL (Azure AD / Entra ID)
+- `Dockerfile` pro build a servírování přes nginx
 
-</root-causes>
+### 2. Backend (Node.js Express)
+Konverze všech 5 edge functions z Deno do Node.js:
 
-<solution-approach>
-Předěláme batch běh na krátké “state machine” invokace (robustní pattern):
+| Edge Function | Express Route | Popis |
+|---|---|---|
+| `browser-use` | `POST /api/browser-use` | Proxy k Browser-Use Cloud API |
+| `generate-tests` | `POST /api/generate-tests` | AI generování testů (Azure OpenAI) |
+| `fetch-documentation` | `POST /api/fetch-documentation` | Stahování dokumentace |
+| `run-tests-batch` | `POST /api/run-tests-batch` | Batch spouštění testů |
+| `structure-training` | `POST /api/structure-training` | Strukturování tréninku |
 
-A) “Start/launch phase” (krátká invokace)
-- Claim test (status→running)
-- Vytvořit Browser-Use session/task + DB `tasks` record (status running)
-- **Ihned uložit `generated_tests.task_id = taskRecord.id`** (tím přestaneme narážet na UI reset)
-- Nečekat na dokončení provider tasku.
-- Naplánovat “poll phase” (self invoke) za X sekund přes `EdgeRuntime.waitUntil`.
+Klíčové změny:
+- `Deno.env.get()` → `process.env`
+- Supabase klient → `pg` (node-postgres) connection pool
+- `serve()` → Express router
+- Auth: JWT validace Azure AD tokenů přes `jwks-rsa`
 
-B) “Poll phase” (krátká invokace opakovaně)
-- Načíst `tasks.status` pro `generated_tests.task_id`
-- Pokud `tasks.status` stále running:
-  - (volitelně) zavolat backend funkci `browser-use` pro refresh detailů / nebo rovnou provider status, ale vždy rychle
-  - update `test_batch_runs.updated_at` jako heartbeat
-  - naplánovat další poll za X sekund
-  - return
-- Pokud `tasks.status` je final (completed/failed/cancelled):
-  - provést vyhodnocení výsledku (evaluateTestResult) a doplnit `generated_tests.status/result_summary/...`
-  - increment batch progress (`completed_tests/passed_tests/failed_tests`) + update `updated_at`
-  - naplánovat další index (další testcase) přes `EdgeRuntime.waitUntil` (s batchDelaySeconds)
-  - pokud poslední, označit batch jako completed
+### 3. Databáze
+- Konsolidace 22 migračních souborů do jednoho `init.sql`
+- Odstranění `auth.users` závislostí → vlastní `public.users` tabulka
+- Odstranění RLS policies (autorizace na aplikační úrovni)
+- Zachování všech triggerů a indexů
 
-C) Frontend fix
-- Zrušit/změnit pravidlo “když running a bez task_id → pending”.
-- V nejhorším to změnit na “když running + bez task_id + last_run_at starší než X minut → pending” (ochrana proti reálným rozbitým stavům), ale ne během normálního běhu.
+### 4. Azure DevOps Pipeline (`azure-pipelines.yml`)
+```text
+trigger: main branch
+stages:
+  1. Build Frontend  → npm build → artifact
+  2. Build Backend   → npm build → artifact  
+  3. Deploy DB       → run init.sql (first time only)
+  4. Deploy Backend  → Azure App Service
+  5. Deploy Frontend → Azure App Service (static)
+```
 
-D) Heartbeat
-- Během poll fáze vždy update `test_batch_runs.updated_at` (i když completed_tests se nezměnilo), aby UI vidělo život a necancelovalo to jako stale.
-</solution-approach>
+### 5. Dokumentace
+- `MIGRATION.md` — krok za krokem návod pro DevOps tým
+- `ENV-VARIABLES.md` — kompletní seznam proměnných s popisem
+- `ARCHITECTURE.md` — diagram a popis komponent
 
-<implementation-steps>
-1) Backend: `supabase/functions/run-tests-batch/index.ts`
-   - Přidat “fáze” do request body (např. `phase: 'start' | 'poll'` nebo `mode`).
-   - U prvního spuštění testu:
-     - po vytvoření `tasks` záznamu okamžitě update `generated_tests.task_id = taskRecord.id` (nečekat na konec).
-     - místo dlouhého poll loopu rovnou naplánovat `phase='poll'` (EdgeRuntime.waitUntil + delay).
-   - V `phase='poll'`:
-     - načíst DB task status pro `task_id`
-     - pokud není hotovo → heartbeat update batch run + reschedule poll
-     - pokud hotovo → finalize generated_tests + progress update + schedule next index
-   - Ujistit se, že scheduling logy jsou jednoznačné (aby šlo debuggovat).
+## Technické detaily
 
-2) Frontend: `src/pages/dashboard/TestsDashboard.tsx`
-   - Upravit logiku v “Poll running tests”:
-     - odstranit automatické přepnutí na pending jen kvůli `task_id=null`.
-     - případně nahradit ochranným pravidlem založeným na čase (`last_run_at`), ne na `task_id`.
+### Nahrazení závislostí
 
-3) Stabilita UI “Active background batches”
-   - Ověřit, že se `fetchActiveBatches()` trefuje na správné řádky:
-     - (doporučení) filtrovat `test_batch_runs` podle `user_id = user.id`, aby se netahaly cizí batche a UI nebylo matoucí.
-   - Díky heartbeatům bude progress panel “živý”.
+| Současné (Lovable) | Azure | 
+|---|---|
+| Supabase Auth | Azure AD (Entra ID) + MSAL |
+| Supabase JS Client | node-postgres (`pg`) |
+| Lovable AI Gateway | Azure OpenAI Service |
+| Edge Functions (Deno) | Express.js (Node.js 22) |
+| Supabase Realtime | Polling / WebSocket (volitelné) |
 
-4) Test plán
-   - Spustit batch se 2 testy:
-     - ověřit, že `completed_tests` jde 0→1→2 a `updated_at` se mění i během čekání.
-   - Spustit batch s 10 testy:
-     - ověřit, že se nezasekne na 0/10, a že po každém testu dojde k naplánování dalšího.
-   - Pokud cokoliv spadne, logy budou ukazovat, jestli jsme ve “start” nebo “poll” fázi a proč se reschedulovalo.
+### Požadované Azure AD App Registration
+- Redirect URI: `https://<app-url>/auth`
+- API permissions: `User.Read`
+- Client ID + Tenant ID do env proměnných
 
-</implementation-steps>
+## Výstup
 
-<why-this-will-be-stable>
-- Odstraníme “minutové invokace” (největší zdroj zabíjení runtimem).
-- Každý krok je idempotentní a krátký → když se jedna invokace přeruší, další poll/rekurze to dožene.
-- UI už nebude přepisovat běžící testy zpět na pending.
-- Batch bude mít heartbeat → už žádné “stuck” active batches bez update.
-</why-this-will-be-stable>
+Sada souborů přímo v projektu ve složce `deployment/`, kterou lze zkopírovat do Azure DevOps repozitáře a nasadit podle dokumentace.
 
-<files-to-change>
-- `supabase/functions/run-tests-batch/index.ts`
-- `src/pages/dashboard/TestsDashboard.tsx`
-</files-to-change>
