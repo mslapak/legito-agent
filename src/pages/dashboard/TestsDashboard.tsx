@@ -692,6 +692,8 @@ export default function TestsDashboard() {
         return <Badge className="bg-warning text-warning-foreground"><Loader2 className="w-3 h-3 mr-1 animate-spin" />{t('tests.running')}</Badge>;
       case 'passed':
         return <Badge className="bg-success text-success-foreground"><CheckCircle2 className="w-3 h-3 mr-1" />{t('tests.passed')}</Badge>;
+      case 'degraded':
+        return <Badge className="bg-amber-500 text-white"><AlertTriangle className="w-3 h-3 mr-1" />{i18n.language === 'cs' ? 'Degradovaný' : 'Degraded'}</Badge>;
       case 'failed':
         return <Badge className="bg-orange-500 text-white"><AlertTriangle className="w-3 h-3 mr-1" />{t('tests.failed')}</Badge>;
       case 'error':
