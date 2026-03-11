@@ -73,6 +73,9 @@ interface GeneratedTest {
   result_reasoning: string | null;
   step_count: number | null;
   estimated_cost: number | null;
+  evaluation_details: Record<string, unknown> | null;
+  confidence_score: number | null;
+  final_score: number | null;
 }
 
 interface Project {
