@@ -759,18 +759,91 @@ async function phasePoll(
       const executionTimeMs = Date.now() - startedAt;
       const stepCount = Array.isArray(steps) ? steps.length : 0;
       
-      // Evaluate test result
-      const evaluation = evaluateTestResult(resultSummary, expectedResult);
-      const finalStatus = taskStatus === "failed" ? "error" : evaluation.status;
+      // Build evidence bundle
+      const stepSummaries: string[] = [];
+      let finalUrl = "";
+      if (Array.isArray(steps)) {
+        for (const step of steps) {
+          if (typeof step === "object" && step !== null) {
+            const s = step as Record<string, unknown>;
+            if (s.output && typeof s.output === "string") stepSummaries.push(s.output);
+            if (s.result && typeof s.result === "string") stepSummaries.push(s.result);
+            if (s.url && typeof s.url === "string") finalUrl = s.url;
+            if (s.final_url && typeof s.final_url === "string") finalUrl = s.final_url;
+          }
+        }
+      }
+
+      const evidenceBundle = {
+        technical_status: taskStatus === "failed" ? "error" : "success",
+        execution: { steps_completed: stepCount, execution_time_ms: executionTimeMs },
+        evidence: {
+          final_url: finalUrl,
+          output_text: resultSummary,
+          screenshot_urls: screenshots,
+          console_errors: 0,
+          step_summaries: stepSummaries,
+        },
+        raw_output: resultSummary,
+      };
+
+      // Call evaluate-test edge function
+      let finalStatus: string;
+      let evaluationDetails: Record<string, unknown> | null = null;
+      let confidenceScore: number | null = null;
+      let finalScore: number | null = null;
+      let evaluationReasoning = "";
+
+      if (taskStatus === "failed") {
+        finalStatus = "error";
+        evaluationReasoning = "Technical error during test execution";
+      } else {
+        try {
+          const evalRes = await fetch(
+            `${SUPABASE_URL}/functions/v1/evaluate-test`,
+            {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+                Authorization: `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
+              },
+              body: JSON.stringify({
+                expected_result: expectedResult,
+                evidence_bundle: evidenceBundle,
+              }),
+            }
+          );
+
+          if (evalRes.ok) {
+            const evalData = await evalRes.json();
+            finalStatus = evalData.final_status || "failed";
+            evaluationDetails = evalData;
+            confidenceScore = evalData.confidence ?? null;
+            finalScore = evalData.final_score ?? null;
+            evaluationReasoning = (evalData.reasoning || []).join("; ");
+            console.log(`${logPrefix} Evidence-based evaluation: ${finalStatus} (score: ${finalScore}, confidence: ${confidenceScore})`);
+          } else {
+            console.error(`${logPrefix} evaluate-test failed: ${evalRes.status}, falling back to heuristic`);
+            const fallback = evaluateTestResult(resultSummary, expectedResult);
+            finalStatus = fallback.status;
+            evaluationReasoning = fallback.reasoning;
+          }
+        } catch (evalError) {
+          console.error(`${logPrefix} evaluate-test error:`, evalError);
+          const fallback = evaluateTestResult(resultSummary, expectedResult);
+          finalStatus = fallback.status;
+          evaluationReasoning = fallback.reasoning;
+        }
+      }
       
-      console.log(`${logPrefix} Evaluation: ${finalStatus} - ${evaluation.reasoning}`);
+      console.log(`${logPrefix} Evaluation: ${finalStatus} - ${evaluationReasoning}`);
       
       // Calculate cost
       const execMinutes = executionTimeMs / 60000;
       const proxyRate = recordVideo ? 0.008 : 0.004;
       const estimatedCost = 0.01 + (stepCount * 0.01) + (execMinutes * proxyRate);
       
-      // Update task record
+      // Update task record with evidence bundle
       await supabase
         .from("tasks")
         .update({
@@ -778,12 +851,12 @@ async function phasePoll(
           completed_at: new Date().toISOString(),
           screenshots: screenshots.length > 0 ? screenshots : null,
           recordings: recordings.length > 0 ? recordings : null,
-          result: { output: resultSummary, reasoning: evaluation.reasoning },
+          result: evidenceBundle,
           step_count: stepCount,
         })
         .eq("id", taskRecordId);
 
-      // Update generated_tests
+      // Update generated_tests with evaluation details
       await supabase
         .from("generated_tests")
         .update({
@@ -791,9 +864,12 @@ async function phasePoll(
           last_run_at: new Date().toISOString(),
           execution_time_ms: executionTimeMs,
           result_summary: resultSummary || null,
-          result_reasoning: evaluation.reasoning || null,
+          result_reasoning: evaluationReasoning || null,
           step_count: stepCount,
           estimated_cost: estimatedCost,
+          evaluation_details: evaluationDetails,
+          confidence_score: confidenceScore,
+          final_score: finalScore,
         })
         .eq("id", testId);
 
