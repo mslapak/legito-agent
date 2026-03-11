@@ -574,14 +574,58 @@ Všechny tabulky mají zapnuté RLS s politikami:
 }
 ```
 
-**Logika vyhodnocení:**
-- Porovnání `result_summary` s `expected_result`
-- Hledání klíčových slov úspěchu/neúspěchu
-- Automatické přiřazení statusu: `passed`, `not_passed`, `failed`
+**Logika vyhodnocení:** Evidence-Based QA Engine (viz sekce níže)
 
 **Požadované secrets:**
 - `BROWSER_USE_API_KEY`
 - `SUPABASE_SERVICE_ROLE_KEY`
+
+---
+
+### `evaluate-test`
+**Účel:** Evidence-based vyhodnocení výsledků testů
+
+Tato funkce nahrazuje původní heuristické vyhodnocování (porovnávání klíčových slov) vícevrstvým evaluačním systémem.
+
+**Vstup:**
+```json
+{
+  "expected_result": "Uživatel by měl vidět stránku s potvrzením objednávky",
+  "evidence_bundle": {
+    "technical_status": "success",
+    "execution": { "steps_completed": 8, "execution_time_ms": 13200 },
+    "evidence": {
+      "final_url": "https://app.example.com/checkout",
+      "output_text": "Order confirmed successfully...",
+      "screenshot_urls": [],
+      "console_errors": 0,
+      "step_summaries": ["Navigated to checkout", "Clicked Place Order"]
+    },
+    "raw_output": "..."
+  }
+}
+```
+
+**Výstup:**
+```json
+{
+  "technical_status": "success",
+  "requirements": [
+    { "id": "R1", "status": "passed", "reasoning": "URL contains /checkout", "source": "deterministic" },
+    { "id": "R2", "status": "passed", "reasoning": "Text 'potvrzení' found in output", "source": "ai" }
+  ],
+  "assertion_score": 1.0,
+  "requirement_score": 1.0,
+  "ai_alignment_score": 0.91,
+  "final_score": 0.98,
+  "confidence": 0.91,
+  "final_status": "passed",
+  "reasoning": ["✔ R1: URL contains /checkout", "✔ R2: Confirmation text found"]
+}
+```
+
+**Požadované secrets:**
+- `LOVABLE_API_KEY`
 
 ---
 
