@@ -287,7 +287,7 @@ export default function TestsDashboard() {
         (payload) => {
           console.log('Test update:', payload);
           // Update single test in state without full refetch
-          const updatedTest = payload.new as GeneratedTest;
+          const updatedTest = castTests([payload.new])[0];
           setTests(prev => prev.map(t => 
             t.id === updatedTest.id ? updatedTest : t
           ));

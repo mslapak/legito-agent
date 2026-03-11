@@ -478,7 +478,13 @@ export default function TestGenerator() {
     }
     
     if (currentTest) tests.push(currentTest);
-    return tests.filter(t => t.steps.length > 0);
+    // Quality gate: filter valid tests
+    const validTests = tests.filter(t => t.steps.length > 0);
+    const rejectedTests = tests.filter(t => t.steps.length === 0);
+    if (rejectedTests.length > 0) {
+      console.warn(`Import quality gate: ${rejectedTests.length} tests rejected (no steps)`);
+    }
+    return validTests;
   };
 
   const convertAzureTestToGenerated = (azureTest: AzureDevOpsTestCase): GeneratedTestCase => {
