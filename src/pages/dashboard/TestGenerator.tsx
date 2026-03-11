@@ -562,13 +562,38 @@ export default function TestGenerator() {
         return;
       }
       
-      setXlsxFile(file);
-      setXlsxPreview(parsed.slice(0, 5));
-      setParsedAzureTests(parsed.map(convertAzureTestToGenerated));
+      // Quality gate validation
+      const validationResults = parsed.map(t => validateImportedTest(t));
+      const readyCount = validationResults.filter(v => v.status === 'imported_ready').length;
+      const reviewCount = validationResults.filter(v => v.status === 'imported_needs_review').length;
+      const rejectedCount = validationResults.filter(v => v.status === 'imported_rejected').length;
+
+      // Filter out rejected tests
+      const acceptedTests = parsed.filter((_, idx) => validationResults[idx].status !== 'imported_rejected');
       
-      toast.success(i18n.language === 'cs' 
-        ? `Načteno ${parsed.length} testů z Azure DevOps`
-        : `Loaded ${parsed.length} tests from Azure DevOps`);
+      setXlsxFile(file);
+      setXlsxPreview(acceptedTests.slice(0, 5));
+      setParsedAzureTests(acceptedTests.map(convertAzureTestToGenerated));
+      
+      let msg = i18n.language === 'cs' 
+        ? `Načteno ${acceptedTests.length} testů z Azure DevOps`
+        : `Loaded ${acceptedTests.length} tests from Azure DevOps`;
+      if (rejectedCount > 0) {
+        msg += i18n.language === 'cs' 
+          ? ` (${rejectedCount} odmítnuto - chybí kroky/název)` 
+          : ` (${rejectedCount} rejected - missing steps/title)`;
+      }
+      if (reviewCount > 0) {
+        msg += i18n.language === 'cs'
+          ? ` (${reviewCount} vyžaduje kontrolu)`
+          : ` (${reviewCount} needs review)`;
+      }
+      
+      if (rejectedCount > 0) {
+        toast.warning(msg);
+      } else {
+        toast.success(msg);
+      }
     } catch (error) {
       console.error('Error parsing XLSX:', error);
       toast.error(i18n.language === 'cs' ? 'Chyba při čtení XLSX souboru' : 'Error reading XLSX file');
