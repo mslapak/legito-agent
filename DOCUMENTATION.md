@@ -787,10 +787,113 @@ URL/PDF → fetch-documentation → AI → verification_steps →
 
 ---
 
+## 🧪 Evidence-Based QA Engine
+
+### Porovnání: Starý vs. Nový systém
+
+| Aspekt | Starý systém (Heuristika) | Nový systém (Evidence-Based) |
+|--------|---------------------------|------------------------------|
+| **Metoda vyhodnocení** | Hledání klíčových slov v textu (`result_summary` vs `expected_result`) | Strukturovaná validace požadavků proti evidence bundle |
+| **Vstup** | Textový souhrn výsledku | Strukturovaný evidence bundle (URL, DOM, screenshoty, chyby) |
+| **Transparentnost** | Minimální — "passed/failed" bez vysvětlení | Plná — každý požadavek má reasoning a zdroj (deterministic/AI) |
+| **Auditovatelnost** | Nelze reprodukovat rozhodnutí | Kompletní JSON uložený v `evaluation_details` |
+| **Spolehlivost** | Časté false positives/negatives | Deterministická vrstva eliminuje většinu chyb |
+| **AI závislost** | 100% — AI rozhoduje vše | ~20% — AI pouze pro nerozhodné požadavky |
+| **Statusy** | `passed`, `not_passed`, `failed` | `passed`, `degraded`, `failed`, `error` |
+| **Skóre** | Binární (pass/fail) | Numerické 0.0–1.0 s confidence |
+
+### Architektura evaluačního pipeline
+
+```
+Test Case (expected_result)
+   │
+   ▼
+┌──────────────────────────────┐
+│  1. Requirement Extraction   │  AI (Gemini 2.5 Flash)
+│  "Uživatel vidí potvrzení"   │  → R1: url_match /confirmation
+│                              │  → R2: text_presence "Order placed"
+│                              │  → R3: no_errors
+└──────────────────────────────┘
+   │
+   ▼
+┌──────────────────────────────┐
+│  2. Evidence Bundle          │  Fakta z browser execution
+│  final_url, output_text,     │
+│  screenshot_urls,            │
+│  console_errors,             │
+│  step_summaries              │
+└──────────────────────────────┘
+   │
+   ▼
+┌──────────────────────────────┐
+│  3. Deterministic Validation │  Kódová validace (bez AI)
+│  url_match    → passed/failed│
+│  text_presence→ passed/unknown│
+│  no_errors    → passed/failed│
+└──────────────────────────────┘
+   │
+   ▼ (pouze "unknown" požadavky)
+┌──────────────────────────────┐
+│  4. AI Reasoning Layer       │  Gemini 2.5 Flash
+│  Vyhodnocení nerozhodných    │
+│  požadavků s reasoning       │
+└──────────────────────────────┘
+   │
+   ▼
+┌──────────────────────────────┐
+│  5. Scoring Engine           │
+│  assertion_score   × 40%     │
+│  requirement_score × 40%     │
+│  ai_alignment      × 20%    │
+│  ─────────────────────────   │
+│  final_score → status        │
+│  ≥0.80 = passed              │
+│  0.60–0.79 = degraded        │
+│  <0.60 = failed              │
+└──────────────────────────────┘
+```
+
+### Typy požadavků
+
+| Typ | Deterministická validace | Příklad |
+|-----|-------------------------|---------|
+| `url_match` | Porovnání `final_url` s hodnotou | `/checkout`, `/dashboard` |
+| `text_presence` | Hledání textu v `output_text` + `step_summaries` | `"Order placed"` |
+| `element_exists` | Hledání odkazu na element v output | `"submit button"` |
+| `no_errors` | Kontrola `console_errors === 0` | — |
+| `custom` | Vždy delegováno na AI | Komplexní podmínky |
+
+### Datový model
+
+Výsledky evaluace se ukládají do tabulky `generated_tests`:
+
+| Sloupec | Typ | Popis |
+|---------|-----|-------|
+| `evaluation_details` | JSONB | Kompletní strukturovaný výsledek evaluace |
+| `confidence_score` | numeric | Spolehlivost evaluace (0.0–1.0) |
+| `final_score` | numeric | Vážené celkové skóre (0.0–1.0) |
+| `status` | text | `passed`, `degraded`, `failed`, `error` |
+
+### Import Quality Gate
+
+Při importu testů z Azure DevOps XLSX se provádí validace:
+
+**Hard reject (test se neimportuje):**
+- Chybí název testu
+- Žádné testovací kroky
+- Prázdná akce v kroku
+
+**Warning (test se importuje s varováním):**
+- Chybí expected result
+- Příliš dlouhý krok (>500 znaků)
+
+---
+
 ## 📝 Changelog
 
 | Verze | Datum | Změny |
 |-------|-------|-------|
+| 2.0 | 2026-03 | Evidence-Based QA Engine — vícevrstvá evaluace, scoring, import quality gate |
 | 1.0 | 2025-01 | Initiální verze dokumentace |
 
 ---
