@@ -9,7 +9,7 @@ function delay(ms: number) {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
 
-// Evaluate test result
+// Evaluate test result (legacy fallback)
 function evaluateTestResult(resultSummary: string, expectedResult: string | null): { status: 'passed' | 'failed'; reasoning: string } {
   if (!expectedResult || expectedResult.trim() === '') {
     return { status: 'passed', reasoning: 'Test dokončen bez definovaného očekávaného výsledku.' };
@@ -29,6 +29,99 @@ function evaluateTestResult(resultSummary: string, expectedResult: string | null
 
   if (ratio >= 0.5) return { status: 'passed', reasoning: `${Math.round(ratio * 100)}% klíčových slov nalezeno.` };
   return { status: 'failed', reasoning: `Pouze ${Math.round(ratio * 100)}% klíčových slov. Očekáváno: "${expectedResult.substring(0, 100)}"` };
+}
+
+// Evidence-based evaluation via Azure OpenAI (mirrors evaluate-test edge function)
+async function evaluateWithEvidenceBundle(
+  expectedResult: string | null,
+  evidenceBundle: Record<string, unknown>
+): Promise<{ finalStatus: string; evaluationDetails: Record<string, unknown> | null; confidenceScore: number | null; finalScore: number | null; reasoning: string }> {
+  const { callAIWithTools } = await import('../utils/ai');
+
+  if (!expectedResult || expectedResult.trim() === '') {
+    return {
+      finalStatus: 'passed',
+      evaluationDetails: { final_status: 'passed', final_score: 1.0, confidence: 0.7, reasoning: ['Test completed without expected result'] },
+      confidenceScore: 0.7,
+      finalScore: 1.0,
+      reasoning: 'Test completed without expected result',
+    };
+  }
+
+  try {
+    // Extract requirements via AI
+    const reqResult = await callAIWithTools(
+      'Extract testable requirements from the expected result. Use types: url_match, text_presence, element_exists, no_errors, custom.',
+      `Extract requirements from: "${expectedResult}"`,
+      [{
+        type: 'function',
+        function: {
+          name: 'extract_requirements',
+          parameters: {
+            type: 'object',
+            properties: {
+              requirements: {
+                type: 'array',
+                items: {
+                  type: 'object',
+                  properties: {
+                    id: { type: 'string' },
+                    type: { type: 'string', enum: ['url_match', 'text_presence', 'element_exists', 'no_errors', 'custom'] },
+                    description: { type: 'string' },
+                    value: { type: 'string' },
+                  },
+                  required: ['id', 'type', 'description'],
+                },
+              },
+            },
+            required: ['requirements'],
+          },
+        },
+      }],
+      { type: 'function', function: { name: 'extract_requirements' } },
+      0.3
+    ) as { requirements?: Array<{ id: string; type: string; description: string; value?: string }> };
+
+    const requirements = (reqResult as any)?.requirements || [{ id: 'R1', type: 'custom', description: expectedResult, value: expectedResult }];
+    const evidence = (evidenceBundle as any)?.evidence || {};
+    const outputText = (evidence.output_text || '').toLowerCase();
+    const stepText = (evidence.step_summaries || []).join(' ').toLowerCase();
+    const allText = `${outputText} ${stepText}`;
+
+    // Deterministic validation
+    const results = requirements.map((req: any) => {
+      if (req.type === 'text_presence' && req.value) {
+        return { id: req.id, status: allText.includes(req.value.toLowerCase()) ? 'passed' : 'unknown', source: 'deterministic' };
+      }
+      if (req.type === 'url_match' && req.value && evidence.final_url) {
+        return { id: req.id, status: evidence.final_url.toLowerCase().includes(req.value.toLowerCase()) ? 'passed' : 'failed', source: 'deterministic' };
+      }
+      if (req.type === 'no_errors') {
+        return { id: req.id, status: (evidence.console_errors || 0) === 0 ? 'passed' : 'failed', source: 'deterministic' };
+      }
+      return { id: req.id, status: 'unknown', source: 'deterministic' };
+    });
+
+    const passed = results.filter((r: any) => r.status === 'passed').length;
+    const failed = results.filter((r: any) => r.status === 'failed').length;
+    const total = results.length;
+    const score = total > 0 ? passed / total : 0.5;
+
+    let finalStatus = score >= 0.8 ? 'passed' : score >= 0.6 ? 'degraded' : 'failed';
+    if (failed > 0 && passed === 0) finalStatus = 'failed';
+
+    return {
+      finalStatus,
+      evaluationDetails: { requirements: results, final_score: score, confidence: score, final_status: finalStatus, reasoning: results.map((r: any) => `${r.status === 'passed' ? '✔' : '✗'} ${r.id}`) },
+      confidenceScore: score,
+      finalScore: score,
+      reasoning: `Score: ${Math.round(score * 100)}% (${passed}/${total} requirements passed)`,
+    };
+  } catch (e) {
+    console.error('Evidence evaluation error:', e);
+    const fallback = evaluateTestResult(expectedResult, expectedResult);
+    return { finalStatus: fallback.status, evaluationDetails: null, confidenceScore: null, finalScore: null, reasoning: fallback.reasoning };
+  }
 }
 
 // Self-invoke for next phase
@@ -151,8 +244,19 @@ runTestsBatchRouter.post('/', async (req: Request, res: Response) => {
 
           const resultSummary = statusData.output || statusData.result || '';
           const steps = statusData.steps || [];
-          const evaluation = evaluateTestResult(resultSummary, expectedResult);
-          const finalStatus = statusData.status === 'failed' ? 'error' : evaluation.status;
+
+          // Build evidence bundle
+          const stepSummaries: string[] = [];
+          let finalUrl = '';
+          if (Array.isArray(steps)) {
+            for (const step of steps) {
+              if (typeof step === 'object' && step !== null) {
+                const s = step as Record<string, unknown>;
+                if (s.output && typeof s.output === 'string') stepSummaries.push(s.output);
+                if (s.url && typeof s.url === 'string') finalUrl = s.url;
+              }
+            }
+          }
 
           // Get started_at for execution time
           const { rows: [taskStart] } = await query(`SELECT started_at FROM tasks WHERE id = $1`, [taskRecordId]);
@@ -163,14 +267,39 @@ runTestsBatchRouter.post('/', async (req: Request, res: Response) => {
           const proxyRate = recordVideo ? 0.008 : 0.004;
           const estimatedCost = 0.01 + (stepCount * 0.01) + (execMinutes * proxyRate);
 
+          const evidenceBundle = {
+            technical_status: statusData.status === 'failed' ? 'error' : 'success',
+            execution: { steps_completed: stepCount, execution_time_ms: executionTimeMs },
+            evidence: { final_url: finalUrl, output_text: resultSummary, screenshot_urls: [], console_errors: 0, step_summaries: stepSummaries },
+            raw_output: resultSummary,
+          };
+
+          let finalStatus: string;
+          let evaluationDetails: Record<string, unknown> | null = null;
+          let confidenceScore: number | null = null;
+          let finalScore: number | null = null;
+          let evaluationReasoning = '';
+
+          if (statusData.status === 'failed') {
+            finalStatus = 'error';
+            evaluationReasoning = 'Technical error during test execution';
+          } else {
+            const evalResult = await evaluateWithEvidenceBundle(expectedResult, evidenceBundle);
+            finalStatus = evalResult.finalStatus;
+            evaluationDetails = evalResult.evaluationDetails;
+            confidenceScore = evalResult.confidenceScore;
+            finalScore = evalResult.finalScore;
+            evaluationReasoning = evalResult.reasoning;
+          }
+
           // Update task + generated_tests
           await query(
             `UPDATE tasks SET status = $1, completed_at = NOW(), result = $2, step_count = $3 WHERE id = $4`,
-            [finalStatus === 'error' ? 'failed' : 'completed', JSON.stringify({ output: resultSummary, reasoning: evaluation.reasoning }), stepCount, taskRecordId]
+            [finalStatus === 'error' ? 'failed' : 'completed', JSON.stringify(evidenceBundle), stepCount, taskRecordId]
           );
           await query(
-            `UPDATE generated_tests SET status = $1, last_run_at = NOW(), execution_time_ms = $2, result_summary = $3, result_reasoning = $4, step_count = $5, estimated_cost = $6 WHERE id = $7`,
-            [finalStatus, executionTimeMs, resultSummary || null, evaluation.reasoning, stepCount, estimatedCost, testId]
+            `UPDATE generated_tests SET status = $1, last_run_at = NOW(), execution_time_ms = $2, result_summary = $3, result_reasoning = $4, step_count = $5, estimated_cost = $6, evaluation_details = $7, confidence_score = $8, final_score = $9 WHERE id = $10`,
+            [finalStatus, executionTimeMs, resultSummary || null, evaluationReasoning, stepCount, estimatedCost, evaluationDetails ? JSON.stringify(evaluationDetails) : null, confidenceScore, finalScore, testId]
           );
 
           // Update batch progress

@@ -1,0 +1,1 @@
+ALTER TABLE public.generated_tests ADD COLUMN IF NOT EXISTS evaluation_details jsonb, ADD COLUMN IF NOT EXISTS confidence_score numeric, ADD COLUMN IF NOT EXISTS final_score numeric;

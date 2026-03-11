@@ -478,7 +478,33 @@ export default function TestGenerator() {
     }
     
     if (currentTest) tests.push(currentTest);
-    return tests.filter(t => t.steps.length > 0);
+    // Quality gate: filter valid tests
+    const validTests = tests.filter(t => t.steps.length > 0);
+    const rejectedTests = tests.filter(t => t.steps.length === 0);
+    if (rejectedTests.length > 0) {
+      console.warn(`Import quality gate: ${rejectedTests.length} tests rejected (no steps)`);
+    }
+    return validTests;
+  };
+
+  // Quality gate validation for individual test
+  const validateImportedTest = (azureTest: AzureDevOpsTestCase): { status: 'imported_ready' | 'imported_needs_review' | 'imported_rejected'; warnings: string[] } => {
+    const warnings: string[] = [];
+    
+    // Hard reject
+    if (!azureTest.title || azureTest.title.trim() === '') return { status: 'imported_rejected', warnings: ['Missing title'] };
+    if (azureTest.steps.length === 0) return { status: 'imported_rejected', warnings: ['No test steps'] };
+    if (azureTest.steps.every(s => !s.action || s.action.trim() === '')) return { status: 'imported_rejected', warnings: ['All step actions empty'] };
+    
+    // Warnings
+    const hasExpectedResult = azureTest.steps.some(s => s.expected && s.expected.trim() !== '');
+    if (!hasExpectedResult) warnings.push('No expected result defined');
+    if (azureTest.steps.some(s => s.action.length > 500)) warnings.push('Excessive step length');
+    
+    return { 
+      status: warnings.length > 0 ? 'imported_needs_review' : 'imported_ready', 
+      warnings 
+    };
   };
 
   const convertAzureTestToGenerated = (azureTest: AzureDevOpsTestCase): GeneratedTestCase => {
@@ -536,13 +562,38 @@ export default function TestGenerator() {
         return;
       }
       
-      setXlsxFile(file);
-      setXlsxPreview(parsed.slice(0, 5));
-      setParsedAzureTests(parsed.map(convertAzureTestToGenerated));
+      // Quality gate validation
+      const validationResults = parsed.map(t => validateImportedTest(t));
+      const readyCount = validationResults.filter(v => v.status === 'imported_ready').length;
+      const reviewCount = validationResults.filter(v => v.status === 'imported_needs_review').length;
+      const rejectedCount = validationResults.filter(v => v.status === 'imported_rejected').length;
+
+      // Filter out rejected tests
+      const acceptedTests = parsed.filter((_, idx) => validationResults[idx].status !== 'imported_rejected');
       
-      toast.success(i18n.language === 'cs' 
-        ? `Načteno ${parsed.length} testů z Azure DevOps`
-        : `Loaded ${parsed.length} tests from Azure DevOps`);
+      setXlsxFile(file);
+      setXlsxPreview(acceptedTests.slice(0, 5));
+      setParsedAzureTests(acceptedTests.map(convertAzureTestToGenerated));
+      
+      let msg = i18n.language === 'cs' 
+        ? `Načteno ${acceptedTests.length} testů z Azure DevOps`
+        : `Loaded ${acceptedTests.length} tests from Azure DevOps`;
+      if (rejectedCount > 0) {
+        msg += i18n.language === 'cs' 
+          ? ` (${rejectedCount} odmítnuto - chybí kroky/název)` 
+          : ` (${rejectedCount} rejected - missing steps/title)`;
+      }
+      if (reviewCount > 0) {
+        msg += i18n.language === 'cs'
+          ? ` (${reviewCount} vyžaduje kontrolu)`
+          : ` (${reviewCount} needs review)`;
+      }
+      
+      if (rejectedCount > 0) {
+        toast.warning(msg);
+      } else {
+        toast.success(msg);
+      }
     } catch (error) {
       console.error('Error parsing XLSX:', error);
       toast.error(i18n.language === 'cs' ? 'Chyba při čtení XLSX souboru' : 'Error reading XLSX file');

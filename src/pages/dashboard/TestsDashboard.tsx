@@ -73,7 +73,20 @@ interface GeneratedTest {
   result_reasoning: string | null;
   step_count: number | null;
   estimated_cost: number | null;
+  evaluation_details: Record<string, unknown> | null;
+  confidence_score: number | null;
+  final_score: number | null;
 }
+
+// Type cast helper for Supabase Json -> Record
+const castTests = (data: unknown[]): GeneratedTest[] => {
+  return (data as any[]).map(t => ({
+    ...t,
+    evaluation_details: t.evaluation_details && typeof t.evaluation_details === 'object' && !Array.isArray(t.evaluation_details) 
+      ? t.evaluation_details as Record<string, unknown> 
+      : null,
+  }));
+};
 
 interface Project {
   id: string;
@@ -274,7 +287,7 @@ export default function TestsDashboard() {
         (payload) => {
           console.log('Test update:', payload);
           // Update single test in state without full refetch
-          const updatedTest = payload.new as GeneratedTest;
+          const updatedTest = castTests([payload.new])[0];
           setTests(prev => prev.map(t => 
             t.id === updatedTest.id ? updatedTest : t
           ));
@@ -580,7 +593,7 @@ export default function TestsDashboard() {
       if (projectsResult.error) throw projectsResult.error;
       if (suitesResult.error) throw suitesResult.error;
 
-      setTests(testsResult.data || []);
+      setTests(castTests(testsResult.data || []));
       setProjects(projectsResult.data || []);
       setTestSuites(suitesResult.data || []);
     } catch (error) {
@@ -689,6 +702,8 @@ export default function TestsDashboard() {
         return <Badge className="bg-warning text-warning-foreground"><Loader2 className="w-3 h-3 mr-1 animate-spin" />{t('tests.running')}</Badge>;
       case 'passed':
         return <Badge className="bg-success text-success-foreground"><CheckCircle2 className="w-3 h-3 mr-1" />{t('tests.passed')}</Badge>;
+      case 'degraded':
+        return <Badge className="bg-amber-500 text-white"><AlertTriangle className="w-3 h-3 mr-1" />{i18n.language === 'cs' ? 'Degradovaný' : 'Degraded'}</Badge>;
       case 'failed':
         return <Badge className="bg-orange-500 text-white"><AlertTriangle className="w-3 h-3 mr-1" />{t('tests.failed')}</Badge>;
       case 'error':
@@ -2138,8 +2153,104 @@ export default function TestsDashboard() {
                 </div>
               )}
 
-              {/* Result Reasoning */}
-              {selectedTest?.result_reasoning && (
+              {/* Evidence-Based Evaluation Details */}
+              {selectedTest?.evaluation_details && (
+                <div className="space-y-3">
+                  <h4 className="text-sm font-semibold flex items-center gap-2">
+                    {selectedTest.status === 'passed' ? (
+                      <CheckCircle2 className="w-4 h-4 text-green-500" />
+                    ) : selectedTest.status === 'degraded' ? (
+                      <AlertTriangle className="w-4 h-4 text-amber-500" />
+                    ) : (
+                      <XCircle className="w-4 h-4 text-red-500" />
+                    )}
+                    {i18n.language === 'cs' ? 'Vyhodnocení testu' : 'Test Evaluation'}
+                  </h4>
+
+                  {/* Score & Confidence */}
+                  {(selectedTest.final_score !== null || selectedTest.confidence_score !== null) && (
+                    <div className="grid grid-cols-2 gap-3">
+                      {selectedTest.final_score !== null && (
+                        <div className="p-3 rounded-lg border bg-muted/30">
+                          <p className="text-xs text-muted-foreground mb-1">{i18n.language === 'cs' ? 'Skóre' : 'Score'}</p>
+                          <div className="flex items-center gap-2">
+                            <Progress value={selectedTest.final_score * 100} className="flex-1 h-2" />
+                            <span className={`text-sm font-bold ${
+                              selectedTest.final_score >= 0.8 ? 'text-green-500' 
+                              : selectedTest.final_score >= 0.6 ? 'text-amber-500' 
+                              : 'text-red-500'
+                            }`}>{Math.round(selectedTest.final_score * 100)}%</span>
+                          </div>
+                        </div>
+                      )}
+                      {selectedTest.confidence_score !== null && (
+                        <div className="p-3 rounded-lg border bg-muted/30">
+                          <p className="text-xs text-muted-foreground mb-1">{i18n.language === 'cs' ? 'Spolehlivost' : 'Confidence'}</p>
+                          <div className="flex items-center gap-2">
+                            <Progress value={selectedTest.confidence_score * 100} className="flex-1 h-2" />
+                            <span className="text-sm font-bold">{Math.round(selectedTest.confidence_score * 100)}%</span>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Requirements Checklist */}
+                  {Array.isArray((selectedTest.evaluation_details as any)?.requirements) && (
+                    <div className={`p-4 rounded-lg border ${
+                      selectedTest.status === 'passed' 
+                        ? 'bg-green-500/10 border-green-500/30' 
+                        : selectedTest.status === 'degraded'
+                        ? 'bg-amber-500/10 border-amber-500/30'
+                        : 'bg-red-500/10 border-red-500/30'
+                    }`}>
+                      <div className="space-y-2">
+                        {((selectedTest.evaluation_details as any).requirements as Array<{ id: string; status: string; reasoning: string; source?: string }>).map((req, idx) => (
+                          <div key={idx} className="flex items-start gap-2 text-sm">
+                            {req.status === 'passed' ? (
+                              <CheckCircle2 className="w-4 h-4 text-green-500 flex-shrink-0 mt-0.5" />
+                            ) : req.status === 'failed' ? (
+                              <XCircle className="w-4 h-4 text-red-500 flex-shrink-0 mt-0.5" />
+                            ) : (
+                              <AlertTriangle className="w-4 h-4 text-amber-500 flex-shrink-0 mt-0.5" />
+                            )}
+                            <div>
+                              <span className="font-medium">{req.id}:</span>{' '}
+                              <span className="text-muted-foreground">{req.reasoning}</span>
+                              {req.source && (
+                                <Badge variant="outline" className="ml-2 text-[10px] px-1 py-0">
+                                  {req.source === 'ai' ? 'AI' : i18n.language === 'cs' ? 'Deterministické' : 'Deterministic'}
+                                </Badge>
+                              )}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Score Breakdown */}
+                  {(selectedTest.evaluation_details as any)?.assertion_score !== undefined && (
+                    <div className="grid grid-cols-3 gap-2 text-xs">
+                      <div className="p-2 rounded border bg-muted/20 text-center">
+                        <p className="text-muted-foreground">{i18n.language === 'cs' ? 'Deterministické' : 'Deterministic'}</p>
+                        <p className="font-bold">{Math.round(((selectedTest.evaluation_details as any).assertion_score || 0) * 100)}%</p>
+                      </div>
+                      <div className="p-2 rounded border bg-muted/20 text-center">
+                        <p className="text-muted-foreground">{i18n.language === 'cs' ? 'Požadavky' : 'Requirements'}</p>
+                        <p className="font-bold">{Math.round(((selectedTest.evaluation_details as any).requirement_score || 0) * 100)}%</p>
+                      </div>
+                      <div className="p-2 rounded border bg-muted/20 text-center">
+                        <p className="text-muted-foreground">AI</p>
+                        <p className="font-bold">{Math.round(((selectedTest.evaluation_details as any).ai_alignment_score || 0) * 100)}%</p>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Legacy Result Reasoning (fallback for old tests) */}
+              {selectedTest?.result_reasoning && !selectedTest?.evaluation_details && (
                 <div className="space-y-2">
                   <h4 className="text-sm font-semibold flex items-center gap-2">
                     {selectedTest.status === 'passed' ? (
