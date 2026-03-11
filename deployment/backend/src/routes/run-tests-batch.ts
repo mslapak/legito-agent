@@ -244,8 +244,19 @@ runTestsBatchRouter.post('/', async (req: Request, res: Response) => {
 
           const resultSummary = statusData.output || statusData.result || '';
           const steps = statusData.steps || [];
-          const evaluation = evaluateTestResult(resultSummary, expectedResult);
-          const finalStatus = statusData.status === 'failed' ? 'error' : evaluation.status;
+
+          // Build evidence bundle
+          const stepSummaries: string[] = [];
+          let finalUrl = '';
+          if (Array.isArray(steps)) {
+            for (const step of steps) {
+              if (typeof step === 'object' && step !== null) {
+                const s = step as Record<string, unknown>;
+                if (s.output && typeof s.output === 'string') stepSummaries.push(s.output);
+                if (s.url && typeof s.url === 'string') finalUrl = s.url;
+              }
+            }
+          }
 
           // Get started_at for execution time
           const { rows: [taskStart] } = await query(`SELECT started_at FROM tasks WHERE id = $1`, [taskRecordId]);
@@ -256,14 +267,39 @@ runTestsBatchRouter.post('/', async (req: Request, res: Response) => {
           const proxyRate = recordVideo ? 0.008 : 0.004;
           const estimatedCost = 0.01 + (stepCount * 0.01) + (execMinutes * proxyRate);
 
+          const evidenceBundle = {
+            technical_status: statusData.status === 'failed' ? 'error' : 'success',
+            execution: { steps_completed: stepCount, execution_time_ms: executionTimeMs },
+            evidence: { final_url: finalUrl, output_text: resultSummary, screenshot_urls: [], console_errors: 0, step_summaries: stepSummaries },
+            raw_output: resultSummary,
+          };
+
+          let finalStatus: string;
+          let evaluationDetails: Record<string, unknown> | null = null;
+          let confidenceScore: number | null = null;
+          let finalScore: number | null = null;
+          let evaluationReasoning = '';
+
+          if (statusData.status === 'failed') {
+            finalStatus = 'error';
+            evaluationReasoning = 'Technical error during test execution';
+          } else {
+            const evalResult = await evaluateWithEvidenceBundle(expectedResult, evidenceBundle);
+            finalStatus = evalResult.finalStatus;
+            evaluationDetails = evalResult.evaluationDetails;
+            confidenceScore = evalResult.confidenceScore;
+            finalScore = evalResult.finalScore;
+            evaluationReasoning = evalResult.reasoning;
+          }
+
           // Update task + generated_tests
           await query(
             `UPDATE tasks SET status = $1, completed_at = NOW(), result = $2, step_count = $3 WHERE id = $4`,
-            [finalStatus === 'error' ? 'failed' : 'completed', JSON.stringify({ output: resultSummary, reasoning: evaluation.reasoning }), stepCount, taskRecordId]
+            [finalStatus === 'error' ? 'failed' : 'completed', JSON.stringify(evidenceBundle), stepCount, taskRecordId]
           );
           await query(
-            `UPDATE generated_tests SET status = $1, last_run_at = NOW(), execution_time_ms = $2, result_summary = $3, result_reasoning = $4, step_count = $5, estimated_cost = $6 WHERE id = $7`,
-            [finalStatus, executionTimeMs, resultSummary || null, evaluation.reasoning, stepCount, estimatedCost, testId]
+            `UPDATE generated_tests SET status = $1, last_run_at = NOW(), execution_time_ms = $2, result_summary = $3, result_reasoning = $4, step_count = $5, estimated_cost = $6, evaluation_details = $7, confidence_score = $8, final_score = $9 WHERE id = $10`,
+            [finalStatus, executionTimeMs, resultSummary || null, evaluationReasoning, stepCount, estimatedCost, evaluationDetails ? JSON.stringify(evaluationDetails) : null, confidenceScore, finalScore, testId]
           );
 
           // Update batch progress
