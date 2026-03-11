@@ -487,6 +487,26 @@ export default function TestGenerator() {
     return validTests;
   };
 
+  // Quality gate validation for individual test
+  const validateImportedTest = (azureTest: AzureDevOpsTestCase): { status: 'imported_ready' | 'imported_needs_review' | 'imported_rejected'; warnings: string[] } => {
+    const warnings: string[] = [];
+    
+    // Hard reject
+    if (!azureTest.title || azureTest.title.trim() === '') return { status: 'imported_rejected', warnings: ['Missing title'] };
+    if (azureTest.steps.length === 0) return { status: 'imported_rejected', warnings: ['No test steps'] };
+    if (azureTest.steps.every(s => !s.action || s.action.trim() === '')) return { status: 'imported_rejected', warnings: ['All step actions empty'] };
+    
+    // Warnings
+    const hasExpectedResult = azureTest.steps.some(s => s.expected && s.expected.trim() !== '');
+    if (!hasExpectedResult) warnings.push('No expected result defined');
+    if (azureTest.steps.some(s => s.action.length > 500)) warnings.push('Excessive step length');
+    
+    return { 
+      status: warnings.length > 0 ? 'imported_needs_review' : 'imported_ready', 
+      warnings 
+    };
+  };
+
   const convertAzureTestToGenerated = (azureTest: AzureDevOpsTestCase): GeneratedTestCase => {
     // Filter out "Objective:" steps
     const actionSteps = azureTest.steps.filter(s => 
