@@ -993,8 +993,64 @@ async function finalizeTest(
     ? (typeof dbTask.result === 'string' ? dbTask.result : JSON.stringify(dbTask.result))
     : "";
   
-  const evaluation = evaluateTestResult(resultSummary, expectedResult);
-  const finalStatus = dbTask.status === "failed" ? "error" : evaluation.status;
+  // Build evidence bundle from DB data
+  const evidenceBundle = {
+    technical_status: dbTask.status === "failed" ? "error" : "success",
+    execution: { steps_completed: dbTask.step_count || 0, execution_time_ms: 0 },
+    evidence: {
+      final_url: "",
+      output_text: resultSummary,
+      screenshot_urls: [] as string[],
+      console_errors: 0,
+      step_summaries: [] as string[],
+    },
+    raw_output: resultSummary,
+  };
+
+  let finalStatus: string;
+  let evaluationDetails: Record<string, unknown> | null = null;
+  let confidenceScore: number | null = null;
+  let finalScore: number | null = null;
+  let evaluationReasoning = "";
+
+  if (dbTask.status === "failed") {
+    finalStatus = "error";
+    evaluationReasoning = "Technical error during test execution";
+  } else {
+    try {
+      const evalRes = await fetch(
+        `${SUPABASE_URL}/functions/v1/evaluate-test`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
+          },
+          body: JSON.stringify({
+            expected_result: expectedResult,
+            evidence_bundle: evidenceBundle,
+          }),
+        }
+      );
+
+      if (evalRes.ok) {
+        const evalData = await evalRes.json();
+        finalStatus = evalData.final_status || "failed";
+        evaluationDetails = evalData;
+        confidenceScore = evalData.confidence ?? null;
+        finalScore = evalData.final_score ?? null;
+        evaluationReasoning = (evalData.reasoning || []).join("; ");
+      } else {
+        const fallback = evaluateTestResult(resultSummary, expectedResult);
+        finalStatus = fallback.status;
+        evaluationReasoning = fallback.reasoning;
+      }
+    } catch {
+      const fallback = evaluateTestResult(resultSummary, expectedResult);
+      finalStatus = fallback.status;
+      evaluationReasoning = fallback.reasoning;
+    }
+  }
   
   // Calculate execution time
   const startedAt = dbTask.started_at ? new Date(dbTask.started_at).getTime() : Date.now();
@@ -1007,7 +1063,7 @@ async function finalizeTest(
   const stepCount = dbTask.step_count || 0;
   const estimatedCost = 0.01 + (stepCount * 0.01) + (execMinutes * proxyRate);
   
-  // Update generated_tests
+  // Update generated_tests with evaluation details
   await supabase
     .from("generated_tests")
     .update({
@@ -1015,9 +1071,12 @@ async function finalizeTest(
       last_run_at: new Date().toISOString(),
       execution_time_ms: executionTimeMs,
       result_summary: resultSummary.substring(0, 500) || null,
-      result_reasoning: evaluation.reasoning || null,
+      result_reasoning: evaluationReasoning || null,
       step_count: stepCount,
       estimated_cost: estimatedCost,
+      evaluation_details: evaluationDetails,
+      confidence_score: confidenceScore,
+      final_score: finalScore,
     })
     .eq("id", testId);
 
