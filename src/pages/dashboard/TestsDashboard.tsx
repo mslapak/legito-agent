@@ -593,7 +593,7 @@ export default function TestsDashboard() {
       if (projectsResult.error) throw projectsResult.error;
       if (suitesResult.error) throw suitesResult.error;
 
-      setTests(testsResult.data || []);
+      setTests(castTests(testsResult.data || []));
       setProjects(projectsResult.data || []);
       setTestSuites(suitesResult.data || []);
     } catch (error) {
