@@ -78,6 +78,16 @@ interface GeneratedTest {
   final_score: number | null;
 }
 
+// Type cast helper for Supabase Json -> Record
+const castTests = (data: unknown[]): GeneratedTest[] => {
+  return (data as any[]).map(t => ({
+    ...t,
+    evaluation_details: t.evaluation_details && typeof t.evaluation_details === 'object' && !Array.isArray(t.evaluation_details) 
+      ? t.evaluation_details as Record<string, unknown> 
+      : null,
+  }));
+};
+
 interface Project {
   id: string;
   name: string;
