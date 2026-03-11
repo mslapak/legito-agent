@@ -693,8 +693,9 @@ URL/PDF → fetch-documentation → AI (Gemini) → generate-tests → generated
 
 ### 3. Spuštění batch testů
 ```
-UI → test_batch_runs (DB) → run-tests-batch → browser-use → 
-→ tasks (DB) + generated_tests (update) → Realtime → UI
+UI → test_batch_runs (DB) → run-tests-batch → browser-use →
+→ Evidence Bundle → evaluate-test → Scoring →
+→ generated_tests (update) → Realtime → UI
 ```
 
 ### 4. Verifikace dokumentace
