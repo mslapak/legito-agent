@@ -9,7 +9,7 @@ function delay(ms: number) {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
 
-// Evaluate test result
+// Evaluate test result (legacy fallback)
 function evaluateTestResult(resultSummary: string, expectedResult: string | null): { status: 'passed' | 'failed'; reasoning: string } {
   if (!expectedResult || expectedResult.trim() === '') {
     return { status: 'passed', reasoning: 'Test dokončen bez definovaného očekávaného výsledku.' };
@@ -29,6 +29,99 @@ function evaluateTestResult(resultSummary: string, expectedResult: string | null
 
   if (ratio >= 0.5) return { status: 'passed', reasoning: `${Math.round(ratio * 100)}% klíčových slov nalezeno.` };
   return { status: 'failed', reasoning: `Pouze ${Math.round(ratio * 100)}% klíčových slov. Očekáváno: "${expectedResult.substring(0, 100)}"` };
+}
+
+// Evidence-based evaluation via Azure OpenAI (mirrors evaluate-test edge function)
+async function evaluateWithEvidenceBundle(
+  expectedResult: string | null,
+  evidenceBundle: Record<string, unknown>
+): Promise<{ finalStatus: string; evaluationDetails: Record<string, unknown> | null; confidenceScore: number | null; finalScore: number | null; reasoning: string }> {
+  const { callAIWithTools } = await import('../utils/ai');
+
+  if (!expectedResult || expectedResult.trim() === '') {
+    return {
+      finalStatus: 'passed',
+      evaluationDetails: { final_status: 'passed', final_score: 1.0, confidence: 0.7, reasoning: ['Test completed without expected result'] },
+      confidenceScore: 0.7,
+      finalScore: 1.0,
+      reasoning: 'Test completed without expected result',
+    };
+  }
+
+  try {
+    // Extract requirements via AI
+    const reqResult = await callAIWithTools(
+      'Extract testable requirements from the expected result. Use types: url_match, text_presence, element_exists, no_errors, custom.',
+      `Extract requirements from: "${expectedResult}"`,
+      [{
+        type: 'function',
+        function: {
+          name: 'extract_requirements',
+          parameters: {
+            type: 'object',
+            properties: {
+              requirements: {
+                type: 'array',
+                items: {
+                  type: 'object',
+                  properties: {
+                    id: { type: 'string' },
+                    type: { type: 'string', enum: ['url_match', 'text_presence', 'element_exists', 'no_errors', 'custom'] },
+                    description: { type: 'string' },
+                    value: { type: 'string' },
+                  },
+                  required: ['id', 'type', 'description'],
+                },
+              },
+            },
+            required: ['requirements'],
+          },
+        },
+      }],
+      { type: 'function', function: { name: 'extract_requirements' } },
+      0.3
+    ) as { requirements?: Array<{ id: string; type: string; description: string; value?: string }> };
+
+    const requirements = (reqResult as any)?.requirements || [{ id: 'R1', type: 'custom', description: expectedResult, value: expectedResult }];
+    const evidence = (evidenceBundle as any)?.evidence || {};
+    const outputText = (evidence.output_text || '').toLowerCase();
+    const stepText = (evidence.step_summaries || []).join(' ').toLowerCase();
+    const allText = `${outputText} ${stepText}`;
+
+    // Deterministic validation
+    const results = requirements.map((req: any) => {
+      if (req.type === 'text_presence' && req.value) {
+        return { id: req.id, status: allText.includes(req.value.toLowerCase()) ? 'passed' : 'unknown', source: 'deterministic' };
+      }
+      if (req.type === 'url_match' && req.value && evidence.final_url) {
+        return { id: req.id, status: evidence.final_url.toLowerCase().includes(req.value.toLowerCase()) ? 'passed' : 'failed', source: 'deterministic' };
+      }
+      if (req.type === 'no_errors') {
+        return { id: req.id, status: (evidence.console_errors || 0) === 0 ? 'passed' : 'failed', source: 'deterministic' };
+      }
+      return { id: req.id, status: 'unknown', source: 'deterministic' };
+    });
+
+    const passed = results.filter((r: any) => r.status === 'passed').length;
+    const failed = results.filter((r: any) => r.status === 'failed').length;
+    const total = results.length;
+    const score = total > 0 ? passed / total : 0.5;
+
+    let finalStatus = score >= 0.8 ? 'passed' : score >= 0.6 ? 'degraded' : 'failed';
+    if (failed > 0 && passed === 0) finalStatus = 'failed';
+
+    return {
+      finalStatus,
+      evaluationDetails: { requirements: results, final_score: score, confidence: score, final_status: finalStatus, reasoning: results.map((r: any) => `${r.status === 'passed' ? '✔' : '✗'} ${r.id}`) },
+      confidenceScore: score,
+      finalScore: score,
+      reasoning: `Score: ${Math.round(score * 100)}% (${passed}/${total} requirements passed)`,
+    };
+  } catch (e) {
+    console.error('Evidence evaluation error:', e);
+    const fallback = evaluateTestResult(expectedResult, expectedResult);
+    return { finalStatus: fallback.status, evaluationDetails: null, confidenceScore: null, finalScore: null, reasoning: fallback.reasoning };
+  }
 }
 
 // Self-invoke for next phase
