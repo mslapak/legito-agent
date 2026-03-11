@@ -70,10 +70,13 @@ export type Database = {
       generated_tests: {
         Row: {
           azure_devops_id: string | null
+          confidence_score: number | null
           created_at: string
           estimated_cost: number | null
+          evaluation_details: Json | null
           execution_time_ms: number | null
           expected_result: string | null
+          final_score: number | null
           id: string
           last_run_at: string | null
           priority: string
@@ -92,10 +95,13 @@ export type Database = {
         }
         Insert: {
           azure_devops_id?: string | null
+          confidence_score?: number | null
           created_at?: string
           estimated_cost?: number | null
+          evaluation_details?: Json | null
           execution_time_ms?: number | null
           expected_result?: string | null
+          final_score?: number | null
           id?: string
           last_run_at?: string | null
           priority?: string
@@ -114,10 +120,13 @@ export type Database = {
         }
         Update: {
           azure_devops_id?: string | null
+          confidence_score?: number | null
           created_at?: string
           estimated_cost?: number | null
+          evaluation_details?: Json | null
           execution_time_ms?: number | null
           expected_result?: string | null
+          final_score?: number | null
           id?: string
           last_run_at?: string | null
           priority?: string
