@@ -43,6 +43,7 @@ app.use('/api/generate-tests', authMiddleware, generateTestsRouter);
 app.use('/api/fetch-documentation', authMiddleware, fetchDocumentationRouter);
 app.use('/api/run-tests-batch', authMiddleware, runTestsBatchRouter);
 app.use('/api/structure-training', authMiddleware, structureTrainingRouter);
+app.use('/api/evaluate-test', authMiddleware, evaluateTestRouter);
 
 // Protected CRUD routes
 app.use('/api/profiles', authMiddleware, profilesRouter);
