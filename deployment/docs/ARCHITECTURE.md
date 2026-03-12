@@ -12,7 +12,7 @@
 │  │  (Static)     │     │  (Node.js)   │     │  Server      │ │
 │  │               │     │              │     │              │ │
 │  │  React/Vite   │     │  Express.js  │     │  13 tabulek  │ │
-│  │  Tailwind CSS │     │  5 API routes│     │  2 enumy     │ │
+│  │  Tailwind CSS │     │  6 API routes│     │  2 enumy     │ │
 │  └──────┬───────┘     └──────┬───────┘     └──────────────┘ │
 │         │                    │                               │
 │         │              ┌─────┴─────┐                        │
@@ -50,6 +50,7 @@
 | `/api/fetch-documentation` | POST | Stahování a parsování dokumentace |
 | `/api/run-tests-batch` | POST | Batch spouštění testů |
 | `/api/structure-training` | POST | AI strukturování tréninku |
+| `/api/evaluate-test` | POST | Evidence-based evaluace testů (scoring, requirements) |
 
 ### Databáze (PostgreSQL)
 - **Hosting:** Azure Database for PostgreSQL Flexible Server
