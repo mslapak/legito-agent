@@ -7,6 +7,7 @@ import { generateTestsRouter } from './routes/generate-tests';
 import { fetchDocumentationRouter } from './routes/fetch-documentation';
 import { runTestsBatchRouter } from './routes/run-tests-batch';
 import { structureTrainingRouter } from './routes/structure-training';
+import { evaluateTestRouter } from './routes/evaluate-test';
 
 // CRUD routers
 import { profilesRouter } from './routes/crud/profiles';
@@ -42,6 +43,7 @@ app.use('/api/generate-tests', authMiddleware, generateTestsRouter);
 app.use('/api/fetch-documentation', authMiddleware, fetchDocumentationRouter);
 app.use('/api/run-tests-batch', authMiddleware, runTestsBatchRouter);
 app.use('/api/structure-training', authMiddleware, structureTrainingRouter);
+app.use('/api/evaluate-test', authMiddleware, evaluateTestRouter);
 
 // Protected CRUD routes
 app.use('/api/profiles', authMiddleware, profilesRouter);
