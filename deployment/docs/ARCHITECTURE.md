@@ -12,7 +12,7 @@
 │  │  (Static)     │     │  (Node.js)   │     │  Server      │ │
 │  │               │     │              │     │              │ │
 │  │  React/Vite   │     │  Express.js  │     │  13 tabulek  │ │
-│  │  Tailwind CSS │     │  5 API routes│     │  2 enumy     │ │
+│  │  Tailwind CSS │     │  6 API routes│     │  2 enumy     │ │
 │  └──────┬───────┘     └──────┬───────┘     └──────────────┘ │
 │         │                    │                               │
 │         │              ┌─────┴─────┐                        │
