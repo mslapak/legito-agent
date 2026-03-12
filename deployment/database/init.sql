@@ -171,6 +171,9 @@ CREATE TABLE IF NOT EXISTS public.generated_tests (
   execution_time_ms INTEGER,
   step_count INTEGER,
   estimated_cost NUMERIC,
+  evaluation_details JSONB,
+  confidence_score NUMERIC,
+  final_score NUMERIC,
   created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
