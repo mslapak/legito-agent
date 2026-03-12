@@ -7,6 +7,7 @@ import { generateTestsRouter } from './routes/generate-tests';
 import { fetchDocumentationRouter } from './routes/fetch-documentation';
 import { runTestsBatchRouter } from './routes/run-tests-batch';
 import { structureTrainingRouter } from './routes/structure-training';
+import { evaluateTestRouter } from './routes/evaluate-test';
 
 // CRUD routers
 import { profilesRouter } from './routes/crud/profiles';
