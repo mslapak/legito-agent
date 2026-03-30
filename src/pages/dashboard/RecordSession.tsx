@@ -104,9 +104,9 @@ Then STOP and WAIT for the user to interact.`;
 
       if (error) throw error;
 
-      const buTaskId = data?.taskId || data?.task_id;
-      const live = data?.liveUrl || data?.live_url;
-      const dbTaskId = data?.dbTaskId || data?.db_task_id;
+      const buTaskId = data?.browserUseTaskId || data?.task?.browser_use_task_id;
+      const live = data?.task?.live_url || data?.liveUrl;
+      const dbTaskId = data?.task?.id || data?.dbTaskId;
 
       setBrowserUseTaskId(buTaskId);
       setLiveUrl(live);
@@ -119,15 +119,15 @@ Then STOP and WAIT for the user to interact.`;
           user_id: user!.id,
           project_id: selectedProject || null,
           title,
-          browser_use_task_id: buTaskId,
-          task_id: dbTaskId,
+          browser_use_task_id: buTaskId || null,
+          task_id: dbTaskId || null,
           status: 'recording',
-        } as any)
+        })
         .select()
         .single();
 
       if (sessionError) console.error('Failed to create session record:', sessionError);
-      else setSessionId((session as any).id);
+      else if (session) setSessionId(session.id);
 
       toast.success(t('recorder.recordingStarted'));
     } catch (err: any) {
@@ -176,9 +176,9 @@ Then STOP and WAIT for the user to interact.`;
         await supabase
           .from('recorded_sessions')
           .update({
-            recorded_steps: recordedSteps,
+            recorded_steps: recordedSteps as any,
             status: 'processing',
-          } as any)
+          })
           .eq('id', sessionId);
       }
 
