@@ -356,7 +356,7 @@ Then STOP and WAIT for the user to interact.`;
                     src={liveUrl}
                     className="w-full h-full"
                     title="Live browser"
-                    sandbox="allow-same-origin allow-scripts allow-popups allow-forms"
+                    allow="clipboard-read; clipboard-write"
                   />
                 </div>
               </div>
