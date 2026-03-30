@@ -56,9 +56,12 @@ export default function DashboardLayout() {
     { title: t('nav.taskHistory'), url: '/dashboard/history', icon: History },
     { title: t('nav.testOverview'), url: '/dashboard/tests', icon: ClipboardList },
     { title: t('nav.testGenerator'), url: '/dashboard/test-generator', icon: TestTube },
-    { title: t('nav.recorder'), url: '/dashboard/recorder', icon: Video },
     { title: t('nav.docVerify'), url: '/dashboard/doc-verify', icon: FileCheck },
     { title: t('nav.projects'), url: '/dashboard/projects', icon: FolderOpen },
+  ];
+
+  const recordingItems = [
+    { title: t('nav.recorder'), url: '/dashboard/recorder', icon: Video },
   ];
 
   const operationItems = [
@@ -109,7 +112,7 @@ export default function DashboardLayout() {
   const userInitials = user.email?.substring(0, 2).toUpperCase() || 'U';
 
   const getCurrentPageTitle = () => {
-    const allItems = [...testingItems, ...operationItems];
+    const allItems = [...testingItems, ...recordingItems, ...operationItems];
     const currentItem = allItems.find((item) => 
       item.url === '/dashboard' 
         ? location.pathname === '/dashboard' 
@@ -142,6 +145,28 @@ export default function DashboardLayout() {
                         <NavLink
                           to={item.url}
                           end={item.url === '/dashboard'}
+                          className="flex items-center gap-3 px-3 py-2 rounded-lg text-sidebar-foreground hover:bg-sidebar-accent transition-colors"
+                          activeClassName="bg-sidebar-accent text-sidebar-accent-foreground font-medium"
+                        >
+                          <item.icon className="w-5 h-5" />
+                          <span>{item.title}</span>
+                        </NavLink>
+                      </SidebarMenuButton>
+                    </SidebarMenuItem>
+                  ))}
+                </SidebarMenu>
+              </SidebarGroupContent>
+            </SidebarGroup>
+
+            <SidebarGroup>
+              <SidebarGroupLabel className="text-sidebar-foreground/60">{t('nav.recording')}</SidebarGroupLabel>
+              <SidebarGroupContent>
+                <SidebarMenu>
+                  {recordingItems.map((item) => (
+                    <SidebarMenuItem key={item.url}>
+                      <SidebarMenuButton asChild>
+                        <NavLink
+                          to={item.url}
                           className="flex items-center gap-3 px-3 py-2 rounded-lg text-sidebar-foreground hover:bg-sidebar-accent transition-colors"
                           activeClassName="bg-sidebar-accent text-sidebar-accent-foreground font-medium"
                         >
