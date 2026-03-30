@@ -159,6 +159,28 @@ export default function DashboardLayout() {
             </SidebarGroup>
 
             <SidebarGroup>
+              <SidebarGroupLabel className="text-sidebar-foreground/60">{t('nav.recording')}</SidebarGroupLabel>
+              <SidebarGroupContent>
+                <SidebarMenu>
+                  {recordingItems.map((item) => (
+                    <SidebarMenuItem key={item.url}>
+                      <SidebarMenuButton asChild>
+                        <NavLink
+                          to={item.url}
+                          className="flex items-center gap-3 px-3 py-2 rounded-lg text-sidebar-foreground hover:bg-sidebar-accent transition-colors"
+                          activeClassName="bg-sidebar-accent text-sidebar-accent-foreground font-medium"
+                        >
+                          <item.icon className="w-5 h-5" />
+                          <span>{item.title}</span>
+                        </NavLink>
+                      </SidebarMenuButton>
+                    </SidebarMenuItem>
+                  ))}
+                </SidebarMenu>
+              </SidebarGroupContent>
+            </SidebarGroup>
+
+            <SidebarGroup>
               <SidebarGroupLabel className="text-sidebar-foreground/60">{t('nav.operations')}</SidebarGroupLabel>
               <SidebarGroupContent>
                 <SidebarMenu>
