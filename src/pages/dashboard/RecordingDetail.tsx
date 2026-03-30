@@ -185,13 +185,26 @@ export default function RecordingDetail() {
       const wbout = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
       const blob = new Blob([wbout], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
       const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `${session?.title || 'recording'}_test_cases.xlsx`;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      URL.revokeObjectURL(url);
+      
+      // Use window.open as fallback for sandboxed iframes
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `${session?.title || 'recording'}_test_cases.xlsx`;
+      link.style.display = 'none';
+      link.target = '_blank';
+      document.body.appendChild(link);
+      
+      // Try click, fallback to window.open
+      try {
+        link.click();
+      } catch {
+        window.open(url, '_blank');
+      }
+      
+      setTimeout(() => {
+        document.body.removeChild(link);
+        URL.revokeObjectURL(url);
+      }, 1000);
       toast.success(t('recorder.exportSuccess'));
     } catch {
       toast.error(t('common.error'));
