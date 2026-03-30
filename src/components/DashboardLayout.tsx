@@ -39,6 +39,7 @@ import {
   GraduationCap,
   ClipboardList,
   Languages,
+  Video,
 } from 'lucide-react';
 import pwcLogo from '@/assets/pwc-logo.png';
 
@@ -55,6 +56,7 @@ export default function DashboardLayout() {
     { title: t('nav.taskHistory'), url: '/dashboard/history', icon: History },
     { title: t('nav.testOverview'), url: '/dashboard/tests', icon: ClipboardList },
     { title: t('nav.testGenerator'), url: '/dashboard/test-generator', icon: TestTube },
+    { title: t('nav.recorder'), url: '/dashboard/recorder', icon: Video },
     { title: t('nav.docVerify'), url: '/dashboard/doc-verify', icon: FileCheck },
     { title: t('nav.projects'), url: '/dashboard/projects', icon: FolderOpen },
   ];

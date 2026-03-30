@@ -36,6 +36,7 @@
     "testGenerator": "Generátor testů",
     "docVerify": "Ověření dokumentace",
     "projects": "Projekty",
+    "recorder": "Rekordér",
     "newOperation": "Nová operace",
     "operationHistory": "Historie operací",
     "templates": "Šablony",
@@ -742,6 +743,34 @@
         ]
       }
     }
+  },
+  "recorder": {
+    "title": "Nahrávání session",
+    "subtitle": "Nahrajte své interakce v prohlížeči a automaticky vygenerujte test cases",
+    "sessionName": "Název session",
+    "sessionNamePlaceholder": "Např. Nahrávání přihlášení",
+    "baseUrl": "Base URL",
+    "enterBaseUrl": "Zadejte URL aplikace",
+    "startRecording": "Spustit nahrávání",
+    "recording": "Nahrávání probíhá...",
+    "stopAndGenerate": "Zastavit a vygenerovat testy",
+    "stopping": "Zastavuji...",
+    "performActions": "Proveďte své akce v prohlížeči níže. Až budete hotovi, klikněte na Zastavit a vygenerovat testy.",
+    "recordingStarted": "Nahrávání spuštěno",
+    "startFailed": "Nepodařilo se spustit nahrávání",
+    "testsGenerated": "Vygenerováno {{count}} test cases z nahrávky",
+    "generateFailed": "Nepodařilo se vygenerovat testy z nahrávky",
+    "pastSessions": "Předchozí nahrávky",
+    "noSessions": "Zatím žádné nahrávky. Spusťte svou první session výše.",
+    "testCases": "test cases",
+    "statusRecording": "Nahrává se",
+    "statusProcessing": "Zpracovávám",
+    "sessionNotFound": "Session nenalezena",
+    "recordedSteps": "Zaznamenané kroky",
+    "generatedTests": "Vygenerované test cases",
+    "noTestsGenerated": "Nebyly vygenerovány žádné test cases",
+    "exportXlsx": "Export XLSX (Azure DevOps)",
+    "exportSuccess": "Test cases exportovány do XLSX"
   },
   "validation": {
     "required": "Toto pole je povinné",

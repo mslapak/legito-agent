@@ -20,6 +20,8 @@ import OperationDetail from "./pages/dashboard/OperationDetail";
 import OperationTemplates from "./pages/dashboard/OperationTemplates";
 import OperationsDashboard from "./pages/dashboard/OperationsDashboard";
 import OperationTraining from "./pages/dashboard/OperationTraining";
+import RecordSession from "./pages/dashboard/RecordSession";
+import RecordingDetail from "./pages/dashboard/RecordingDetail";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -48,6 +50,8 @@ const App = () => (
               <Route path="operations/:operationId" element={<OperationDetail />} />
               <Route path="operations/templates" element={<OperationTemplates />} />
               <Route path="operations/training" element={<OperationTraining />} />
+              <Route path="recorder" element={<RecordSession />} />
+              <Route path="recorder/:id" element={<RecordingDetail />} />
             </Route>
             <Route path="*" element={<NotFound />} />
           </Routes>

@@ -355,6 +355,66 @@ export type Database = {
         }
         Relationships: []
       }
+      recorded_sessions: {
+        Row: {
+          browser_use_task_id: string | null
+          completed_at: string | null
+          created_at: string
+          generated_test_ids: string[] | null
+          id: string
+          project_id: string | null
+          recorded_steps: Json | null
+          status: string
+          task_id: string | null
+          title: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          browser_use_task_id?: string | null
+          completed_at?: string | null
+          created_at?: string
+          generated_test_ids?: string[] | null
+          id?: string
+          project_id?: string | null
+          recorded_steps?: Json | null
+          status?: string
+          task_id?: string | null
+          title: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          browser_use_task_id?: string | null
+          completed_at?: string | null
+          created_at?: string
+          generated_test_ids?: string[] | null
+          id?: string
+          project_id?: string | null
+          recorded_steps?: Json | null
+          status?: string
+          task_id?: string | null
+          title?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "recorded_sessions_project_id_fkey"
+            columns: ["project_id"]
+            isOneToOne: false
+            referencedRelation: "projects"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "recorded_sessions_task_id_fkey"
+            columns: ["task_id"]
+            isOneToOne: false
+            referencedRelation: "tasks"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       tasks: {
         Row: {
           browser_use_task_id: string | null

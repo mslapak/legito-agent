@@ -8,6 +8,7 @@ import { fetchDocumentationRouter } from './routes/fetch-documentation';
 import { runTestsBatchRouter } from './routes/run-tests-batch';
 import { structureTrainingRouter } from './routes/structure-training';
 import { evaluateTestRouter } from './routes/evaluate-test';
+import { generateTestsFromRecordingRouter } from './routes/generate-tests-from-recording';
 
 // CRUD routers
 import { profilesRouter } from './routes/crud/profiles';
@@ -22,6 +23,7 @@ import { documentationVerificationsRouter } from './routes/crud/documentation-ve
 import { verificationStepsRouter } from './routes/crud/verification-steps';
 import { operationTemplatesRouter as operationTemplatesCrudRouter } from './routes/crud/operation-templates';
 import { operationTrainingsRouter } from './routes/crud/operation-trainings';
+import { recordedSessionsRouter } from './routes/crud/recorded-sessions';
 
 dotenv.config();
 
@@ -44,6 +46,7 @@ app.use('/api/fetch-documentation', authMiddleware, fetchDocumentationRouter);
 app.use('/api/run-tests-batch', authMiddleware, runTestsBatchRouter);
 app.use('/api/structure-training', authMiddleware, structureTrainingRouter);
 app.use('/api/evaluate-test', authMiddleware, evaluateTestRouter);
+app.use('/api/generate-tests-from-recording', authMiddleware, generateTestsFromRecordingRouter);
 
 // Protected CRUD routes
 app.use('/api/profiles', authMiddleware, profilesRouter);
@@ -58,6 +61,7 @@ app.use('/api/documentation-verifications', authMiddleware, documentationVerific
 app.use('/api/verification-steps', authMiddleware, verificationStepsRouter);
 app.use('/api/operation-templates', authMiddleware, operationTemplatesCrudRouter);
 app.use('/api/operation-trainings', authMiddleware, operationTrainingsRouter);
+app.use('/api/recorded-sessions', authMiddleware, recordedSessionsRouter);
 
 // Internal route for batch self-invoke (uses service key, not Azure AD)
 app.use('/api/internal/run-tests-batch', runTestsBatchRouter);

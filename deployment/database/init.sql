@@ -305,6 +305,27 @@ CREATE TABLE IF NOT EXISTS public.operation_trainings (
 CREATE INDEX IF NOT EXISTS idx_operation_trainings_user_id ON public.operation_trainings(user_id);
 
 -- ============================================================
+-- RECORDED SESSIONS
+-- ============================================================
+
+CREATE TABLE IF NOT EXISTS public.recorded_sessions (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id UUID NOT NULL REFERENCES public.users(id) ON DELETE CASCADE,
+  project_id UUID REFERENCES public.projects(id) ON DELETE CASCADE,
+  title TEXT NOT NULL,
+  browser_use_task_id TEXT,
+  task_id UUID REFERENCES public.tasks(id) ON DELETE SET NULL,
+  recorded_steps JSONB,
+  generated_test_ids UUID[] DEFAULT '{}',
+  status TEXT NOT NULL DEFAULT 'recording',
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  completed_at TIMESTAMPTZ,
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_recorded_sessions_user_id ON public.recorded_sessions(user_id);
+CREATE INDEX IF NOT EXISTS idx_recorded_sessions_project_id ON public.recorded_sessions(project_id);
+-- ============================================================
 -- FUNCTIONS
 -- ============================================================
 
@@ -393,6 +414,11 @@ CREATE TRIGGER update_operation_templates_updated_at
 DROP TRIGGER IF EXISTS update_operation_trainings_updated_at ON public.operation_trainings;
 CREATE TRIGGER update_operation_trainings_updated_at
   BEFORE UPDATE ON public.operation_trainings
+  FOR EACH ROW EXECUTE FUNCTION public.update_updated_at_column();
+
+DROP TRIGGER IF EXISTS update_recorded_sessions_updated_at ON public.recorded_sessions;
+CREATE TRIGGER update_recorded_sessions_updated_at
+  BEFORE UPDATE ON public.recorded_sessions
   FOR EACH ROW EXECUTE FUNCTION public.update_updated_at_column();
 
 -- ============================================================
