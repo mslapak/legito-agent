@@ -649,11 +649,9 @@ serve(async (req) => {
           }
         }
         
-        // Fallback to constructed URL if no liveUrl from API
+        // Fallback to constructed task-based live URLs only
         if (!liveUrl) {
-          liveUrl = taskSessionId 
-            ? `https://live.browser-use.com/?sessionId=${taskSessionId}` 
-            : `https://live.browser-use.com/${browserUseData.id}`;
+          liveUrl = `https://live.browser-use.com/${browserUseData.id}`;
         }
         
         console.log('Final live_url:', liveUrl);
