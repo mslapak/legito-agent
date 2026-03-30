@@ -176,9 +176,9 @@ Then STOP and WAIT for the user to interact.`;
         await supabase
           .from('recorded_sessions')
           .update({
-            recorded_steps: recordedSteps,
+            recorded_steps: recordedSteps as any,
             status: 'processing',
-          } as any)
+          })
           .eq('id', sessionId);
       }
 
