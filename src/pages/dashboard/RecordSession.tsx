@@ -105,8 +105,18 @@ Then STOP and WAIT for the user to interact.`;
       if (error) throw error;
 
       const buTaskId = data?.browserUseTaskId || data?.task?.browser_use_task_id;
-      const live = data?.task?.live_url || data?.liveUrl;
       const dbTaskId = data?.task?.id || data?.dbTaskId;
+      let live = data?.task?.live_url || data?.liveUrl || null;
+
+      if (buTaskId && (!live || live.includes('sessionId=') || !live.includes('wss='))) {
+        const { data: probeData } = await supabase.functions.invoke('browser-use', {
+          body: { action: 'probe_live_url', taskId: buTaskId },
+        });
+
+        if (probeData?.bestUrl) {
+          live = probeData.bestUrl;
+        }
+      }
 
       setBrowserUseTaskId(buTaskId);
       setLiveUrl(live);

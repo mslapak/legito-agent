@@ -794,11 +794,9 @@ serve(async (req) => {
               console.error('Failed to fetch session for liveUrl:', e);
             }
           }
-          // Fallback
+          // Fallback to constructed task-based URL only
           if (!taskData.live_url) {
-            taskData.live_url = taskData.sessionId 
-              ? `https://live.browser-use.com/?sessionId=${taskData.sessionId}` 
-              : `https://live.browser-use.com/${taskData.id}`;
+            taskData.live_url = `https://live.browser-use.com/${taskData.id}`;
           }
         }
         
