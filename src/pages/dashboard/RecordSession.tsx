@@ -119,10 +119,10 @@ Then STOP and WAIT for the user to interact.`;
           user_id: user!.id,
           project_id: selectedProject || null,
           title,
-          browser_use_task_id: buTaskId,
-          task_id: dbTaskId,
+          browser_use_task_id: buTaskId || null,
+          task_id: dbTaskId || null,
           status: 'recording',
-        } as any)
+        })
         .select()
         .single();
 
