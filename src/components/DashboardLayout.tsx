@@ -60,6 +60,10 @@ export default function DashboardLayout() {
     { title: t('nav.projects'), url: '/dashboard/projects', icon: FolderOpen },
   ];
 
+  const recordingItems = [
+    { title: t('nav.recorder'), url: '/dashboard/recorder', icon: Video },
+  ];
+
   const operationItems = [
     { title: t('nav.dashboard'), url: '/dashboard/operations', icon: LayoutDashboard },
     { title: t('nav.newOperation'), url: '/dashboard/operations/new', icon: Play },
