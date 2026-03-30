@@ -104,9 +104,9 @@ Then STOP and WAIT for the user to interact.`;
 
       if (error) throw error;
 
-      const buTaskId = data?.taskId || data?.task_id;
-      const live = data?.liveUrl || data?.live_url;
-      const dbTaskId = data?.dbTaskId || data?.db_task_id;
+      const buTaskId = data?.browserUseTaskId || data?.task?.browser_use_task_id;
+      const live = data?.task?.live_url || data?.liveUrl;
+      const dbTaskId = data?.task?.id || data?.dbTaskId;
 
       setBrowserUseTaskId(buTaskId);
       setLiveUrl(live);
