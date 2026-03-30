@@ -47,6 +47,14 @@ export default function RecordSession() {
     }
   }, [user]);
 
+  // Poll sessions status every 5s when any session is still recording/processing
+  useEffect(() => {
+    const hasActive = sessions.some(s => s.status === 'recording' || s.status === 'processing');
+    if (!hasActive) return;
+    const interval = setInterval(fetchSessions, 5000);
+    return () => clearInterval(interval);
+  }, [sessions]);
+
   const fetchProjects = async () => {
     const { data } = await supabase.from('projects').select('id, name, base_url').order('name');
     if (data) setProjects(data);
