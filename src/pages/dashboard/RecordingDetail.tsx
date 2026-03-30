@@ -139,20 +139,42 @@ export default function RecordingDetail() {
           priorityMap[test.priority] || '2',
         ]);
 
-        // Parse prompt into individual steps
-        const lines = test.prompt
+        // Parse prompt into individual steps — handle newlines, numbered lists, or mixed
+        let lines = test.prompt
+          .split('\n')
+          .map(l => l.trim())
+          .filter(Boolean);
+
+        // If only one line, try splitting by numbered pattern "1. ... 2. ... 3. ..."
+        if (lines.length <= 1 && test.prompt.match(/\d+\.\s/g)?.length! > 1) {
+          lines = test.prompt
+            .split(/(?=\d+\.\s)/)
+            .map(l => l.trim())
+            .filter(Boolean);
+        }
+
+        // Parse expected results into separate lines too
+        const expectedLines = (test.expected_result || '')
           .split('\n')
           .map(l => l.trim())
           .filter(Boolean);
 
         lines.forEach((line, stepIdx) => {
-          // Last step gets the expected result
-          const isLast = stepIdx === lines.length - 1;
+          // Distribute expected results: match by index, or put all on last step
+          let stepExpected: string | null = null;
+          if (expectedLines.length >= lines.length) {
+            // One expected result per step
+            stepExpected = expectedLines[stepIdx] || null;
+          } else if (stepIdx === lines.length - 1) {
+            // Put full expected result on last step
+            stepExpected = test.expected_result || null;
+          }
+
           rows.push([
             null, null,
             stepIdx + 1,
             line.replace(/^\d+\.\s*/, ''),
-            isLast ? (test.expected_result || null) : null,
+            stepExpected,
             null, null, null, null,
           ]);
         });
