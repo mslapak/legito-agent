@@ -39,6 +39,7 @@ import {
   GraduationCap,
   ClipboardList,
   Languages,
+  Video,
 } from 'lucide-react';
 import pwcLogo from '@/assets/pwc-logo.png';
 
