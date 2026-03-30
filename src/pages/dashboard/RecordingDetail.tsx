@@ -122,27 +122,66 @@ export default function RecordingDetail() {
   const exportToXlsx = () => {
     setExporting(true);
     try {
-      const rows = tests.map((test, i) => ({
-        'ID': i + 1,
-        'Title': test.title,
-        'Step Action': test.prompt,
-        'Step Expected Result': test.expected_result || '',
-        'Priority': test.priority,
-      }));
+      // Build Azure DevOps compatible multi-row format
+      const headers = ['Work Item Type', 'Title', 'Test Step', 'Step Action', 'Step Expected', 'Assigned To', 'State', 'Tags', 'Priority'];
+      const rows: (string | number | null)[][] = [headers];
 
-      const ws = XLSX.utils.json_to_sheet(rows);
-      
-      // Column widths
+      const priorityMap: Record<string, string> = { high: '1', medium: '2', low: '3' };
+
+      tests.forEach(test => {
+        // Test case header row
+        rows.push([
+          'Test Case',
+          test.title,
+          null, null, null, null,
+          'Design',
+          null,
+          priorityMap[test.priority] || '2',
+        ]);
+
+        // Parse prompt into individual steps
+        const lines = test.prompt
+          .split('\n')
+          .map(l => l.trim())
+          .filter(Boolean);
+
+        lines.forEach((line, stepIdx) => {
+          // Last step gets the expected result
+          const isLast = stepIdx === lines.length - 1;
+          rows.push([
+            null, null,
+            stepIdx + 1,
+            line.replace(/^\d+\.\s*/, ''),
+            isLast ? (test.expected_result || null) : null,
+            null, null, null, null,
+          ]);
+        });
+
+        // If no lines parsed, add single step
+        if (lines.length === 0) {
+          rows.push([
+            null, null, 1, test.prompt, test.expected_result || null,
+            null, null, null, null,
+          ]);
+        }
+      });
+
+      const ws = XLSX.utils.aoa_to_sheet(rows);
+
       ws['!cols'] = [
-        { wch: 5 },
-        { wch: 40 },
-        { wch: 60 },
-        { wch: 40 },
-        { wch: 10 },
+        { wch: 16 }, // Work Item Type
+        { wch: 50 }, // Title
+        { wch: 10 }, // Test Step
+        { wch: 80 }, // Step Action
+        { wch: 50 }, // Step Expected
+        { wch: 15 }, // Assigned To
+        { wch: 10 }, // State
+        { wch: 15 }, // Tags
+        { wch: 10 }, // Priority
       ];
 
       const wb = XLSX.utils.book_new();
-      XLSX.utils.book_append_sheet(wb, ws, 'Test Cases');
+      XLSX.utils.book_append_sheet(wb, ws, 'Sheet1');
       XLSX.writeFile(wb, `${session?.title || 'recording'}_test_cases.xlsx`);
       toast.success(t('recorder.exportSuccess'));
     } catch {
