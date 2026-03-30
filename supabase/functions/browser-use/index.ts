@@ -78,6 +78,141 @@ const mapStatus = (browserStatus: string, hasOutput: boolean): string => {
 // Helper function for delay
 const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
+async function syncTaskMedia(
+  taskId: string,
+  sessionId: string | null,
+  apiKey: string,
+  supabase: ReturnType<typeof createClient>,
+  userId: string,
+  apiBaseUrl: string,
+) {
+  try {
+    if (sessionId) {
+      try {
+        console.log(`Stopping session: ${sessionId}...`);
+        const sessionStopRes = await fetch(`${apiBaseUrl}/sessions/${sessionId}`, {
+          method: 'PATCH',
+          headers: {
+            'X-Browser-Use-API-Key': apiKey,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ action: 'stop' }),
+        });
+        console.log(`Session stop response: ${sessionStopRes.status}`);
+
+        if (!sessionStopRes.ok) {
+          const sessionStopPut = await fetch(`${apiBaseUrl}/sessions/${sessionId}/stop`, {
+            method: 'PUT',
+            headers: { 'X-Browser-Use-API-Key': apiKey },
+          });
+          console.log(`Session stop PUT response: ${sessionStopPut.status}`);
+        }
+      } catch (e) {
+        console.error('Session stop error (non-fatal):', e);
+      }
+    }
+
+    console.log('Waiting for media processing (background 8s initial delay)...');
+    await delay(8000);
+
+    let screenshots: string[] = [];
+    let recordings: string[] = [];
+    const maxRetries = 6;
+
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+      console.log(`Media fetch attempt ${attempt}/${maxRetries}...`);
+
+      try {
+        const detailsRes = await fetch(`${apiBaseUrl}/tasks/${taskId}`, {
+          method: 'GET',
+          headers: { 'X-Browser-Use-API-Key': apiKey },
+        });
+
+        if (detailsRes.ok) {
+          const details = await detailsRes.json();
+          console.log(`Attempt ${attempt} - Status: ${details.status}, OutputFiles: ${JSON.stringify(details.outputFiles || []).substring(0, 300)}`);
+
+          if (Array.isArray(details?.steps)) {
+            const stepShots = details.steps
+              .map((s: { screenshotUrl?: string }) => s?.screenshotUrl)
+              .filter((x: unknown): x is string => typeof x === 'string');
+            screenshots = Array.from(new Set(stepShots));
+          }
+
+          if (details?.outputFiles && Array.isArray(details.outputFiles)) {
+            console.log(`Attempt ${attempt} - OutputFiles raw:`, JSON.stringify(details.outputFiles));
+
+            const videoFiles = details.outputFiles.filter((f: {id?: string; fileName?: string}) => {
+              const fileName = f?.fileName || '';
+              return fileName.endsWith('.webm') || fileName.endsWith('.mp4');
+            });
+
+            console.log(`Video files found:`, videoFiles.length);
+
+            for (const file of videoFiles) {
+              if (!file.id) continue;
+
+              try {
+                console.log(`Fetching download URL for file: ${file.id} (${file.fileName})`);
+                const downloadRes = await fetch(`${apiBaseUrl}/files/${file.id}/download`, {
+                  method: 'GET',
+                  headers: { 'X-Browser-Use-API-Key': apiKey },
+                });
+
+                if (downloadRes.ok) {
+                  const downloadData = await downloadRes.json();
+                  console.log(`Download response for ${file.id}:`, JSON.stringify(downloadData));
+                  const url = downloadData.url || downloadData.downloadUrl || downloadData.download_url || downloadData.signedUrl;
+                  if (url) {
+                    recordings.push(url);
+                    console.log(`Got download URL: ${url.substring(0, 100)}...`);
+                  }
+                } else {
+                  console.log(`Download endpoint failed for ${file.id}: ${downloadRes.status}`);
+                }
+              } catch (e) {
+                console.error(`Error fetching download URL for ${file.id}:`, e);
+              }
+            }
+          }
+
+          if (recordings.length > 0) {
+            console.log(`Got ${recordings.length} recordings on attempt ${attempt}`);
+            break;
+          }
+        } else if (detailsRes.status === 404) {
+          console.log('Task not found during media fetch (session expired)');
+          break;
+        }
+      } catch (e) {
+        console.error(`Media fetch attempt ${attempt} error:`, e);
+      }
+
+      if (attempt < maxRetries) {
+        await delay(5000);
+      }
+    }
+
+    console.log(`Final media: ${screenshots.length} screenshots, ${recordings.length} recordings`);
+
+    const updateData: Record<string, unknown> = {
+      status: 'completed',
+      completed_at: new Date().toISOString(),
+    };
+
+    if (screenshots.length > 0) updateData.screenshots = screenshots;
+    if (recordings.length > 0) updateData.recordings = recordings;
+
+    await supabase
+      .from('tasks')
+      .update(updateData)
+      .eq('browser_use_task_id', taskId)
+      .eq('user_id', userId);
+  } catch (error) {
+    console.error('Background media sync failed:', error);
+  }
+}
+
 // Resilient fetch helper with retry for transient network errors (HTTP/2, connection reset, etc.)
 async function resilientFetch(url: string, options: RequestInit, maxRetries = 3): Promise<Response> {
   let lastError: Error | null = null;
@@ -810,7 +945,7 @@ serve(async (req) => {
       }
 
       case 'stop_task': {
-        // Stop a running task and sync media - robust implementation with fallbacks
+        // Stop a running task quickly, then sync media in background
         console.log(`Stopping task: ${taskId}`);
         
         let sessionId: string | null = null;
@@ -902,142 +1037,23 @@ serve(async (req) => {
           console.log(`Task stop result: ${stopSuccess ? 'success' : 'failed (may already be stopped)'}`);
         }
         
-        // Step 3: Try to stop the session if we have sessionId (ensures video is generated)
-        if (sessionId) {
-          try {
-            console.log(`Stopping session: ${sessionId}...`);
-            const sessionStopRes = await fetch(`${BROWSER_USE_API_URL}/sessions/${sessionId}`, {
-              method: 'PATCH',
-              headers: { 
-                'X-Browser-Use-API-Key': BROWSER_USE_API_KEY,
-                'Content-Type': 'application/json',
-              },
-              body: JSON.stringify({ action: 'stop' }),
-            });
-            console.log(`Session stop response: ${sessionStopRes.status}`);
-            
-            if (!sessionStopRes.ok) {
-              // Try PUT as fallback
-              const sessionStopPut = await fetch(`${BROWSER_USE_API_URL}/sessions/${sessionId}/stop`, {
-                method: 'PUT',
-                headers: { 'X-Browser-Use-API-Key': BROWSER_USE_API_KEY },
-              });
-              console.log(`Session stop PUT response: ${sessionStopPut.status}`);
-            }
-          } catch (e) {
-            console.error('Session stop error (non-fatal):', e);
-          }
-        }
-        
-        // Step 4: Wait for video processing (increased initial delay)
-        console.log('Waiting for media processing (8s initial delay)...');
-        await delay(8000);
-        
-        // Step 5: Retry loop to get media (videos may take time to process)
-        let screenshots: string[] = [];
-        let recordings: string[] = [];
-        const maxRetries = 6;
-        
-        for (let attempt = 1; attempt <= maxRetries; attempt++) {
-          console.log(`Media fetch attempt ${attempt}/${maxRetries}...`);
-          
-          try {
-            const detailsRes = await fetch(`${BROWSER_USE_API_URL}/tasks/${taskId}`, {
-              method: 'GET',
-              headers: { 'X-Browser-Use-API-Key': BROWSER_USE_API_KEY },
-            });
-            
-            if (detailsRes.ok) {
-              const details = await detailsRes.json();
-              console.log(`Attempt ${attempt} - Status: ${details.status}, OutputFiles: ${JSON.stringify(details.outputFiles || []).substring(0, 300)}`);
-              
-              // Screenshots from steps
-              if (Array.isArray(details?.steps)) {
-                const stepShots = details.steps
-                  .map((s: { screenshotUrl?: string }) => s?.screenshotUrl)
-                  .filter((x: unknown): x is string => typeof x === 'string');
-                screenshots = Array.from(new Set(stepShots));
-              }
-              
-              // Recordings from outputFiles - v2 API returns {id, fileName} objects
-              if (details?.outputFiles && Array.isArray(details.outputFiles)) {
-                console.log(`Attempt ${attempt} - OutputFiles raw:`, JSON.stringify(details.outputFiles));
-                
-                // Filter for video files
-                const videoFiles = details.outputFiles.filter((f: {id?: string; fileName?: string}) => {
-                  const fileName = f?.fileName || '';
-                  return fileName.endsWith('.webm') || fileName.endsWith('.mp4');
-                });
-                
-                console.log(`Video files found:`, videoFiles.length);
-                
-                // Fetch download URLs for each video file
-                for (const file of videoFiles) {
-                  if (!file.id) continue;
-                  try {
-                    console.log(`Fetching download URL for file: ${file.id} (${file.fileName})`);
-                    const downloadRes = await fetch(`${BROWSER_USE_API_URL}/files/${file.id}/download`, {
-                      method: 'GET',
-                      headers: { 'X-Browser-Use-API-Key': BROWSER_USE_API_KEY },
-                    });
-                    
-                    if (downloadRes.ok) {
-                      const downloadData = await downloadRes.json();
-                      console.log(`Download response for ${file.id}:`, JSON.stringify(downloadData));
-                      const url = downloadData.url || downloadData.downloadUrl || downloadData.download_url || downloadData.signedUrl;
-                      if (url) {
-                        recordings.push(url);
-                        console.log(`Got download URL: ${url.substring(0, 100)}...`);
-                      }
-                    } else {
-                      console.log(`Download endpoint failed for ${file.id}: ${downloadRes.status}`);
-                    }
-                  } catch (e) {
-                    console.error(`Error fetching download URL for ${file.id}:`, e);
-                  }
-                }
-              }
-              
-              // If we got recordings, we're done
-              if (recordings.length > 0) {
-                console.log(`Got ${recordings.length} recordings on attempt ${attempt}`);
-                break;
-              }
-            } else if (detailsRes.status === 404) {
-              console.log('Task not found during media fetch (session expired)');
-              break;
-            }
-          } catch (e) {
-            console.error(`Media fetch attempt ${attempt} error:`, e);
-          }
-          
-          // Wait before next retry (except on last attempt) - increased delay
-          if (attempt < maxRetries) {
-            await delay(5000);
-          }
-        }
-        
-        console.log(`Final media: ${screenshots.length} screenshots, ${recordings.length} recordings`);
-        
-        // Step 6: Update task in database
-        const updateData: Record<string, unknown> = {
-          status: 'completed',
-          completed_at: new Date().toISOString(),
-        };
-        
-        if (screenshots.length > 0) updateData.screenshots = screenshots;
-        if (recordings.length > 0) updateData.recordings = recordings;
-        
         await supabase
           .from('tasks')
-          .update(updateData)
+          .update({
+            status: 'completed',
+            completed_at: new Date().toISOString(),
+          })
           .eq('browser_use_task_id', taskId)
           .eq('user_id', user.id);
 
+        // @ts-ignore
+        EdgeRuntime.waitUntil(syncTaskMedia(taskId, sessionId, BROWSER_USE_API_KEY, supabase, user.id, BROWSER_USE_API_URL));
+
         return new Response(JSON.stringify({ 
           success: true,
-          screenshots,
-          recordings,
+          queued_media_sync: true,
+          screenshots: [],
+          recordings: [],
         }), {
           headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         });
