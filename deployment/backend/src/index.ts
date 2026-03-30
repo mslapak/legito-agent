@@ -23,6 +23,7 @@ import { documentationVerificationsRouter } from './routes/crud/documentation-ve
 import { verificationStepsRouter } from './routes/crud/verification-steps';
 import { operationTemplatesRouter as operationTemplatesCrudRouter } from './routes/crud/operation-templates';
 import { operationTrainingsRouter } from './routes/crud/operation-trainings';
+import { recordedSessionsRouter } from './routes/crud/recorded-sessions';
 
 dotenv.config();
 
