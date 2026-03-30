@@ -416,6 +416,11 @@ CREATE TRIGGER update_operation_trainings_updated_at
   BEFORE UPDATE ON public.operation_trainings
   FOR EACH ROW EXECUTE FUNCTION public.update_updated_at_column();
 
+DROP TRIGGER IF EXISTS update_recorded_sessions_updated_at ON public.recorded_sessions;
+CREATE TRIGGER update_recorded_sessions_updated_at
+  BEFORE UPDATE ON public.recorded_sessions
+  FOR EACH ROW EXECUTE FUNCTION public.update_updated_at_column();
+
 -- ============================================================
 -- DONE
 -- ============================================================
