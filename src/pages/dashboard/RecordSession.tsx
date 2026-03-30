@@ -127,7 +127,7 @@ Then STOP and WAIT for the user to interact.`;
         .single();
 
       if (sessionError) console.error('Failed to create session record:', sessionError);
-      else setSessionId((session as any).id);
+      else if (session) setSessionId(session.id);
 
       toast.success(t('recorder.recordingStarted'));
     } catch (err: any) {
