@@ -18,6 +18,20 @@ interface Project {
   base_url: string | null;
 }
 
+interface SessionListItem {
+  id: string;
+  title: string;
+  status: string;
+  created_at: string;
+  generated_test_ids: string[] | null;
+  task_id: string | null;
+  browser_use_task_id: string | null;
+  task?: {
+    status: string;
+    completed_at: string | null;
+  } | null;
+}
+
 export default function RecordSession() {
   const { t } = useTranslation();
   const { user } = useAuth();
@@ -37,8 +51,24 @@ export default function RecordSession() {
   const [sessionId, setSessionId] = useState<string | null>(null);
 
   // Past sessions
-  const [sessions, setSessions] = useState<any[]>([]);
+  const [sessions, setSessions] = useState<SessionListItem[]>([]);
   const [loadingSessions, setLoadingSessions] = useState(true);
+
+  const getEffectiveSessionStatus = (session: SessionListItem) => {
+    if (session.status === 'completed' || session.status === 'failed' || session.status === 'processing') {
+      return session.status;
+    }
+
+    if (session.task?.status === 'completed' || (session.generated_test_ids?.length ?? 0) > 0) {
+      return 'completed';
+    }
+
+    if (session.task?.status === 'failed' || session.task?.status === 'cancelled') {
+      return 'failed';
+    }
+
+    return session.status;
+  };
 
   useEffect(() => {
     if (user) {
@@ -49,7 +79,10 @@ export default function RecordSession() {
 
   // Poll sessions status every 5s when any session is still recording/processing
   useEffect(() => {
-    const hasActive = sessions.some(s => s.status === 'recording' || s.status === 'processing');
+    const hasActive = sessions.some(s => {
+      const status = getEffectiveSessionStatus(s);
+      return status === 'recording' || status === 'processing';
+    });
     if (!hasActive) return;
     const interval = setInterval(fetchSessions, 5000);
     return () => clearInterval(interval);
@@ -64,10 +97,10 @@ export default function RecordSession() {
     setLoadingSessions(true);
     const { data } = await supabase
       .from('recorded_sessions')
-      .select('*')
+      .select('id, title, status, created_at, generated_test_ids, task_id, browser_use_task_id, task:tasks(status, completed_at)')
       .order('created_at', { ascending: false })
       .limit(20);
-    if (data) setSessions(data as any[]);
+    if (data) setSessions(data as SessionListItem[]);
     setLoadingSessions(false);
   };
 
@@ -401,25 +434,29 @@ Then STOP and WAIT for the user to interact.`;
             <p className="text-muted-foreground text-center py-8">{t('recorder.noSessions')}</p>
           ) : (
             <div className="space-y-2">
-              {sessions.map((s: any) => (
-                <div
-                  key={s.id}
-                  className="flex items-center justify-between p-3 rounded-lg border hover:bg-accent/50 cursor-pointer transition-colors"
-                  onClick={() => s.status === 'completed' && navigate(`/dashboard/recorder/${s.id}`)}
-                >
-                  <div className="flex items-center gap-3">
-                    <Video className="h-4 w-4 text-muted-foreground" />
-                    <div>
-                      <p className="font-medium text-sm">{s.title}</p>
-                      <p className="text-xs text-muted-foreground">
-                        {new Date(s.created_at).toLocaleString()}
-                        {s.generated_test_ids?.length > 0 && ` · ${s.generated_test_ids.length} ${t('recorder.testCases')}`}
-                      </p>
+              {sessions.map((s) => {
+                const effectiveStatus = getEffectiveSessionStatus(s);
+
+                return (
+                  <div
+                    key={s.id}
+                    className="flex items-center justify-between p-3 rounded-lg border hover:bg-accent/50 cursor-pointer transition-colors"
+                    onClick={() => effectiveStatus === 'completed' && navigate(`/dashboard/recorder/${s.id}`)}
+                  >
+                    <div className="flex items-center gap-3">
+                      <Video className="h-4 w-4 text-muted-foreground" />
+                      <div>
+                        <p className="font-medium text-sm">{s.title}</p>
+                        <p className="text-xs text-muted-foreground">
+                          {new Date(s.created_at).toLocaleString()}
+                          {s.generated_test_ids?.length > 0 && ` · ${s.generated_test_ids.length} ${t('recorder.testCases')}`}
+                        </p>
+                      </div>
                     </div>
+                    {getStatusBadge(effectiveStatus)}
                   </div>
-                  {getStatusBadge(s.status)}
-                </div>
-              ))}
+                );
+              })}
             </div>
           )}
         </CardContent>
