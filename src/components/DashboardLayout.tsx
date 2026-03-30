@@ -112,7 +112,7 @@ export default function DashboardLayout() {
   const userInitials = user.email?.substring(0, 2).toUpperCase() || 'U';
 
   const getCurrentPageTitle = () => {
-    const allItems = [...testingItems, ...operationItems];
+    const allItems = [...testingItems, ...recordingItems, ...operationItems];
     const currentItem = allItems.find((item) => 
       item.url === '/dashboard' 
         ? location.pathname === '/dashboard' 
