@@ -61,6 +61,7 @@ app.use('/api/documentation-verifications', authMiddleware, documentationVerific
 app.use('/api/verification-steps', authMiddleware, verificationStepsRouter);
 app.use('/api/operation-templates', authMiddleware, operationTemplatesCrudRouter);
 app.use('/api/operation-trainings', authMiddleware, operationTrainingsRouter);
+app.use('/api/recorded-sessions', authMiddleware, recordedSessionsRouter);
 
 // Internal route for batch self-invoke (uses service key, not Azure AD)
 app.use('/api/internal/run-tests-batch', runTestsBatchRouter);
