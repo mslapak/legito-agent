@@ -53,6 +53,7 @@ export default function RecordSession() {
   // Past sessions
   const [sessions, setSessions] = useState<SessionListItem[]>([]);
   const [loadingSessions, setLoadingSessions] = useState(true);
+  const [loadingProjects, setLoadingProjects] = useState(true);
 
   const getEffectiveSessionStatus = (session: SessionListItem) => {
     if (session.status === 'completed' || session.status === 'failed' || session.status === 'processing') {
