@@ -366,9 +366,9 @@ Then STOP and WAIT for the user to interact.`;
               </div>
               <div className="space-y-2">
                 <Label>{t('newTask.project')}</Label>
-                <Select value={selectedProject} onValueChange={setSelectedProject}>
+                <Select value={selectedProject} onValueChange={setSelectedProject} disabled={loadingProjects}>
                   <SelectTrigger>
-                    <SelectValue placeholder={t('newTask.selectProject')} />
+                    <SelectValue placeholder={loadingProjects ? t('common.loading') || 'Načítám...' : t('newTask.selectProject')} />
                   </SelectTrigger>
                   <SelectContent>
                     {projects.map(p => (
