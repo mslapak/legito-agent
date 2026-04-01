@@ -105,18 +105,22 @@ serve(async (req) => {
       .map((step: any, i: number) => describeStep(step, i))
       .join("\n\n");
 
-    const systemPrompt = `You are a QA test case generator. You analyze recorded user interaction steps from a browser session and generate ONE detailed structured test case.
+    const systemPrompt = `You are a QA test case generator. You analyze recorded browser session steps and produce ONE detailed structured test case.
 
 Rules:
-- Generate exactly ONE test case that covers the entire recorded session
-- Each recorded step must become a specific, actionable instruction (e.g. "Click on the Email field and enter testuser@example.com", "Wait until the dashboard loads")
-- For EVERY step provide a corresponding expected result describing what should happen (e.g. "The field is active and shows the entered text", "Dashboard appears with welcome message")
+- Generate exactly ONE test case covering the entire recorded session
+- SKIP idle steps: Do NOT include "Wait for X seconds", "No action detected", or any step where the user did nothing. These are observation artifacts, not user actions.
+- EXTRACT REAL USER ACTIONS: Focus on what the user actually did — clicked a button, navigated to a URL, typed text into a field, selected a dropdown option, scrolled to an element, opened a tab, submitted a form, etc.
+- Look at the "Action", "Observation", and "Raw actions" fields in each recorded step to identify the real interaction (e.g. click_element, input_text, go_to_url, select_option)
+- Each step must be a specific, actionable instruction: "Click on the 'Login' button", "Enter 'admin@test.com' into the Email field", "Navigate to https://example.com/dashboard"
+- For EVERY step provide a corresponding expected result: what should visibly happen after the action (e.g. "Login form submits and dashboard appears", "Email field shows the entered address")
 - The number of steps MUST equal the number of expected results (1:1 mapping)
 - Write in the same language as the recorded steps (Czech or English)
 - Assign priority: high for critical flows (login, payment, data entry), medium for standard features, low for cosmetic/minor
-- Be specific: use exact URLs, button labels, field names from the recording`;
+- Be specific: use exact URLs, button labels, field names, CSS selectors from the recording
+- The first step should typically be "Navigate to URL: <base_url>"`;
 
-    const userPrompt = `Analyze these recorded browser interaction steps and generate ONE detailed test case with step-by-step instructions and expected results for each step:
+    const userPrompt = `Analyze these recorded browser interaction steps. Extract ONLY the real user actions (clicks, typing, navigation, selections) and ignore any idle/wait steps. Generate ONE detailed test case:
 
 ${base_url ? `Base URL: ${base_url}` : ""}
 ${session_title ? `Session: ${session_title}` : ""}
@@ -124,7 +128,7 @@ ${session_title ? `Session: ${session_title}` : ""}
 RECORDED STEPS:
 ${stepsText}
 
-Generate a single detailed test case. Each recorded step should become an actionable instruction with its own expected result.`;
+IMPORTANT: Do NOT create steps like "Wait for 5 seconds" — these are NOT user actions. Extract only genuine interactions from the Action/Observation/Raw actions data.`;
 
     let testCases: any[] = [];
 
