@@ -43,12 +43,26 @@ const describeStep = (step: Record<string, any>, index: number): string => {
   return parts.join("\n");
 };
 
+const isIdleStep = (step: Record<string, any>): boolean => {
+  const goal = firstNonEmptyString(step.next_goal, step.nextGoal, "");
+  const memory = firstNonEmptyString(step.memory, step.observation, "");
+  const actions = stringifyActions(step.actions);
+  const combined = `${goal} ${memory} ${actions}`.toLowerCase();
+  return /^(wait|idle|no action|no new|no visible|observe|nothing)/i.test(combined.trim())
+    || (!goal && !actions && !step.url);
+};
+
 const buildFallbackTestCases = (
   recordedSteps: Record<string, any>[],
   baseUrl?: string,
   sessionTitle?: string,
 ) => {
-  const steps = recordedSteps.map((step, i) => {
+  const filtered = recordedSteps.filter((step) => !isIdleStep(step));
+  const stepsToUse = filtered.length > 0 ? filtered : recordedSteps;
+
+  let stepNum = 0;
+  const steps = stepsToUse.map((step) => {
+    stepNum++;
     const action = firstNonEmptyString(
       step.next_goal, step.nextGoal, step.memory,
       stringifyActions(step.actions),
@@ -58,7 +72,7 @@ const buildFallbackTestCases = (
       step.evaluation_previous_goal, step.evaluationPreviousGoal, step.memory,
     ) || "Action completes without errors";
 
-    return { action: `${i + 1}. ${action}`, expected: `${i + 1}. ${expected}` };
+    return { action: `${stepNum}. ${action}`, expected: `${stepNum}. ${expected}` };
   });
 
   const prompt = steps.map((s) => s.action).join("\n");
@@ -66,9 +80,9 @@ const buildFallbackTestCases = (
 
   return [{
     title: sessionTitle?.trim() || "Replay recorded user flow",
-    prompt: baseUrl ? `Open ${baseUrl}\n${prompt}` : prompt,
-    expectedResult: baseUrl ? `Page loads successfully\n${expectedResult}` : expectedResult,
-    priority: recordedSteps.length >= 3 ? "high" : "medium",
+    prompt: baseUrl ? `1. Open ${baseUrl}\n${prompt}` : prompt,
+    expectedResult: baseUrl ? `1. Page loads successfully\n${expectedResult}` : expectedResult,
+    priority: stepsToUse.length >= 3 ? "high" : "medium",
   }];
 };
 
