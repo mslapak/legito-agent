@@ -11,25 +11,17 @@ const AI_GATEWAY_URL = "https://ai.gateway.lovable.dev/v1/chat/completions";
 
 const firstNonEmptyString = (...values: unknown[]): string => {
   for (const value of values) {
-    if (typeof value === "string" && value.trim()) {
-      return value.trim();
-    }
+    if (typeof value === "string" && value.trim()) return value.trim();
   }
-
   return "";
 };
 
 const stringifyActions = (actions: unknown): string => {
   if (!Array.isArray(actions)) return "";
-
   return actions
-    .map((action) => {
-      if (typeof action === "string") return action;
-      try {
-        return JSON.stringify(action);
-      } catch {
-        return "";
-      }
+    .map((a) => {
+      if (typeof a === "string") return a;
+      try { return JSON.stringify(a); } catch { return ""; }
     })
     .filter(Boolean)
     .join(", ");
@@ -48,7 +40,6 @@ const describeStep = (step: Record<string, any>, index: number): string => {
   if (result) parts.push(`  Result: ${result}`);
   if (memory) parts.push(`  Observation: ${memory}`);
   if (actions) parts.push(`  Raw actions: ${actions}`);
-
   return parts.join("\n");
 };
 
@@ -57,81 +48,28 @@ const buildFallbackTestCases = (
   baseUrl?: string,
   sessionTitle?: string,
 ) => {
-  const stepDescriptions = recordedSteps
-    .slice(0, 12)
-    .map((step, index) => {
-      const description = firstNonEmptyString(
-        step.memory,
-        step.next_goal,
-        step.nextGoal,
-        step.evaluation_previous_goal,
-        step.evaluationPreviousGoal,
-        stringifyActions(step.actions),
-      );
+  const steps = recordedSteps.map((step, i) => {
+    const action = firstNonEmptyString(
+      step.next_goal, step.nextGoal, step.memory,
+      stringifyActions(step.actions),
+    ) || (step.url ? `Open ${step.url}` : "Replay observed interaction");
 
-      if (!description) {
-        const stepUrl = firstNonEmptyString(step.url);
-        return stepUrl ? `${index + 1}. Open ${stepUrl}` : `${index + 1}. Replay observed interaction`;
-      }
+    const expected = firstNonEmptyString(
+      step.evaluation_previous_goal, step.evaluationPreviousGoal, step.memory,
+    ) || "Action completes without errors";
 
-      return `${index + 1}. ${description}`;
-    });
+    return { action: `${i + 1}. ${action}`, expected: `${i + 1}. ${expected}` };
+  });
 
-  const expectedResult =
-    [...recordedSteps]
-      .reverse()
-      .map((step) =>
-        firstNonEmptyString(
-          step.evaluation_previous_goal,
-          step.evaluationPreviousGoal,
-          step.memory,
-        ),
-      )
-      .find(Boolean) ||
-    "The recorded flow should be reproducible without unexpected regressions.";
+  const prompt = steps.map((s) => s.action).join("\n");
+  const expectedResult = steps.map((s) => s.expected).join("\n");
 
-  const testCases = [
-    {
-      title: sessionTitle?.trim() ? `${sessionTitle.trim()} — replay recorded flow` : "Replay recorded user flow",
-      prompt: [
-        baseUrl ? `Open ${baseUrl}.` : null,
-        "Replay the observed user flow in this order:",
-        ...stepDescriptions,
-        "Verify the application state and messages match the recorded observations.",
-      ]
-        .filter(Boolean)
-        .join("\n"),
-      expectedResult,
-      priority: recordedSteps.length >= 3 ? "high" : "medium",
-    },
-  ];
-
-  const validationObservation = [...recordedSteps]
-    .map((step) =>
-      firstNonEmptyString(
-        step.memory,
-        step.evaluation_previous_goal,
-        step.evaluationPreviousGoal,
-      ),
-    )
-    .find((text) => /error|validation|invalid|workspace|failed|not found/i.test(text));
-
-  if (validationObservation) {
-    testCases.push({
-      title: "Verify observed validation or error handling",
-      prompt: [
-        baseUrl ? `Open ${baseUrl}.` : null,
-        "Repeat the input or submit action that led to the observed validation or error state during recording.",
-        "Verify the application displays the same protective feedback and does not proceed silently.",
-      ]
-        .filter(Boolean)
-        .join("\n"),
-      expectedResult: validationObservation,
-      priority: "medium",
-    });
-  }
-
-  return testCases;
+  return [{
+    title: sessionTitle?.trim() || "Replay recorded user flow",
+    prompt: baseUrl ? `Open ${baseUrl}\n${prompt}` : prompt,
+    expectedResult: baseUrl ? `Page loads successfully\n${expectedResult}` : expectedResult,
+    priority: recordedSteps.length >= 3 ? "high" : "medium",
+  }];
 };
 
 serve(async (req) => {
@@ -143,7 +81,6 @@ serve(async (req) => {
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
     const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 
-    // Auth
     const authHeader = req.headers.get("Authorization");
     const supabaseAuth = createClient(supabaseUrl, supabaseServiceKey);
     const token = authHeader?.replace("Bearer ", "");
@@ -164,23 +101,22 @@ serve(async (req) => {
       });
     }
 
-    // Format steps for AI analysis
     const stepsText = recorded_steps
       .map((step: any, i: number) => describeStep(step, i))
       .join("\n\n");
 
-    const systemPrompt = `You are a QA test case generator. You analyze recorded user interaction steps from a browser session and generate structured test cases for Azure DevOps.
+    const systemPrompt = `You are a QA test case generator. You analyze recorded user interaction steps from a browser session and generate ONE detailed structured test case.
 
 Rules:
-- Group related sequential steps into logical test cases (e.g. "Login flow", "Form submission", "Navigation check")
-- Each test case should be independently executable
-- Write clear, actionable prompts that a browser automation agent can follow
-- Include expected results based on what was observed during recording
-- Assign priority: high for critical flows (login, payment), medium for standard features, low for cosmetic/minor
+- Generate exactly ONE test case that covers the entire recorded session
+- Each recorded step must become a specific, actionable instruction (e.g. "Click on the Email field and enter testuser@example.com", "Wait until the dashboard loads")
+- For EVERY step provide a corresponding expected result describing what should happen (e.g. "The field is active and shows the entered text", "Dashboard appears with welcome message")
+- The number of steps MUST equal the number of expected results (1:1 mapping)
 - Write in the same language as the recorded steps (Czech or English)
-- Generate 3-15 test cases depending on session complexity`;
+- Assign priority: high for critical flows (login, payment, data entry), medium for standard features, low for cosmetic/minor
+- Be specific: use exact URLs, button labels, field names from the recording`;
 
-    const userPrompt = `Analyze these recorded browser interaction steps and generate test cases:
+    const userPrompt = `Analyze these recorded browser interaction steps and generate ONE detailed test case with step-by-step instructions and expected results for each step:
 
 ${base_url ? `Base URL: ${base_url}` : ""}
 ${session_title ? `Session: ${session_title}` : ""}
@@ -188,7 +124,7 @@ ${session_title ? `Session: ${session_title}` : ""}
 RECORDED STEPS:
 ${stepsText}
 
-Generate structured test cases from these interactions.`;
+Generate a single detailed test case. Each recorded step should become an actionable instruction with its own expected result.`;
 
     let testCases: any[] = [];
 
@@ -211,47 +147,56 @@ Generate structured test cases from these interactions.`;
               {
                 type: "function",
                 function: {
-                  name: "generate_test_cases",
-                  description: "Generate structured test cases from recorded steps",
+                  name: "generate_test_case",
+                  description: "Generate a single detailed test case from recorded steps with 1:1 step-to-expected mapping",
                   parameters: {
                     type: "object",
                     properties: {
-                      testCases: {
+                      title: { type: "string", description: "Descriptive test case title based on the session" },
+                      steps: {
                         type: "array",
+                        description: "Ordered list of test steps, one per recorded interaction",
                         items: {
                           type: "object",
                           properties: {
-                            title: { type: "string", description: "Short descriptive test case title" },
-                            prompt: { type: "string", description: "Detailed step-by-step instructions for browser automation agent" },
-                            expectedResult: { type: "string", description: "What should be verified after execution" },
-                            priority: { type: "string", enum: ["high", "medium", "low"] },
+                            action: { type: "string", description: "Specific actionable instruction (e.g. Click on X, Enter value Y, Wait for Z)" },
+                            expected: { type: "string", description: "Expected result after performing this action" },
                           },
-                          required: ["title", "prompt", "expectedResult", "priority"],
+                          required: ["action", "expected"],
                         },
                       },
+                      priority: { type: "string", enum: ["high", "medium", "low"] },
                     },
-                    required: ["testCases"],
+                    required: ["title", "steps", "priority"],
                   },
                 },
               },
             ],
-            tool_choice: { type: "function", function: { name: "generate_test_cases" } },
+            tool_choice: { type: "function", function: { name: "generate_test_case" } },
           }),
         });
 
         if (!aiResponse.ok) {
-          const errText = await aiResponse.text();
-          console.error("AI Gateway error:", errText);
+          console.error("AI Gateway error:", await aiResponse.text());
         } else {
           const aiData = await aiResponse.json();
           const toolCall = aiData.choices?.[0]?.message?.tool_calls?.[0];
           if (toolCall?.function?.arguments) {
             const parsed = JSON.parse(toolCall.function.arguments);
-            testCases = parsed.testCases || [];
+            if (parsed.steps && Array.isArray(parsed.steps)) {
+              const prompt = parsed.steps.map((s: any, i: number) => `${i + 1}. ${s.action}`).join("\n");
+              const expectedResult = parsed.steps.map((s: any, i: number) => `${i + 1}. ${s.expected}`).join("\n");
+              testCases = [{
+                title: parsed.title || session_title || "Recorded test case",
+                prompt,
+                expectedResult,
+                priority: parsed.priority || "medium",
+              }];
+            }
           }
         }
       } catch (aiError) {
-        console.error("AI generation failed, using fallback test generation:", aiError);
+        console.error("AI generation failed, using fallback:", aiError);
       }
     }
 

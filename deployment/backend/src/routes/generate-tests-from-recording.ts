@@ -6,26 +6,27 @@ export const generateTestsFromRecordingRouter = Router();
 const testCaseTool = {
   type: 'function' as const,
   function: {
-    name: 'generate_test_cases',
-    description: 'Generate structured test cases from recorded steps',
+    name: 'generate_test_case',
+    description: 'Generate a single detailed test case from recorded steps with 1:1 step-to-expected mapping',
     parameters: {
       type: 'object',
       properties: {
-        testCases: {
+        title: { type: 'string', description: 'Descriptive test case title based on the session' },
+        steps: {
           type: 'array',
+          description: 'Ordered list of test steps, one per recorded interaction',
           items: {
             type: 'object',
             properties: {
-              title: { type: 'string' },
-              prompt: { type: 'string' },
-              expectedResult: { type: 'string' },
-              priority: { type: 'string', enum: ['high', 'medium', 'low'] },
+              action: { type: 'string', description: 'Specific actionable instruction' },
+              expected: { type: 'string', description: 'Expected result after performing this action' },
             },
-            required: ['title', 'prompt', 'expectedResult', 'priority'],
+            required: ['action', 'expected'],
           },
         },
+        priority: { type: 'string', enum: ['high', 'medium', 'low'] },
       },
-      required: ['testCases'],
+      required: ['title', 'steps', 'priority'],
     },
   },
 };
@@ -46,17 +47,17 @@ generateTestsFromRecordingRouter.post('/', async (req, res) => {
       return parts.join('\n');
     }).join('\n\n');
 
-    const systemPrompt = `You are a QA test case generator. You analyze recorded user interaction steps from a browser session and generate structured test cases for Azure DevOps.
+    const systemPrompt = `You are a QA test case generator. You analyze recorded user interaction steps from a browser session and generate ONE detailed structured test case.
 
 Rules:
-- Group related sequential steps into logical test cases
-- Each test case should be independently executable
-- Write clear, actionable prompts for browser automation
-- Include expected results based on observations
+- Generate exactly ONE test case that covers the entire recorded session
+- Each recorded step must become a specific, actionable instruction (e.g. "Click on the Email field and enter testuser@example.com")
+- For EVERY step provide a corresponding expected result describing what should happen
+- The number of steps MUST equal the number of expected results (1:1 mapping)
 - Assign priority: high for critical flows, medium for standard, low for minor
-- Generate 3-15 test cases depending on session complexity`;
+- Be specific: use exact URLs, button labels, field names from the recording`;
 
-    const userPrompt = `Analyze these recorded browser interaction steps and generate test cases:
+    const userPrompt = `Analyze these recorded browser interaction steps and generate ONE detailed test case:
 
 ${base_url ? `Base URL: ${base_url}` : ''}
 ${session_title ? `Session: ${session_title}` : ''}
@@ -64,16 +65,28 @@ ${session_title ? `Session: ${session_title}` : ''}
 RECORDED STEPS:
 ${stepsText}
 
-Generate structured test cases from these interactions.`;
+Generate a single detailed test case with step-by-step instructions and expected results for each step.`;
 
     const result = await callAIWithTools(
       systemPrompt,
       userPrompt,
       [testCaseTool],
-      'generate_test_cases'
+      'generate_test_case'
     );
 
-    const testCases = result?.testCases || [];
+    let testCases: any[] = [];
+    const parsed = result as any;
+    if (parsed?.steps && Array.isArray(parsed.steps)) {
+      const prompt = parsed.steps.map((s: any, i: number) => `${i + 1}. ${s.action}`).join('\n');
+      const expectedResult = parsed.steps.map((s: any, i: number) => `${i + 1}. ${s.expected}`).join('\n');
+      testCases = [{
+        title: parsed.title || session_title || 'Recorded test case',
+        prompt,
+        expectedResult,
+        priority: parsed.priority || 'medium',
+      }];
+    }
+
     res.json({ testCases });
   } catch (error: any) {
     console.error('Generate tests from recording error:', error);
