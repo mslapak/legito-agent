@@ -53,6 +53,7 @@ export default function RecordSession() {
   // Past sessions
   const [sessions, setSessions] = useState<SessionListItem[]>([]);
   const [loadingSessions, setLoadingSessions] = useState(true);
+  const [loadingProjects, setLoadingProjects] = useState(true);
 
   const getEffectiveSessionStatus = (session: SessionListItem) => {
     if (session.status === 'completed' || session.status === 'failed' || session.status === 'processing') {
@@ -72,8 +73,8 @@ export default function RecordSession() {
 
   useEffect(() => {
     if (user) {
-      fetchProjects();
-      fetchSessions();
+      // Fetch projects and sessions in parallel
+      Promise.all([fetchProjects(), fetchSessions(true)]);
     }
   }, [user]);
 
@@ -84,24 +85,49 @@ export default function RecordSession() {
       return status === 'recording' || status === 'processing';
     });
     if (!hasActive) return;
-    const interval = setInterval(fetchSessions, 5000);
+    const interval = setInterval(() => fetchSessions(false), 5000);
     return () => clearInterval(interval);
   }, [sessions]);
 
   const fetchProjects = async () => {
+    setLoadingProjects(true);
     const { data } = await supabase.from('projects').select('id, name, base_url').order('name');
     if (data) setProjects(data);
+    setLoadingProjects(false);
   };
 
-  const fetchSessions = async () => {
-    setLoadingSessions(true);
+  const fetchSessions = async (showLoading = true) => {
+    if (showLoading) setLoadingSessions(true);
     const { data } = await supabase
       .from('recorded_sessions')
-      .select('id, title, status, created_at, generated_test_ids, task_id, browser_use_task_id, task:tasks(status, completed_at)')
+      .select('id, title, status, created_at, generated_test_ids, task_id, browser_use_task_id')
       .order('created_at', { ascending: false })
       .limit(20);
-    if (data) setSessions(data as SessionListItem[]);
-    setLoadingSessions(false);
+    
+    if (data) {
+      // Fetch task statuses only for sessions that need it (recording/processing)
+      const needsTaskCheck = data.filter(s => 
+        s.task_id && s.status !== 'completed' && s.status !== 'failed'
+      );
+      
+      if (needsTaskCheck.length > 0) {
+        const taskIds = needsTaskCheck.map(s => s.task_id!);
+        const { data: tasks } = await supabase
+          .from('tasks')
+          .select('id, status, completed_at')
+          .in('id', taskIds);
+        
+        const taskMap = new Map(tasks?.map(t => [t.id, t]) || []);
+        const enriched = data.map(s => ({
+          ...s,
+          task: s.task_id ? (taskMap.get(s.task_id) || null) : null,
+        }));
+        setSessions(enriched as SessionListItem[]);
+      } else {
+        setSessions(data.map(s => ({ ...s, task: null })) as SessionListItem[]);
+      }
+    }
+    if (showLoading) setLoadingSessions(false);
   };
 
   useEffect(() => {
@@ -340,9 +366,9 @@ Then STOP and WAIT for the user to interact.`;
               </div>
               <div className="space-y-2">
                 <Label>{t('newTask.project')}</Label>
-                <Select value={selectedProject} onValueChange={setSelectedProject}>
+                <Select value={selectedProject} onValueChange={setSelectedProject} disabled={loadingProjects}>
                   <SelectTrigger>
-                    <SelectValue placeholder={t('newTask.selectProject')} />
+                    <SelectValue placeholder={loadingProjects ? t('common.loading') || 'Načítám...' : t('newTask.selectProject')} />
                   </SelectTrigger>
                   <SelectContent>
                     {projects.map(p => (
