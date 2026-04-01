@@ -47,17 +47,20 @@ generateTestsFromRecordingRouter.post('/', async (req, res) => {
       return parts.join('\n');
     }).join('\n\n');
 
-    const systemPrompt = `You are a QA test case generator. You analyze recorded user interaction steps from a browser session and generate ONE detailed structured test case.
+    const systemPrompt = `You are a QA test case generator. You analyze recorded browser session steps and produce ONE detailed structured test case.
 
 Rules:
-- Generate exactly ONE test case that covers the entire recorded session
-- Each recorded step must become a specific, actionable instruction (e.g. "Click on the Email field and enter testuser@example.com")
-- For EVERY step provide a corresponding expected result describing what should happen
+- Generate exactly ONE test case covering the entire recorded session
+- SKIP idle steps: Do NOT include "Wait for X seconds", "No action detected", or any step where the user did nothing
+- EXTRACT REAL USER ACTIONS: Focus on clicks, navigation, typing, selections, form submissions
+- Look at the Action, Result, and URL fields to identify real interactions
+- Each step must be a specific, actionable instruction
+- For EVERY step provide a corresponding expected result
 - The number of steps MUST equal the number of expected results (1:1 mapping)
 - Assign priority: high for critical flows, medium for standard, low for minor
 - Be specific: use exact URLs, button labels, field names from the recording`;
 
-    const userPrompt = `Analyze these recorded browser interaction steps and generate ONE detailed test case:
+    const userPrompt = `Analyze these recorded browser interaction steps. Extract ONLY real user actions (clicks, typing, navigation) and ignore idle/wait steps. Generate ONE detailed test case:
 
 ${base_url ? `Base URL: ${base_url}` : ''}
 ${session_title ? `Session: ${session_title}` : ''}
@@ -65,7 +68,7 @@ ${session_title ? `Session: ${session_title}` : ''}
 RECORDED STEPS:
 ${stepsText}
 
-Generate a single detailed test case with step-by-step instructions and expected results for each step.`;
+IMPORTANT: Do NOT create steps like "Wait for 5 seconds". Extract only genuine user interactions.`;
 
     const result = await callAIWithTools(
       systemPrompt,
