@@ -1,95 +1,71 @@
 
 
-# Session Recorder — Nahrávání uživatelských akcí a generování test cases
+# Změna struktury generovaných test cases z nahrávek
 
-## Co to bude dělat
+## Současný stav
 
-Uživatel spustí "nahrávací session" v Browser-Use s pozorovacím promptem. Browser-Use otevře live prohlížeč, uživatel v něm provádí akce (klikání, navigace, vyplňování formulářů). Browser-Use zaznamenává kroky (steps). Po ukončení session AI analyzuje zaznamenané kroky a vygeneruje strukturované test cases, které se uloží do `generated_tests` tabulky a lze je exportovat jako XLSX pro Azure DevOps.
+AI generuje 3-15 test cases z jedné nahrávací session, každý s jedním `prompt` (kroky) a jedním `expectedResult`. Kroky jsou obecné a expected result je souhrnný.
 
-## Uživatelský flow
+## Požadovaný stav
 
-```text
-1. Uživatel otevře "Recorder" stránku
-2. Vybere projekt, zadá název session
-3. Klikne "Start Recording"
-   → Browser-Use task se vytvoří s observačním promptem + keepBrowserOpen=true
-   → Zobrazí se live iframe
-4. Uživatel provádí akce v live prohlížeči
-5. Klikne "Stop & Generate Tests"
-   → Task se zastaví, stáhnou se kroky (steps) + screenshoty
-   → AI (edge function) analyzuje kroky a vygeneruje test cases
-6. Zobrazí se seznam vygenerovaných TC s možností editace
-7. Uživatel uloží TC do DB a/nebo exportuje XLSX
-```
+**1 nahrávka = 1 test case** s detailními kroky, kde:
+- Každý krok je konkrétní akce (klikni, otevři, vyplň, počkej...)
+- Každý krok má vlastní expected result (co se má stát po provedení)
 
-## Technické řešení
+## Co se změní
 
-### Phase 1: DB + Edge Function
+### 1. AI prompt a tool schema (edge function `generate-tests-from-recording`)
 
-**DB migrace** — nová tabulka `recorded_sessions`:
-- `id`, `user_id`, `project_id`, `title`
-- `browser_use_task_id`, `task_id` (FK na tasks)
-- `recorded_steps` (JSONB — raw kroky z Browser-Use)
-- `generated_test_ids` (UUID[] — vygenerované TC)
-- `status` (recording / processing / completed / failed)
-- `created_at`, `completed_at`
+Změna system promptu a tool schématu:
+- Místo pole `testCases` s `prompt` + `expectedResult` bude AI generovat **1 test case** se strukturou:
+  - `title` -- název celé session
+  - `steps[]` -- pole kroků, každý s `action` (co udělat) a `expected` (co se má stát)
+  - `priority`
+- Prompt bude AI instruovat: "Vygeneruj JEDEN test case. Každý zaznamenaný krok rozpiš jako konkrétní instrukci (klikni na X, otevři Y, počkej až se zobrazí Z). Ke každému kroku uveď expected result."
 
-**Edge function `generate-tests-from-recording`**:
-- Vstup: `recorded_steps` (JSON z Browser-Use), `project_id`, `base_url`
-- AI prompt analyzuje sekvenci kroků (next_goal, url, evaluation_previous_goal)
-- Výstup: pole test cases ve formátu `{ title, prompt, expectedResult, priority }`
-- Uloží TC do `generated_tests` s `source_type = 'recording'`
+Výstupní formát do DB zůstane kompatibilní:
+- `prompt` = kroky spojené newliny (číslované: `1. Klikni na...`)
+- `expected_result` = expected results spojené newliny (číslované: `1. Zobrazí se...`)
+- Počet řádků v prompt == počet řádků v expected_result (mapování 1:1)
 
-### Phase 2: Frontend
+### 2. Fallback generátor
 
-**Nová stránka `RecordSession.tsx`** (`/dashboard/recorder`):
-- Formulář: název session, výběr projektu, base URL
-- Tlačítko "Start Recording" → volá `browser-use` edge function s:
-  - `action: 'create_task'`
-  - `prompt: 'Observe and record every user action. Do not interact autonomously. Wait for user to perform actions. Log each click, navigation, form input with exact selectors and values.'`
-  - `keepBrowserOpen: true`
-- Live iframe zobrazí browser
-- Tlačítko "Stop & Generate" → zastaví task, stáhne steps, zavolá AI generátor
+Aktualizace `buildFallbackTestCases` -- stejná logika: 1 TC, kroky z recorded_steps, expected z evaluation_previous_goal každého kroku.
 
-**Nová stránka `RecordingDetail.tsx`** (`/dashboard/recorder/:id`):
-- Zobrazí zaznamenané kroky
-- Seznam vygenerovaných TC s editací (title, prompt, expected result)
-- Tlačítka: "Uložit do projektu", "Export XLSX"
+### 3. XLSX export (RecordingDetail)
 
-**XLSX export** — stejný formát jako stávající export v TestsDashboard:
-- Sloupce: ID, Title, Step Action, Step Expected Result, Priority
+Stávající logika exportu už podporuje 1:1 mapování kroků na expected results (řádek 165-167). Žádná změna potřeba -- formát se automaticky přizpůsobí.
 
-**Navigace** — přidání "Recorder" do sidebar sekce Testing.
+### 4. Deployment backend parity
 
-### Phase 3: Deployment parity
+Aktualizace `deployment/backend/src/routes/generate-tests-from-recording.ts` se stejnými změnami promptu.
 
-- Express route `deployment/backend/src/routes/generate-tests-from-recording.ts`
-- CRUD router pro `recorded_sessions`
-- Update `init.sql` o novou tabulku
-
-## Soubory k vytvoření/úpravě
+## Soubory k úpravě
 
 | Soubor | Změna |
 |--------|-------|
-| DB migrace | Nová tabulka `recorded_sessions` |
-| `supabase/functions/generate-tests-from-recording/index.ts` | Nová edge function |
-| `src/pages/dashboard/RecordSession.tsx` | Nová stránka — recorder UI |
-| `src/pages/dashboard/RecordingDetail.tsx` | Nová stránka — detail + TC edit |
-| `src/App.tsx` | Přidat routes |
-| `src/components/DashboardLayout.tsx` | Přidat nav item |
-| `src/i18n/locales/en/translation.json` | Překlady |
-| `src/i18n/locales/cs/translation.json` | Překlady |
-| `deployment/backend/src/routes/generate-tests-from-recording.ts` | Express route |
-| `deployment/backend/src/routes/crud/recorded-sessions.ts` | CRUD router |
-| `deployment/backend/src/index.ts` | Registrace routes |
-| `deployment/database/init.sql` | Nová tabulka |
+| `supabase/functions/generate-tests-from-recording/index.ts` | Nový prompt, schema, fallback |
+| `deployment/backend/src/routes/generate-tests-from-recording.ts` | Stejné změny promptu |
 
-## Pořadí implementace
+## Příklad výstupu
 
-1. DB migrace + RLS
-2. Edge function pro AI generování TC z kroků
-3. RecordSession stránka (start/stop/live view)
-4. RecordingDetail stránka (kroky + TC + XLSX export)
-5. Navigace + překlady
-6. Deployment parity (Express + init.sql)
+**Prompt (uložený v DB):**
+```
+1. Otevři stránku https://app.example.com/login
+2. Klikni na pole "Email" a zadej testuser@example.com
+3. Klikni na pole "Heslo" a zadej heslo123
+4. Klikni na tlačítko "Přihlásit se"
+5. Počkej až se zobrazí dashboard
+```
+
+**Expected result (uložený v DB):**
+```
+1. Stránka se načte a zobrazí přihlašovací formulář
+2. Pole je aktivní a text se zobrazuje
+3. Pole je aktivní, text je maskovaný
+4. Formulář se odešle, zobrazí se loading
+5. Dashboard se zobrazí s uvítací zprávou
+```
+
+**XLSX export** -- každý řádek = 1 step s odpovídajícím expected result (stávající logika to již zvládá).
 
